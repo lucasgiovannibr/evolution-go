@@ -39,6 +39,20 @@ and pull requests in `FORK-TRIAGE.md`.
   and `BUTTON_CLICK` are published to NATS/AMQP; `KeepAliveTimeout/Restored`
   events under `CONNECTION`.
 
+### Found in live testing (29/09/2026)
+- **One runtime per instance**: `POST /instance/connect` followed by `GET /instance/qr`
+  started the instance twice; the unpaired duplicate forced a logout and restarted the
+  instance as a new device right after a successful pairing.
+- **Deleted instances no longer restart** (a closed kill channel now means "stop for
+  good"; a restart is skipped when the instance row is gone).
+- `/user/info` timed out because of the `+` in the JID (now canonical, 0.3 s).
+- `/group/participant` answered "success" when nothing was added; it now returns the
+  per-participant result (`data`, `failed`).
+- Poll votes from `@lid`-only voters store the real phone number; `viewOnce` and
+  `quoted.text` also work in multipart `/send/media`.
+- `POST /user/contacts`: optional `saveOnPrimaryAddressbook` (contacts cannot be
+  removed through the API).
+
 ### Additions (small)
 - Endpoints (details in `docs/wiki/guias-api/api-fork-additions.md`): `viewOnce` in
   `/send/media`; `POST /send/pollVote`; `POST /message/subscribe` (contact
