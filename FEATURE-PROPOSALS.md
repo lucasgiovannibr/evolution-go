@@ -32,6 +32,7 @@ Documentação dos endpoints: [`docs/wiki/guias-api/api-fork-additions.md`](docs
 | **Timer de mensagens temporárias** (`POST /chat/disappearing`, `POST /user/defaultDisappearing`, aplicação automática no envio) | Issue #79, sugestão 34 | O timer é aprendido (mensagens, `EPHEMERAL_SETTING`, grupos, endpoint) e aplicado em `ContextInfo.Expiration`; grupos o releem após reiniciar; `DISAPPEARING_AUTO_APPLY=false` desliga | ✅ grupo (24h aplicado, "off" não aplica, relido após reiniciar), chat individual e padrão |
 | **Grupo por convite** (`POST /group/inviteinfo`, `POST /group/joininvite`) | Sugestão 35 | Consulta por link/código ou por cartão de convite, sem entrar; entrar pelo cartão | ✅ `inviteinfo` por link do grupo de teste; `joininvite` só com testes unitários (exige um cartão real) |
 | **Canais**: seguir, deixar de seguir, silenciar, marcar como visto, reagir (`/newsletter/follow` ... `/react`) | Sugestão 35 | Validação de JID (400), prazo de 20 s | 🟡 validações ao vivo; as ações em si **não** testadas (não há canal de teste) |
+| **Mensagem que não chegou**: evento `UndecryptableMessage` e `POST /message/rerequest` (`BuildUnavailableMessageRequest`) | Sugestão 36 | O evento traz id/chat/sender; a rota pede o reenvio ao celular e devolve o `requestId` | ✅ pedido aceito pelo servidor; 🟡 a resposta do celular e o evento real não observados |
 
 ## 2. Propostas ainda em aberto
 
@@ -65,7 +66,6 @@ As sugestões 23 e 24 (diagnóstico do runtime e health check) e as 30 e 31 (eve
 | 27 | **Reativar o agendador de presença quando `alwaysOnline` é ligado em tempo de execução** | Hoje ele só nasce no evento `Connected`; ligar depois não tem efeito até reconectar | P | ◐ |
 | 28 | **Remover contato via API** | Impossível hoje: o encoder de app state do whatsmeow só gera `SET` (conferido no código). Detalhes e outros limites duros em `docs/WHATSMEOW-CAPABILITIES.md` §2 | — | ✖ (depende da lib) |
 | 29 | **Regenerar o swagger sem regressão** (o `swag init` reescreve ~1.000 linhas e remove as rotas de licença) | Documentação da API desatualizada (`/group/description`, `/group/settings`, novos endpoints) | M | ◐ |
-| 36 | **`BuildUnavailableMessageRequest`**: pedir ao celular o reenvio de mensagem indisponível | Complementa `REREQUEST_FROM_PHONE` em "não chegou" | M | ◐ |
 
 ## 4. Documentação pendente
 

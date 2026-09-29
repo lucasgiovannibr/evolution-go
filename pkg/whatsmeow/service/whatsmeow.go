@@ -2502,6 +2502,14 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		} else {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] ID is not 66 or 67 or view_once, skipping", mycli.userID)
 		}
+
+		// Tell the subscriber (view_once is already published above as a Message).
+		// Its id/chat/sender are what POST /message/rerequest needs.
+		if evt.UnavailableType != "view_once" {
+			doWebhook = true
+			postMap["event"] = "UndecryptableMessage"
+			postMap["data"] = undecryptableEventData(evt)
+		}
 	default:
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Unhandled event %s: %+v", mycli.userID, fmt.Sprintf("%T", evt), evt)
 		return
@@ -2642,6 +2650,11 @@ func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueN
 		}
 	case "Presence":
 		if contains(subscriptions, "PRESENCE") {
+			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
+			w.sendToQueueOrWebhook(instance, queueName, jsonData)
+		}
+	case "UndecryptableMessage":
+		if contains(subscriptions, "MESSAGE") {
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
 		}
@@ -2918,7 +2931,7 @@ func getExtensionFromMimeType(mimeType string) string {
 // silently never published (issue #193). Keep a single source of truth here.
 func globalEventTypeFor(eventType string) string {
 	switch eventType {
-	case "Message":
+	case "Message", "UndecryptableMessage":
 		return "MESSAGE"
 	case "SendMessage":
 		return "SEND_MESSAGE"

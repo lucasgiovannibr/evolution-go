@@ -17,6 +17,7 @@ type MessageHandler interface {
 	DownloadMedia(ctx *gin.Context)
 	GetMessageStatus(ctx *gin.Context)
 	DeleteMessageEveryone(ctx *gin.Context)
+	RerequestMessage(ctx *gin.Context)
 	EditMessage(ctx *gin.Context)
 }
 

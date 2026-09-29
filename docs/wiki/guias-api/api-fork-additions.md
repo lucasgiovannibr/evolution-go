@@ -276,3 +276,25 @@ Todas recebem `jid` do canal (`...@newsletter`); outro tipo de JID devolve 400.
 | `POST /newsletter/react` | `{"jid","serverId":12,"reaction":"👍"}` — `reaction` vazio remove a reação; `messageId` é opcional |
 
 As chamadas têm um limite de 20 s (a lib espera a resposta do `markviewed` sem prazo).
+
+## Mensagem que não chegou (`UndecryptableMessage` e `POST /message/rerequest`)
+
+Quando uma mensagem chega e este aparelho não consegue decifrá-la, o projeto só escrevia uma linha de log. Agora o evento **`UndecryptableMessage`** é publicado sob a assinatura `MESSAGE` (as mensagens de "ver uma vez" continuam saindo como `Message`):
+
+| Campo de `data` | Significado |
+|---|---|
+| `id`, `chat`, `sender`, `isGroup`, `isFromMe`, `timestamp`, `pushName` | Identificam a mensagem que faltou |
+| `isUnavailable` | `true` se o remetente nem chegou a enviar o conteúdo a este aparelho |
+| `unavailableType`, `decryptFailMode` | Tipos que são intencionalmente indisponíveis / ocultos |
+
+### `POST /message/rerequest`
+
+Pede ao celular uma nova cópia da mensagem.
+
+```json
+{ "chat": "120363000000000001@g.us", "sender": "5511999999999@s.whatsapp.net", "messageId": "3EB0..." }
+```
+
+`sender` é opcional num chat individual (é o próprio chat) e **obrigatório em grupo**; canal e status devolvem 400. Resposta: `{"data":{"requestId":"..."}}`. A resposta do celular chega depois como um evento `Message` normal cujo `UnavailableRequestID` é esse `requestId`. Não há garantia: o celular precisa estar online e ainda ter a mensagem.
+
+`REREQUEST_FROM_PHONE=true` faz a lib pedir sozinha; a rota serve para quem prefere decidir (por exemplo, depois de ver o evento).

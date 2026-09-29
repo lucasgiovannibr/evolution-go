@@ -78,8 +78,9 @@ Todos chegam ao handler e caem no ramo de "evento não tratado" (só log). Os qu
 
 **Feito depois disso**: eventos de pareamento (`PairError`...) e de estado de chat (`Mute`, `Pin`, `Star`...); mensagens temporárias (`POST /chat/disappearing`, `POST /user/defaultDisappearing`, timer aprendido e aplicado no envio, resolve o #79); grupo por convite (`/group/inviteinfo`, `/group/joininvite`); canais (seguir, deixar de seguir, silenciar, marcar como visto, reagir). Detalhes em `docs/wiki/guias-api/api-fork-additions.md`.
 
+`BuildUnavailableMessageRequest` também foi feito: `POST /message/rerequest` e o evento `UndecryptableMessage`.
+
 O que resta:
 
-1. **`BuildUnavailableMessageRequest`**: pedir ao celular o reenvio de uma mensagem que não chegou.
-2. Os demais eventos não tratados de §5, só quando houver quem precise (canais ao vivo, bots, comunidades).
-3. Não prometer: remoção de contato, atender/discar chamadas e encaminhar por ID sem persistência (§2).
+1. Os demais eventos não tratados de §5, só quando houver quem precise (canais ao vivo, bots, comunidades).
+2. Não prometer: remoção de contato, atender/discar chamadas e encaminhar por ID sem persistência (§2).

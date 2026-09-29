@@ -451,3 +451,7 @@ To contribute to the project:
 - `POST /group/inviteinfo` (by link/code or invite card, without joining) and
   `POST /group/joininvite` (from an invite card).
 - Channels: `POST /newsletter/{follow,unfollow,mute,markviewed,react}`.
+
+### Messages that did not arrive
+- The `UndecryptableMessage` event is published under `MESSAGE` (it used to be only a
+  log line), and `POST /message/rerequest` asks the phone for another copy of it.
