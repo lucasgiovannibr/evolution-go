@@ -353,6 +353,12 @@ func (w whatsmeowService) ReconnectClient(instanceId string) error {
 	// Passo 4: Aguardar um pouco para garantir limpeza completa
 	time.Sleep(2 * time.Second)
 
+	// The old supervisor loop notices it was replaced within ~1s; the new run cannot
+	// start while it still owns the instance.
+	if !waitRuntimeReleased(instanceId, 10*time.Second) {
+		w.loggerWrapper.GetLogger(instanceId).LogWarn("[%s] Previous runtime still active after 10s, starting anyway", instanceId)
+	}
+
 	// Passo 5: Iniciar nova instância como se fosse a primeira vez
 	w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Starting fresh instance", instanceId)
 	return w.StartInstance(instanceId)
@@ -489,6 +495,30 @@ func (w whatsmeowService) getAuthContainer() (*sqlstore.Container, error) {
 
 func (w whatsmeowService) StartClient(cd *ClientData) {
 	defer recoverAndLog(w.loggerWrapper, cd.Instance.Id, "StartClient")
+
+	// One runtime per instance (see runtime_slot.go): a duplicate start, e.g. the
+	// GET /instance/qr that follows POST /instance/connect, must not create a second
+	// client for the same instance.
+	if !acquireRuntime(cd.Instance.Id) {
+		w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] A runtime is already starting or running for this instance, ignoring duplicate start", cd.Instance.Id)
+		return
+	}
+
+	// The kill channel belongs to this run: created here (it used to be replaced
+	// by every caller, orphaning the loop that was listening on the old one).
+	kill := make(chan bool)
+	w.killChannel.Set(cd.Instance.Id, kill)
+
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() {
+			if w.killChannel.Get(cd.Instance.Id) == kill {
+				w.killChannel.Delete(cd.Instance.Id)
+			}
+			releaseRuntime(cd.Instance.Id)
+		})
+	}
+	defer release()
 
 	w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("Starting websocket connection to Whatsapp for user '%s'", cd.Instance.Id)
 
@@ -763,16 +793,24 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 
 	// Removed auto-reconnect logic to prevent infinite loops
 
-	// Bind this loop to the channel that existed when it started. It used to
-	// re-read the shared map on every iteration, so after a reconnect (which puts
-	// a NEW channel in the map) every old loop kept polling the new channel: they
-	// never ended (one leaked goroutine per reconnect) and a later kill could be
-	// consumed by a stale loop that then tore down the NEW client's state.
-	kill := w.killChannel.Get(cd.Instance.Id)
-
 	for {
 		select {
-		case <-kill:
+		case _, open := <-kill:
+			// A CLOSED channel means the instance was deleted or stopped for good
+			// (Delete/ClearInstanceCache): shut down without restarting. Only an
+			// explicit `true` (QR timeout, disconnect...) restarts the client. Treating
+			// both alike resurrected deleted instances in an endless QR loop.
+			if !open {
+				w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Kill channel closed, shutting the runtime down without restart", cd.Instance.Id)
+				client.Disconnect()
+				if w.clientPointer.Get(cd.Instance.Id) == client {
+					w.clientPointer.Delete(cd.Instance.Id)
+					w.myClientPointer.Delete(cd.Instance.Id)
+				}
+				w.userInfoCache.Delete(cd.Instance.Token)
+				return
+			}
+
 			w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("Received kill signal for user '%s'", cd.Instance.Id)
 			client.Disconnect()
 
@@ -827,6 +865,13 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 			// Not a direct (recursive) call: every restart used to stack another
 			// StartClient frame on this goroutine (visible as the repeated
 			// whatsmeow.go:629 frames in issue #203).
+			// Never restart an instance whose row is gone.
+			if _, err := w.instanceRepository.GetInstanceByID(cd.Instance.Id); err != nil {
+				w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Instance no longer exists, not restarting", cd.Instance.Id)
+				return
+			}
+
+			release() // free the slot so the restarted run can take it
 			go w.StartClient(cd)
 			return
 		default:
@@ -935,6 +980,11 @@ func (mycli *MyClient) handleQRCodes(codes []string) {
 			if mycli.WAClient == nil || mycli.WAClient.Store.ID != nil {
 				return
 			}
+			// This client is no longer the instance's runtime (deleted, replaced or
+			// shut down): its QR codes are useless.
+			if !mycli.isCurrentRuntime() {
+				return
+			}
 			if mycli.passkeyCeremony != nil && mycli.passkeyCeremony.HasActiveByInstance(instanceID) {
 				mycli.loggerWrapper.GetLogger(instanceID).LogInfo("[%s] Passkey ceremony in progress — pausing QR rotation, keeping socket alive", instanceID)
 				return
@@ -1011,7 +1061,7 @@ func (mycli *MyClient) handleQRCodes(codes []string) {
 		// Ran out of codes without a PairSuccess. Treat as QR timeout (mirrors
 		// GetQRChannel's "timeout") — UNLESS a passkey ceremony is in flight, in
 		// which case the socket must stay alive for the ceremony to complete.
-		if mycli.WAClient != nil && mycli.WAClient.Store.ID == nil {
+		if mycli.WAClient != nil && mycli.WAClient.Store.ID == nil && mycli.isCurrentRuntime() {
 			if mycli.passkeyCeremony != nil && mycli.passkeyCeremony.HasActiveByInstance(instanceID) {
 				mycli.loggerWrapper.GetLogger(instanceID).LogInfo("[%s] QR codes exhausted but passkey ceremony active — keeping socket alive", instanceID)
 				return
@@ -1019,6 +1069,13 @@ func (mycli *MyClient) handleQRCodes(codes []string) {
 			mycli.teardownQR("", false)
 		}
 	}()
+}
+
+// isCurrentRuntime reports whether this client is still the one registered for its
+// instance.
+func (mycli *MyClient) isCurrentRuntime() bool {
+	cur, ok := mycli.myClientPointer.Lookup(mycli.userID)
+	return ok && cur == mycli
 }
 
 // teardownQR clears the QR state and emits a QRTimeout event, then signals the
@@ -1074,11 +1131,16 @@ func (mycli *MyClient) teardownQR(reason string, forceLogout bool) {
 	if killChan, exists := mycli.killChannel.Lookup(instanceID); exists {
 		// Bounded: if the supervisor loop already ended (client replaced) nobody is
 		// receiving and an unbounded send would block this goroutine forever.
-		select {
-		case killChan <- true:
-		case <-time.After(10 * time.Second):
-			mycli.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Kill signal not received (client already replaced?), giving up", instanceID)
-		}
+		// The channel may be closed concurrently by Delete: a send on a closed
+		// channel panics, so contain it.
+		func() {
+			defer recoverAndLog(mycli.loggerWrapper, instanceID, "teardownQR kill signal")
+			select {
+			case killChan <- true:
+			case <-time.After(10 * time.Second):
+				mycli.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Kill signal not received (client already replaced?), giving up", instanceID)
+			}
+		}()
 	}
 }
 
@@ -1569,6 +1631,14 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 						// Salvar no banco com timeout de segurança
 						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 						defer cancel()
+
+						// Voters that only have a @lid (e.g. votes from our own phone) got the LID
+						// digits as "phone". Resolve the real number from the LID store.
+						if evt.Info.Sender.Server == types.HiddenUserServer && mycli.WAClient != nil && mycli.WAClient.Store.LIDs != nil {
+							if pn, err := mycli.WAClient.Store.LIDs.GetPNForLID(ctx, evt.Info.Sender.ToNonAD()); err == nil && !pn.IsEmpty() {
+								pollVote.VoterPhone = pn.User
+							}
+						}
 
 						if err := mycli.pollService.SavePollVote(ctx, pollVote); err != nil {
 							mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to save poll vote to database: %v", mycli.userID, err)
@@ -2150,7 +2220,11 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		}
 
 		// Agora mata o canal DEPOIS de enviar o evento
-		mycli.killChannel.Get(mycli.userID) <- true
+		select {
+		case mycli.killChannel.Get(mycli.userID) <- true:
+		case <-time.After(10 * time.Second):
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Kill signal after LoggedOut not received (runtime already ended?)", mycli.userID)
+		}
 	case *events.ChatPresence:
 		doWebhook = true
 		postMap["event"] = "ChatPresence"
@@ -2666,8 +2740,6 @@ func (w whatsmeowService) StartInstance(instanceId string) error {
 		}
 	}
 
-	w.killChannel.Set(instance.Id, make(chan bool))
-
 	clientData := &ClientData{
 		Instance:      instance,
 		Subscriptions: subscribedEvents,
@@ -3045,12 +3117,8 @@ func (w whatsmeowService) ClearInstanceCache(instanceId string, token string) er
 
 	// Limpar killChannel se existir
 	if killChan, exists := w.killChannel.Lookup(instanceId); exists {
-		select {
-		case killChan <- true:
-			// Canal recebeu o sinal
-		default:
-			// Canal pode estar bloqueado, apenas fecha
-		}
+		// Closing is the "stop for good" signal; sending `true` would make the
+		// supervisor restart the client.
 		close(killChan)
 		w.killChannel.Delete(instanceId)
 		w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Kill channel cleared", instanceId)

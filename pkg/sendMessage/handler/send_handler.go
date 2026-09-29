@@ -192,6 +192,7 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 		var quoted send_service.QuotedStruct
 		quoted.MessageID = ctx.PostForm("quoted.messageId")
 		quoted.Participant = ctx.PostForm("quoted.participant")
+		quoted.Text = ctx.PostForm("quoted.text")
 
 		// Get file
 		file, err := ctx.FormFile("file")
@@ -224,6 +225,7 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 			MentionAll:   mentionAll,
 			MentionedJID: mentionedJID,
 			Quoted:       quoted,
+			ViewOnce:     ctx.PostForm("viewOnce") == "true",
 		}
 
 		// Pass fileBytes to the send service
