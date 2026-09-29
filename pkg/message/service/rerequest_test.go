@@ -33,7 +33,7 @@ func TestRerequestResolveRejects(t *testing.T) {
 	}
 	for name, d := range bad {
 		_, _, err := d.resolve()
-		if err == nil || !IsRerequestRequestError(err) {
+		if err == nil || !IsRequestError(err) {
 			t.Errorf("%s: want a request error, got %v", name, err)
 		}
 	}
@@ -41,7 +41,7 @@ func TestRerequestResolveRejects(t *testing.T) {
 
 func TestRerequestMessageValidatesBeforeTouchingTheClient(t *testing.T) {
 	m := &messageService{} // no client: reaching it would panic
-	if _, err := m.RerequestMessage(&RerequestStruct{Chat: "5511999990001"}, nil); err == nil || !IsRerequestRequestError(err) {
+	if _, err := m.RerequestMessage(&RerequestStruct{Chat: "5511999990001"}, nil); err == nil || !IsRequestError(err) {
 		t.Fatalf("got %v", err)
 	}
 }

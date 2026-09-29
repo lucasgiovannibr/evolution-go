@@ -39,7 +39,7 @@ func (m *messageHandler) RerequestMessage(ctx *gin.Context) {
 	requestID, err := m.messageService.RerequestMessage(data, instance)
 	if err != nil {
 		status := http.StatusInternalServerError
-		if message_service.IsRerequestRequestError(err) {
+		if message_service.IsRequestError(err) {
 			status = http.StatusBadRequest
 		}
 		ctx.JSON(status, gin.H{"error": err.Error()})

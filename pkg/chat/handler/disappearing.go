@@ -37,7 +37,7 @@ func (c *chatHandler) SetDisappearing(ctx *gin.Context) {
 	}
 
 	if err := c.chatService.SetDisappearing(data, instance); err != nil {
-		ctx.JSON(statusForDisappearingError(err), gin.H{"error": err.Error()})
+		ctx.JSON(statusForChatError(err), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -69,16 +69,16 @@ func (c *chatHandler) SetDefaultDisappearing(ctx *gin.Context) {
 	}
 
 	if err := c.chatService.SetDefaultDisappearing(data, instance); err != nil {
-		ctx.JSON(statusForDisappearingError(err), gin.H{"error": err.Error()})
+		ctx.JSON(statusForChatError(err), gin.H{"error": err.Error()})
 		return
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "success"})
 }
 
-// statusForDisappearingError tells a request the caller got wrong (400) from a
+// statusForChatError tells a request the caller got wrong (400) from a
 // failure on the WhatsApp side (500).
-func statusForDisappearingError(err error) int {
+func statusForChatError(err error) int {
 	if chat_service.IsDisappearingRequestError(err) {
 		return http.StatusBadRequest
 	}

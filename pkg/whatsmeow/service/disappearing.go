@@ -111,11 +111,11 @@ func (w *whatsmeowService) ChatDisappearingSeconds(instanceID string, chat types
 	}
 	switch chat.Server {
 	case types.DefaultUserServer:
-		if lid, err := client.Store.LIDs.GetLIDForPN(nil, chat.ToNonAD()); err == nil && !lid.IsEmpty() { //nolint:staticcheck // ctx is unused by the in-memory/SQL store lookups here
+		if lid, err := client.Store.LIDs.GetLIDForPN(context.Background(), chat.ToNonAD()); err == nil && !lid.IsEmpty() {
 			return lookupChatTimer(instanceID, lid, now)
 		}
 	case types.HiddenUserServer:
-		if pn, err := client.Store.LIDs.GetPNForLID(nil, chat.ToNonAD()); err == nil && !pn.IsEmpty() { //nolint:staticcheck
+		if pn, err := client.Store.LIDs.GetPNForLID(context.Background(), chat.ToNonAD()); err == nil && !pn.IsEmpty() {
 			return lookupChatTimer(instanceID, pn, now)
 		}
 	}

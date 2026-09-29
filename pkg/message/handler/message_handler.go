@@ -123,7 +123,7 @@ func (m *messageHandler) ChatPresence(ctx *gin.Context) {
 
 // SubscribePresence subscribe to a contact's presence (online / last-seen)
 // @Summary Subscribe to a contact's presence
-// @Description Subscribe to a contact's presence so the instance starts receiving Presence (online/offline/last-seen) webhook events for that number
+// @Description Subscribe to a contact's presence so the instance starts receiving Presence (online/offline/last-seen) webhook events. number is one number or a list (up to 100); a list answers with the result of each number in data and the ones that failed in failed.
 // @Tags Message
 // @Accept json
 // @Produce json
@@ -148,17 +148,42 @@ func (m *messageHandler) SubscribePresence(ctx *gin.Context) {
 		return
 	}
 
-	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+	results, err := m.messageService.SubscribePresence(data, instance)
+	if err != nil {
+		status := http.StatusInternalServerError
+		if message_service.IsRequestError(err) {
+			status = http.StatusBadRequest
+		}
+		ctx.JSON(status, gin.H{"error": err.Error()})
 		return
 	}
 
-	if err := m.messageService.SubscribePresence(data, instance); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	// A single number keeps the answer it always had.
+	if !data.Number.IsList {
+		if r := results[0]; !r.Subscribed {
+			status := http.StatusInternalServerError
+			if r.Invalid {
+				status = http.StatusBadRequest
+			}
+			ctx.JSON(status, gin.H{"error": r.Error})
+			return
+		}
+		ctx.JSON(http.StatusOK, gin.H{"message": "success"})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "success"})
+	// A list reports each number; it only fails as a whole when none was subscribed.
+	var failed []message_service.SubscribeResult
+	for _, r := range results {
+		if !r.Subscribed {
+			failed = append(failed, r)
+		}
+	}
+	status := http.StatusOK
+	if len(failed) == len(results) {
+		status = http.StatusInternalServerError
+	}
+	ctx.JSON(status, gin.H{"message": "success", "data": results, "failed": failed})
 }
 
 // MarkRead mark a message as read

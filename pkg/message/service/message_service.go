@@ -27,7 +27,7 @@ import (
 type MessageService interface {
 	React(data *ReactStruct, instance *instance_model.Instance) (*MessageSendStruct, error)
 	ChatPresence(data *ChatPresenceStruct, instance *instance_model.Instance) (string, error)
-	SubscribePresence(data *SubscribePresenceStruct, instance *instance_model.Instance) error
+	SubscribePresence(data *SubscribePresenceStruct, instance *instance_model.Instance) ([]SubscribeResult, error)
 	MarkRead(data *MarkReadStruct, instance *instance_model.Instance) (string, error)
 	MarkPlayed(data *MarkPlayedStruct, instance *instance_model.Instance) (string, error)
 	DownloadMedia(data *DownloadMediaStruct, instance *instance_model.Instance, request *http.Request) (*dataurl.DataURL, string, error)
@@ -60,10 +60,6 @@ type ChatPresenceStruct struct {
 	// for the given duration (re-sending it periodically) and then sends "paused".
 	// Only applies when State is "composing". 0 = single fire (legacy behaviour).
 	Delay int `json:"delay"`
-}
-
-type SubscribePresenceStruct struct {
-	Number string `json:"number"`
 }
 
 type MarkReadStruct struct {
@@ -312,59 +308,6 @@ func (m *messageService) ChatPresence(data *ChatPresenceStruct, instance *instan
 
 	return ts.String(), nil
 }
-
-// SubscribePresence subscribes to a contact's presence (online / last-seen).
-// WhatsApp only delivers events.Presence for JIDs we've explicitly subscribed to,
-// and only while we're marked available — so we send available first (idempotent;
-// ChatPresence and the background presence loop already do this). Subscriptions are
-// ephemeral (reset on reconnect), so the caller re-subscribes when a chat is opened.
-func (m *messageService) SubscribePresence(data *SubscribePresenceStruct, instance *instance_model.Instance) error {
-	client, err := m.ensureClientConnected(instance.Id)
-	if err != nil {
-		return err
-	}
-
-	recipient, ok := utils.ParseJID(data.Number)
-	if !ok {
-		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] SubscribePresence: invalid number %s", instance.Id, data.Number)
-		return errors.New("invalid phone number")
-	}
-	recipient = utils.CanonicalJID(recipient)
-
-	// Must be available to receive others' presence updates (non-fatal if it fails).
-	if presErr := client.SendPresence(context.Background(), types.PresenceAvailable); presErr != nil {
-		m.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] SendPresence(available) before subscribe failed (non-fatal): %v", instance.Id, presErr)
-	}
-
-	if err := client.SubscribePresence(context.Background(), recipient); err != nil {
-		return err
-	}
-
-	// Being "available" is what stops WhatsApp from pushing notifications to the
-	// account's phone (#55). Unless the instance is configured alwaysOnline, hand the
-	// presence back after a while so subscribing does not leave the phone silent.
-	if !instance.AlwaysOnline {
-		instanceID := instance.Id
-		time.AfterFunc(presenceLinger, func() {
-			defer func() {
-				if r := recover(); r != nil {
-					m.loggerWrapper.GetLogger(instanceID).LogError("[%s] panic restoring unavailable presence: %v", instanceID, r)
-				}
-			}()
-			if err := client.SendPresence(context.Background(), types.PresenceUnavailable); err != nil {
-				m.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] failed to restore unavailable presence: %v", instanceID, err)
-			}
-		})
-	}
-
-	m.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Subscribed to presence of %s", instance.Id, data.Number)
-	return nil
-}
-
-// presenceLinger is how long the instance stays "available" after a presence
-// subscription when alwaysOnline is off. Presence updates of the contact are only
-// delivered while available, so this is the window in which they arrive.
-const presenceLinger = 2 * time.Minute
 
 func (m *messageService) MarkRead(data *MarkReadStruct, instance *instance_model.Instance) (string, error) {
 	client, err := m.ensureClientConnected(instance.Id)
