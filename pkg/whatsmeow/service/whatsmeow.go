@@ -980,6 +980,11 @@ func (mycli *MyClient) handleQRCodes(codes []string) {
 			if mycli.WAClient == nil || mycli.WAClient.Store.ID != nil {
 				return
 			}
+			// This client is no longer the instance's runtime (deleted, replaced or
+			// shut down): its QR codes are useless.
+			if !mycli.isCurrentRuntime() {
+				return
+			}
 			if mycli.passkeyCeremony != nil && mycli.passkeyCeremony.HasActiveByInstance(instanceID) {
 				mycli.loggerWrapper.GetLogger(instanceID).LogInfo("[%s] Passkey ceremony in progress — pausing QR rotation, keeping socket alive", instanceID)
 				return
@@ -1056,7 +1061,7 @@ func (mycli *MyClient) handleQRCodes(codes []string) {
 		// Ran out of codes without a PairSuccess. Treat as QR timeout (mirrors
 		// GetQRChannel's "timeout") — UNLESS a passkey ceremony is in flight, in
 		// which case the socket must stay alive for the ceremony to complete.
-		if mycli.WAClient != nil && mycli.WAClient.Store.ID == nil {
+		if mycli.WAClient != nil && mycli.WAClient.Store.ID == nil && mycli.isCurrentRuntime() {
 			if mycli.passkeyCeremony != nil && mycli.passkeyCeremony.HasActiveByInstance(instanceID) {
 				mycli.loggerWrapper.GetLogger(instanceID).LogInfo("[%s] QR codes exhausted but passkey ceremony active — keeping socket alive", instanceID)
 				return
@@ -1064,6 +1069,13 @@ func (mycli *MyClient) handleQRCodes(codes []string) {
 			mycli.teardownQR("", false)
 		}
 	}()
+}
+
+// isCurrentRuntime reports whether this client is still the one registered for its
+// instance.
+func (mycli *MyClient) isCurrentRuntime() bool {
+	cur, ok := mycli.myClientPointer.Lookup(mycli.userID)
+	return ok && cur == mycli
 }
 
 // teardownQR clears the QR state and emits a QRTimeout event, then signals the
