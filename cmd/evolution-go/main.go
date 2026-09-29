@@ -240,7 +240,10 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		label_handler.NewLabelHandler(labelService),
 		newsletter_handler.NewNewsletterHandler(newsletterService),
 		pollHandler,
-		server_handler.NewServerHandler(),
+		server_handler.NewServerHandler(
+			server_handler.HealthCheck{Name: "usersDb", DB: usersSQLDB(db)},
+			server_handler.HealthCheck{Name: "authDb", DB: firstSQLDB(authDB, sqliteDB)},
+		),
 	).AssignRoutes(r)
 
 	if config.ConnectOnStartup {
@@ -263,6 +266,28 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	})
 
 	return r
+}
+
+// usersSQLDB returns the *sql.DB behind the users gorm handle (nil if unavailable).
+func usersSQLDB(db *gorm.DB) *sql.DB {
+	if db == nil {
+		return nil
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil
+	}
+	return sqlDB
+}
+
+// firstSQLDB returns the first non-nil database.
+func firstSQLDB(dbs ...*sql.DB) *sql.DB {
+	for _, d := range dbs {
+		if d != nil {
+			return d
+		}
+	}
+	return nil
 }
 
 func migrate(db *gorm.DB) {

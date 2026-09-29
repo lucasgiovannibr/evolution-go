@@ -18,6 +18,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"golang.org/x/image/webp"
@@ -65,6 +66,8 @@ type WhatsmeowService interface {
 	UpdateInstanceSettings(instanceId string) error
 	UpdateInstanceAdvancedSettings(instanceId string) error
 	ProxyStatus(instanceId string) (ProxyRuntimeStatus, bool)
+	RuntimeInfo(instanceId string) RuntimeInfo
+	RuntimeInfos() []RuntimeInfo
 	GetPollService() poll_service.PollService // NOVO: Acesso ao serviço de polls
 
 	// Passkey (WebAuthn) pairing bridge — read by the public ceremony endpoint,
@@ -132,7 +135,13 @@ type MyClient struct {
 	processedMessages  *cache.Cache
 	natsProducer       producer_interfaces.Producer
 	loggerWrapper      *logger_wrapper.LoggerManager
-	qrcodeCount        int
+	// qrcodeCount is written by the QR rotation goroutine and read by diagnostics.
+	qrcodeCount atomic.Int32
+	// Observability (RuntimeInfo): last event seen, when it was connected, total events.
+	lastEventAt   atomic.Int64 // unix nanoseconds
+	lastEventType atomic.Value // string
+	connectedAt   atomic.Int64 // unix nanoseconds of the last events.Connected
+	eventCount    atomic.Uint64
 	passkeyCeremony    *ceremony.Store
 	appStateRecoveryMu sync.Mutex
 	appStateRecovery   map[appstate.WAPatchName]appStateRecoveryAttempt
@@ -710,7 +719,6 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		processedMessages:  w.processedMessages,
 		natsProducer:       w.natsProducer,
 		loggerWrapper:      w.loggerWrapper,
-		qrcodeCount:        0,
 		passkeyCeremony:    w.passkeyCeremony,
 	}
 
@@ -990,17 +998,17 @@ func (mycli *MyClient) handleQRCodes(codes []string) {
 				return
 			}
 
-			mycli.qrcodeCount++
+			mycli.qrcodeCount.Add(1)
 
 			if mycli.config.QrcodeMaxCount > 0 {
-				mycli.loggerWrapper.GetLogger(instanceID).LogInfo("[%s] QR code generated #%d (max: %d)", instanceID, mycli.qrcodeCount, mycli.config.QrcodeMaxCount)
+				mycli.loggerWrapper.GetLogger(instanceID).LogInfo("[%s] QR code generated #%d (max: %d)", instanceID, mycli.qrcodeCount.Load(), mycli.config.QrcodeMaxCount)
 			} else {
-				mycli.loggerWrapper.GetLogger(instanceID).LogInfo("[%s] QR code generated #%d (limit disabled)", instanceID, mycli.qrcodeCount)
+				mycli.loggerWrapper.GetLogger(instanceID).LogInfo("[%s] QR code generated #%d (limit disabled)", instanceID, mycli.qrcodeCount.Load())
 			}
 
 			// Max-count reached: force logout + teardown + QRTimeout (0 = disabled).
 			// But never tear down while a passkey ceremony is in flight.
-			if mycli.config.QrcodeMaxCount > 0 && mycli.qrcodeCount >= mycli.config.QrcodeMaxCount {
+			if mycli.config.QrcodeMaxCount > 0 && int(mycli.qrcodeCount.Load()) >= mycli.config.QrcodeMaxCount {
 				if mycli.passkeyCeremony != nil && mycli.passkeyCeremony.HasActiveByInstance(instanceID) {
 					mycli.loggerWrapper.GetLogger(instanceID).LogInfo("[%s] QR max-count reached but passkey ceremony active — not tearing down", instanceID)
 					return
@@ -1033,7 +1041,7 @@ func (mycli *MyClient) handleQRCodes(codes []string) {
 				"data": map[string]interface{}{
 					"qrcode":   base64qrcode,
 					"code":     code,
-					"count":    mycli.qrcodeCount,
+					"count":    mycli.qrcodeCount.Load(),
 					"maxCount": mycli.config.QrcodeMaxCount,
 				},
 				"instanceToken": mycli.token,
@@ -1105,7 +1113,7 @@ func (mycli *MyClient) teardownQR(reason string, forceLogout bool) {
 	data := map[string]interface{}{}
 	if reason != "" {
 		data["reason"] = reason
-		data["qrcount"] = mycli.qrcodeCount
+		data["qrcount"] = mycli.qrcodeCount.Load()
 		data["maxCount"] = mycli.config.QrcodeMaxCount
 		data["forceLogout"] = forceLogout
 	}
@@ -1145,6 +1153,10 @@ func (mycli *MyClient) teardownQR(reason string, forceLogout bool) {
 }
 
 func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
+	mycli.lastEventAt.Store(time.Now().UnixNano())
+	mycli.lastEventType.Store(strings.TrimPrefix(fmt.Sprintf("%T", rawEvt), "*events."))
+	mycli.eventCount.Add(1)
+
 	userID := mycli.userID
 	postMap := make(map[string]interface{})
 	postMap["data"] = rawEvt
@@ -1175,6 +1187,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			}
 		}
 	case *events.Connected, *events.PushNameSetting:
+		if _, isConnected := rawEvt.(*events.Connected); isConnected {
+			mycli.connectedAt.Store(time.Now().UnixNano())
+		}
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] events.Connected to Whatsapp for user '%s'", mycli.userID, mycli.WAClient.Store.PushName)
 		if len(mycli.WAClient.Store.PushName) > 0 {
 			doWebhook = true

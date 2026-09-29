@@ -1,0 +1,190 @@
+package whatsmeow_service
+
+import (
+	"runtime"
+	"sort"
+	"time"
+)
+
+// Warning is one inconsistency found in the runtime state. Code is stable and
+// meant for monitors; Message is for humans.
+type Warning struct {
+	Code    string `json:"code"`
+	Message string `json:"message"`
+}
+
+// RuntimeInfo is a read-only snapshot of what this process is actually doing for
+// one instance. The database says what the instance SHOULD be; this says what it
+// IS. Bugs like the duplicated runtime (two clients for one instance) or an
+// orphaned supervisor were only visible by reading logs; every inconsistency of
+// that kind is reported in Warnings.
+type RuntimeInfo struct {
+	InstanceID string `json:"instanceId"`
+
+	// A whatsmeow client is registered for the instance.
+	ClientRegistered bool `json:"clientRegistered"`
+	// The client's websocket is connected / the device is logged in.
+	WebsocketConnected bool   `json:"websocketConnected"`
+	LoggedIn           bool   `json:"loggedIn"`
+	DeviceJID          string `json:"deviceJid,omitempty"`
+
+	// A StartClient run (the supervisor loop) owns the instance.
+	RuntimeActive bool `json:"runtimeActive"`
+	// The channel that Disconnect / QR teardown use to stop the runtime exists.
+	KillChannel bool `json:"killChannel"`
+	// The registered supervisor state belongs to the registered client.
+	SupervisorCurrent bool `json:"supervisorCurrent"`
+	// A ReconnectClient is in flight.
+	ReconnectInProgress bool `json:"reconnectInProgress"`
+
+	QRCount               int  `json:"qrCount"`
+	QRMax                 int  `json:"qrMax"`
+	PasskeyCeremonyActive bool `json:"passkeyCeremonyActive"`
+
+	ConnectedSince *time.Time `json:"connectedSince,omitempty"`
+	LastEventType  string     `json:"lastEventType,omitempty"`
+	LastEventAt    *time.Time `json:"lastEventAt,omitempty"`
+	EventsSeen     uint64     `json:"eventsSeen"`
+
+	Proxy *ProxyRuntimeStatus `json:"proxy,omitempty"`
+
+	Warnings []Warning `json:"warnings"`
+}
+
+func nsToTime(ns int64) *time.Time {
+	if ns == 0 {
+		return nil
+	}
+	t := time.Unix(0, ns)
+	return &t
+}
+
+// RuntimeInfo returns the snapshot for one instance.
+func (w *whatsmeowService) RuntimeInfo(instanceID string) RuntimeInfo {
+	info := RuntimeInfo{InstanceID: instanceID, Warnings: []Warning{}}
+
+	client := w.clientPointer.Get(instanceID)
+	mycli := w.myClientPointer.Get(instanceID)
+
+	info.ClientRegistered = client != nil
+	info.RuntimeActive = runtimeActive(instanceID)
+	info.KillChannel = w.killChannel.Get(instanceID) != nil
+	_, info.ReconnectInProgress = reconnecting.Load(instanceID)
+	info.QRMax = w.config.QrcodeMaxCount
+
+	if client != nil {
+		info.WebsocketConnected = client.IsConnected()
+		info.LoggedIn = client.IsLoggedIn()
+		if client.Store != nil && client.Store.ID != nil {
+			info.DeviceJID = client.Store.ID.String()
+		}
+	}
+
+	info.SupervisorCurrent = client != nil && mycli != nil && mycli.WAClient == client
+	if mycli != nil {
+		info.QRCount = int(mycli.qrcodeCount.Load())
+		info.ConnectedSince = nsToTime(mycli.connectedAt.Load())
+		info.LastEventAt = nsToTime(mycli.lastEventAt.Load())
+		if v, ok := mycli.lastEventType.Load().(string); ok {
+			info.LastEventType = v
+		}
+		info.EventsSeen = mycli.eventCount.Load()
+		if mycli.passkeyCeremony != nil {
+			info.PasskeyCeremonyActive = mycli.passkeyCeremony.HasActiveByInstance(instanceID)
+		}
+	}
+
+	if st, ok := GetProxyRuntimeStatus(instanceID); ok {
+		info.Proxy = &st
+	}
+
+	info.Warnings = runtimeWarnings(info)
+	return info
+}
+
+// RuntimeInfos returns the snapshot of every instance this process knows about: a
+// registered client, a supervisor state, or a running supervisor.
+func (w *whatsmeowService) RuntimeInfos() []RuntimeInfo {
+	ids := map[string]struct{}{}
+	for id := range w.clientPointer.Snapshot() {
+		ids[id] = struct{}{}
+	}
+	for id := range w.myClientPointer.Snapshot() {
+		ids[id] = struct{}{}
+	}
+	runtimeSlots.Range(func(k, _ interface{}) bool {
+		ids[k.(string)] = struct{}{}
+		return true
+	})
+
+	sorted := make([]string, 0, len(ids))
+	for id := range ids {
+		sorted = append(sorted, id)
+	}
+	sort.Strings(sorted)
+
+	out := make([]RuntimeInfo, 0, len(sorted))
+	for _, id := range sorted {
+		out = append(out, w.RuntimeInfo(id))
+	}
+	return out
+}
+
+// runtimeWarnings derives the inconsistencies from a snapshot. Pure function so it
+// can be unit tested.
+func runtimeWarnings(i RuntimeInfo) []Warning {
+	out := []Warning{}
+	add := func(code, msg string) { out = append(out, Warning{Code: code, Message: msg}) }
+
+	switch {
+	case i.RuntimeActive && !i.ClientRegistered:
+		add("runtime_without_client", "a runtime owns the instance but no client is registered (normal for a few seconds while starting; if it persists the start is stuck)")
+	case i.ClientRegistered && !i.RuntimeActive:
+		add("client_without_runtime", "a client is registered but no supervisor loop is running for it (orphaned client: kill/QR teardown will not reach it)")
+	}
+
+	if i.RuntimeActive && i.ClientRegistered && !i.SupervisorCurrent {
+		add("supervisor_mismatch", "the registered supervisor state does not belong to the registered client")
+	}
+
+	if i.RuntimeActive && !i.KillChannel {
+		add("no_kill_channel", "the runtime has no kill channel: Disconnect and QR teardown cannot stop it")
+	}
+
+	if i.ClientRegistered && i.DeviceJID != "" && !i.WebsocketConnected && !i.ReconnectInProgress {
+		add("paired_but_offline", "the device is paired but the websocket is down and no reconnect is in progress")
+	}
+
+	if i.ClientRegistered && i.DeviceJID == "" && i.QRMax > 0 && i.QRCount >= i.QRMax-1 && !i.PasskeyCeremonyActive {
+		add("qr_limit_near", "waiting for a QR scan and the QR limit is about to be reached (the runtime will restart)")
+	}
+
+	return out
+}
+
+// ProcessInfo describes the process itself. A goroutine count that only ever grows
+// is how a leak (one supervisor per reconnect, once) shows up.
+type ProcessInfo struct {
+	UptimeSeconds int64  `json:"uptimeSeconds"`
+	Goroutines    int    `json:"goroutines"`
+	HeapAllocMB   uint64 `json:"heapAllocMb"`
+	SysMB         uint64 `json:"sysMb"`
+	NumGC         uint32 `json:"numGc"`
+	GoVersion     string `json:"goVersion"`
+}
+
+var processStart = time.Now()
+
+// GetProcessInfo returns the current process statistics.
+func GetProcessInfo() ProcessInfo {
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+	return ProcessInfo{
+		UptimeSeconds: int64(time.Since(processStart).Seconds()),
+		Goroutines:    runtime.NumGoroutine(),
+		HeapAllocMB:   m.HeapAlloc / (1 << 20),
+		SysMB:         m.Sys / (1 << 20),
+		NumGC:         m.NumGC,
+		GoVersion:     runtime.Version(),
+	}
+}
