@@ -2,6 +2,10 @@
 
 Documentação completa dos endpoints para enviar mensagens interativas no WhatsApp: botões, listas e carrosséis. Todos os endpoints são compatíveis com **Android**, **iOS (iPhone)** e **WhatsApp Web/Desktop**.
 
+> ⚠️ **Limitação conhecida (issues #59, #71, #110, #170, #204 do upstream)**: `/send/button` e `/send/list` retornam `200` com ID de mensagem, mas o WhatsApp pode **não renderizar** (ou responder `405`/`473`) para destinatários em contas pessoais — hoje só o **carrossel** chega de forma confiável. O protocolo para botões/listas nativos parece restrito a sessões oficiais (Business/WABA) e o comportamento muda com o WhatsApp. Trate esses endpoints como **experimentais** em contas comuns e prefira `/send/carousel`, enquetes ou texto com instruções de resposta.
+>
+> No carrossel, os botões aceitam `type` = `REPLY`, `URL`, `CALL` ou `COPY` (`COPY_CODE` também é aceito). Para `URL`/`CALL` informe o valor em `url`/`phoneNumber` (ou, alternativamente, em `id`); para `COPY`, em `copyCode`.
+
 ## 📋 Índice
 
 - [Enviar Botões](#enviar-botões)
