@@ -31,6 +31,7 @@ type UserHandler interface {
 	CheckUser(ctx *gin.Context)
 	GetAvatar(ctx *gin.Context)
 	GetContacts(ctx *gin.Context)
+	SaveContact(ctx *gin.Context)
 	GetPrivacy(ctx *gin.Context)
 	SetPrivacy(ctx *gin.Context)
 	BlockContact(ctx *gin.Context)
@@ -39,6 +40,7 @@ type UserHandler interface {
 	SetProfilePicture(ctx *gin.Context)
 	SetProfileName(ctx *gin.Context)
 	SetProfileStatus(ctx *gin.Context)
+	ResolveLid(ctx *gin.Context)
 }
 
 type userHandler struct {
@@ -77,9 +79,9 @@ func (u *userHandler) GetUser(ctx *gin.Context) {
 		return
 	}
 
-	uc, err := u.userService.GetUser(data, instance)
+	uc, err := u.userService.GetUser(ctx.Request.Context(), data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeUserWAError(ctx, err)
 		return
 	}
 
@@ -560,6 +562,47 @@ func (u *userHandler) SetProfileStatus(ctx *gin.Context) {
 	responseData := gin.H{"status": data.Status}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": responseData})
+}
+
+// Resolve the phone number behind a LID
+// @Summary Resolve the phone number behind a LID
+// @Description Resolve the phone number behind a LID
+// @Tags User
+// @Accept json
+// @Produce json
+// @Param message body user_service.ResolveLidStruct true "Lid data"
+// @Success 200 {object} gin.H "success"
+// @Failure 400 {object} gin.H "Error on validation"
+// @Failure 500 {object} gin.H "Internal server error"
+// @Router /user/lid [post]
+func (u *userHandler) ResolveLid(ctx *gin.Context) {
+	getInstance := ctx.MustGet("instance")
+
+	instance, ok := getInstance.(*instance_model.Instance)
+	if !ok {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		return
+	}
+
+	var data *user_service.ResolveLidStruct
+	err := ctx.ShouldBindBodyWithJSON(&data)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	if data.Lid == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "lid is required"})
+		return
+	}
+
+	resp, err := u.userService.ResolveLid(data, instance)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": resp})
 }
 
 func NewUserHandler(

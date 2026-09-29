@@ -42,6 +42,7 @@ type SendService interface {
 	SendMediaUrl(data *MediaStruct, instance *instance_model.Instance) (*MessageSendStruct, error)
 	SendMediaFile(data *MediaStruct, fileData []byte, instance *instance_model.Instance) (*MessageSendStruct, error)
 	SendPoll(data *PollStruct, instance *instance_model.Instance) (*MessageSendStruct, error)
+	SendPollVote(data *PollVoteStruct, instance *instance_model.Instance) (*MessageSendStruct, error)
 	SendSticker(data *StickerStruct, instance *instance_model.Instance) (*MessageSendStruct, error)
 	SendLocation(data *LocationStruct, instance *instance_model.Instance) (*MessageSendStruct, error)
 	SendContact(data *ContactStruct, instance *instance_model.Instance) (*MessageSendStruct, error)
@@ -128,6 +129,27 @@ type MediaStruct struct {
 	FormatJid       *bool        `json:"formatJid,omitempty"`
 	Quoted          QuotedStruct `json:"quoted"`
 	ForwardingScore *uint32      `json:"forwardingScore,omitempty"`
+	// ViewOnce sends image, video, audio or video-note media that disappears
+	// after the recipient opens it once. Documents do not support it.
+	ViewOnce bool `json:"viewOnce,omitempty"`
+}
+
+// applyViewOnce flags the media of msg as view-once when requested. It is a
+// no-op for media types that do not support it (documents) and when disabled.
+func applyViewOnce(msg *waE2E.Message, viewOnce bool) {
+	if !viewOnce || msg == nil {
+		return
+	}
+	switch {
+	case msg.ImageMessage != nil:
+		msg.ImageMessage.ViewOnce = proto.Bool(true)
+	case msg.VideoMessage != nil:
+		msg.VideoMessage.ViewOnce = proto.Bool(true)
+	case msg.AudioMessage != nil:
+		msg.AudioMessage.ViewOnce = proto.Bool(true)
+	case msg.PtvMessage != nil:
+		msg.PtvMessage.ViewOnce = proto.Bool(true)
+	}
 }
 
 type PollStruct struct {
@@ -1215,6 +1237,8 @@ func (s *sendService) sendMediaFileWithRetry(data *MediaStruct, fileData []byte,
 			return nil, errors.New("invalid media type")
 		}
 
+		applyViewOnce(media, data.ViewOnce)
+
 		message, err := s.SendMessage(instance, media, mediaType, &SendDataStruct{
 			Id:              data.Id,
 			Number:          data.Number,
@@ -1524,6 +1548,8 @@ func (s *sendService) sendMediaUrlWithRetry(data *MediaStruct, instance *instanc
 		default:
 			return nil, errors.New("invalid media type")
 		}
+
+		applyViewOnce(media, data.ViewOnce)
 
 		messageStart := time.Now()
 		message, err := s.SendMessage(instance, media, mediaType, &SendDataStruct{
@@ -2623,6 +2649,8 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 			isMedia = true
 		case "PollCreationMessage":
 			msg.PollCreationMessage.ContextInfo = &waE2E.ContextInfo{}
+		case "PollUpdateMessage":
+			// A poll vote carries no ContextInfo.
 		case "StickerMessage":
 			msg.StickerMessage.ContextInfo = &waE2E.ContextInfo{}
 		case "LocationMessage":
