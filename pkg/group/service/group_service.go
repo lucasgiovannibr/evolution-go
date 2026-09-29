@@ -28,7 +28,7 @@ type GroupService interface {
 	SetGroupName(data *SetGroupNameStruct, instance *instance_model.Instance) error
 	SetGroupDescription(data *SetGroupDescriptionStruct, instance *instance_model.Instance) error
 	CreateGroup(data *CreateGroupStruct, instance *instance_model.Instance) (gin.H, error)
-	UpdateParticipant(data *AddParticipantStruct, instance *instance_model.Instance) error
+	UpdateParticipant(data *AddParticipantStruct, instance *instance_model.Instance) ([]types.GroupParticipant, error)
 	UpdateGroupSettings(data *UpdateGroupSettingsStruct, instance *instance_model.Instance) error
 	GetGroupRequestParticipants(data *GetGroupRequestParticipantsStruct, instance *instance_model.Instance) ([]EnrichedGroupParticipantRequest, error)
 	UpdateGroupRequestParticipants(data *UpdateGroupRequestParticipantsStruct, instance *instance_model.Instance) ([]types.GroupParticipant, error)
@@ -382,10 +382,10 @@ func (g *groupService) CreateGroup(data *CreateGroupStruct, instance *instance_m
 	return response, nil
 }
 
-func (g *groupService) UpdateParticipant(data *AddParticipantStruct, instance *instance_model.Instance) error {
+func (g *groupService) UpdateParticipant(data *AddParticipantStruct, instance *instance_model.Instance) ([]types.GroupParticipant, error) {
 	client, err := g.ensureClientConnected(instance.Id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	var participants []types.JID
@@ -393,19 +393,22 @@ func (g *groupService) UpdateParticipant(data *AddParticipantStruct, instance *i
 		recipient, ok := utils.ParseJID(participant)
 		if !ok {
 			g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-			return errors.New("invalid phone number")
+			return nil, errors.New("invalid phone number")
 		}
 		// Participant JIDs go into raw group IQ attributes: no "+" prefix.
 		participants = append(participants, utils.CanonicalJID(recipient))
 	}
 
-	_, err = client.UpdateGroupParticipants(context.Background(), data.GroupJID, participants, data.Action)
+	// The per-participant results carry the outcome (e.g. 404 not on WhatsApp, 403
+	// not allowed): they used to be discarded, so adding a non-existent number
+	// answered "success".
+	results, err := client.UpdateGroupParticipants(context.Background(), data.GroupJID, participants, data.Action)
 	if err != nil {
-		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error create group: %v", instance.Id, err)
-		return err
+		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error updating group participants: %v", instance.Id, err)
+		return nil, err
 	}
 
-	return nil
+	return results, nil
 }
 
 func (g *groupService) GetMyGroups(instance *instance_model.Instance) ([]types.GroupInfo, error) {
