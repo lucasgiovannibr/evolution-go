@@ -1,9 +1,12 @@
 package webhook_producer
 
 import (
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -18,7 +21,24 @@ func newTestProducer(t *testing.T, timeout time.Duration) *webhookProducer {
 	return &webhookProducer{
 		loggerWrapper: logger_wrapper.NewLoggerManager(cfg),
 		httpClient:    &http.Client{Timeout: timeout},
+		maxEvents:     1000,
+		maxBytes:      64 << 20,
+		workers:       1,
+		backoff:       []time.Duration{time.Millisecond},
+		queues:        map[string]*destQueue{},
 	}
+}
+
+func waitFor(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("timed out waiting for %s", what)
 }
 
 // A receiver that never answers must not hold the delivery forever.
@@ -57,7 +77,7 @@ func TestSendWebhookLimitsTheResponseRead(t *testing.T) {
 }
 
 // A failing receiver is retried, and there is no wait after the last attempt.
-func TestSendWebhookWithRetryDoesNotSleepAfterTheLastAttempt(t *testing.T) {
+func TestSendWithRetryDoesNotSleepAfterTheLastAttempt(t *testing.T) {
 	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hits.Add(1)
@@ -66,15 +86,205 @@ func TestSendWebhookWithRetryDoesNotSleepAfterTheLastAttempt(t *testing.T) {
 	defer srv.Close()
 
 	p := newTestProducer(t, 5*time.Second)
+	p.backoff = []time.Duration{150 * time.Millisecond}
 	start := time.Now()
-	p.sendWebhookWithRetry(srv.URL, []byte(`{}`), 3, 150*time.Millisecond, "u")
+	ok := p.sendWithRetry(srv.URL, []byte(`{}`), 3, "u")
 	elapsed := time.Since(start)
 
-	if hits.Load() != 3 {
-		t.Fatalf("hits = %d, want 3", hits.Load())
+	if ok || hits.Load() != 3 {
+		t.Fatalf("ok=%v hits=%d, want failure after 3 attempts", ok, hits.Load())
 	}
-	// two waits between three attempts (300ms), not three
-	if elapsed < 250*time.Millisecond || elapsed > 420*time.Millisecond {
+	// two waits between three attempts (2 x ~150-180ms), not three
+	if elapsed < 280*time.Millisecond || elapsed > 520*time.Millisecond {
 		t.Fatalf("elapsed %v, want about 300ms", elapsed)
+	}
+}
+
+// With one worker the events reach the receiver in the order they were produced.
+func TestQueueDeliversInOrderWithOneWorker(t *testing.T) {
+	var mu sync.Mutex
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		b := make([]byte, 16)
+		n, _ := r.Body.Read(b)
+		mu.Lock()
+		got = append(got, string(b[:n]))
+		mu.Unlock()
+	}))
+	defer srv.Close()
+
+	p := newTestProducer(t, 5*time.Second)
+	p.url = srv.URL
+	for i := 0; i < 50; i++ {
+		_ = p.Produce("inst.event", []byte(fmt.Sprintf("%03d", i)), "", "u")
+	}
+	waitFor(t, "delivery", func() bool { mu.Lock(); defer mu.Unlock(); return len(got) == 50 })
+
+	for i, v := range got {
+		if v != fmt.Sprintf("%03d", i) {
+			t.Fatalf("event %d arrived as %q", i, v)
+		}
+	}
+	waitFor(t, "queue to be released", func() bool { return p.WebhookStats().Destinations == 0 })
+	if st := p.WebhookStats(); st.Sent != 50 || st.Dropped != 0 || st.Failed != 0 {
+		t.Fatalf("%+v", st)
+	}
+}
+
+// A receiver that is down cannot make the queue, or the goroutines, grow without limit:
+// the oldest events are dropped and counted.
+func TestQueueIsBoundedAndDropsTheOldest(t *testing.T) {
+	release := make(chan struct{})
+	var mu sync.Mutex
+	var got []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		<-release
+		b := make([]byte, 16)
+		n, _ := r.Body.Read(b)
+		mu.Lock()
+		got = append(got, string(b[:n]))
+		mu.Unlock()
+	}))
+	defer srv.Close()
+
+	p := newTestProducer(t, 30*time.Second)
+	p.url = srv.URL
+	p.maxEvents = 3
+
+	before := runtime.NumGoroutine()
+	for i := 0; i < 500; i++ {
+		_ = p.Produce("inst.event", []byte(fmt.Sprintf("%03d", i)), "", "u")
+	}
+
+	waitFor(t, "the first event to be in flight", func() bool { return p.WebhookStats().InFlight == 1 })
+	st := p.WebhookStats()
+	if st.Pending > 3 {
+		t.Fatalf("pending = %d, the limit is 3", st.Pending)
+	}
+	if st.Dropped != 500-1-3 {
+		t.Fatalf("dropped = %d, want %d", st.Dropped, 500-1-3)
+	}
+	if grown := runtime.NumGoroutine() - before; grown > 25 {
+		t.Fatalf("%d goroutines more than before: the queue must not create one per event", grown)
+	}
+
+	close(release)
+	waitFor(t, "drain", func() bool { return p.WebhookStats().Destinations == 0 })
+
+	mu.Lock()
+	defer mu.Unlock()
+	// the event that was in flight (whichever the worker picked first) and the three
+	// newest; everything in between was dropped
+	if len(got) != 4 || got[1] != "497" || got[2] != "498" || got[3] != "499" {
+		t.Fatalf("delivered %v: the in-flight event and the three newest were expected", got)
+	}
+}
+
+func TestQueueIsBoundedInBytesToo(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-release }))
+	defer srv.Close()
+	defer close(release)
+
+	p := newTestProducer(t, 30*time.Second)
+	p.url = srv.URL
+	p.maxBytes = 100
+
+	for i := 0; i < 20; i++ {
+		_ = p.Produce("inst.event", []byte(strings.Repeat("x", 40)), "", "u")
+	}
+	waitFor(t, "in flight", func() bool { return p.WebhookStats().InFlight == 1 })
+	if st := p.WebhookStats(); st.PendingBytes > 100 || st.Dropped == 0 {
+		t.Fatalf("%+v", st)
+	}
+}
+
+// After an event exhausted its retries the destination is down: the events behind it
+// get one attempt each, and a success brings the full retries back.
+func TestQueueDegradesAndRecovers(t *testing.T) {
+	var fail atomic.Bool
+	fail.Store(true)
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hits.Add(1)
+		if fail.Load() {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer srv.Close()
+
+	p := newTestProducer(t, 5*time.Second)
+	p.url = srv.URL
+	p.backoff = []time.Duration{time.Millisecond, time.Millisecond} // 3 attempts per event
+
+	for i := 0; i < 3; i++ {
+		_ = p.Produce("inst.event", []byte("e"), "", "u")
+	}
+	waitFor(t, "drain", func() bool { return p.WebhookStats().Destinations == 0 })
+
+	// first event: 3 attempts; the other two: 1 attempt each
+	if got := hits.Load(); got != 5 {
+		t.Fatalf("hits = %d, want 5 (3 + 1 + 1)", got)
+	}
+	if st := p.WebhookStats(); st.Failed != 3 || st.Sent != 0 {
+		t.Fatalf("%+v", st)
+	}
+
+	// once idle the queue is gone and a recovered receiver gets its events again
+	fail.Store(false)
+	_ = p.Produce("inst.event", []byte("e"), "", "u")
+	waitFor(t, "delivery", func() bool { return p.WebhookStats().Sent == 1 })
+}
+
+// The same URL as the global one is not delivered twice, and a queue name without a
+// dot is ignored as before.
+func TestProduceDeduplicatesAndIgnoresBadQueueNames(t *testing.T) {
+	var hits atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(1) }))
+	defer srv.Close()
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { hits.Add(100) }))
+	defer other.Close()
+
+	p := newTestProducer(t, 5*time.Second)
+	p.url = srv.URL
+
+	_ = p.Produce("nodot", []byte("e"), srv.URL, "u")
+	_ = p.Produce("inst.event", []byte("e"), srv.URL, "u")   // same as global: once
+	_ = p.Produce("inst.event", []byte("e"), other.URL, "u") // global + the other one
+	waitFor(t, "delivery", func() bool { return p.WebhookStats().Sent == 3 })
+	time.Sleep(50 * time.Millisecond)
+
+	// the global URL got two events, the other one got one (worth 100)
+	if got := hits.Load(); got != 102 {
+		t.Fatalf("hits = %d, want 102", got)
+	}
+}
+
+// Several workers deliver a burst faster than one, within the limit.
+func TestQueueUsesSeveralWorkers(t *testing.T) {
+	var cur, peak atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := cur.Add(1)
+		for {
+			old := peak.Load()
+			if n <= old || peak.CompareAndSwap(old, n) {
+				break
+			}
+		}
+		time.Sleep(30 * time.Millisecond)
+		cur.Add(-1)
+	}))
+	defer srv.Close()
+
+	p := newTestProducer(t, 5*time.Second)
+	p.url = srv.URL
+	p.workers = 4
+	for i := 0; i < 20; i++ {
+		_ = p.Produce("inst.event", []byte("e"), "", "u")
+	}
+	waitFor(t, "delivery", func() bool { return p.WebhookStats().Sent == 20 })
+
+	if got := peak.Load(); got < 2 || got > 4 {
+		t.Fatalf("peak concurrency %d, want between 2 and 4", got)
 	}
 }

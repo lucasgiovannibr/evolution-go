@@ -68,6 +68,7 @@ type WhatsmeowService interface {
 	ReachoutTimelock(instanceId string) *ReachoutTimelockStatus
 	RuntimeInfo(instanceId string) RuntimeInfo
 	RuntimeInfos() []RuntimeInfo
+	WebhookStats() *producer_interfaces.WebhookStats
 	ChatDisappearingSeconds(instanceId string, chat types.JID) (uint32, bool)
 	RememberChatDisappearing(instanceId string, chat types.JID, seconds uint32)
 	GetPollService() poll_service.PollService // NOVO: Acesso ao serviço de polls
