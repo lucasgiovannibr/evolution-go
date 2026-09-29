@@ -212,6 +212,15 @@ func (u *userService) GetUser(ctx context.Context, data *CheckUserStruct, instan
 		if !ok {
 			return nil, errors.New("invalid phone number")
 		}
+		// The usync query is a RAW IQ: the "+" that CreateJID adds makes WhatsApp
+		// ignore it and the request only ends at the timeout (see utils.CanonicalJID).
+		jid = utils.CanonicalJID(jid).ToNonAD()
+		// Prefer the phone-number JID when the store knows the mapping for a @lid.
+		if jid.Server == types.HiddenUserServer && client.Store.LIDs != nil {
+			if pn, lidErr := client.Store.LIDs.GetPNForLID(ctx, jid); lidErr == nil && !pn.IsEmpty() {
+				jid = utils.CanonicalJID(pn).ToNonAD()
+			}
+		}
 		jids = append(jids, jid)
 	}
 
