@@ -4,6 +4,10 @@ name: Build and Publish Docker Image
 # (ghcr.io/<owner>/<repo>) using the built-in GITHUB_TOKEN. The upstream
 # workflow pushed to Docker Hub (evoapicloud/evolution-go) with secrets that do
 # not exist in a fork.
+#
+# Run it manually (Actions > Run workflow) on any branch to get a test image:
+# non-main branches are tagged with the branch name and short sha, and never
+# overwrite :latest.
 
 on:
   push:
@@ -35,9 +39,10 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ github.repository }}
           tags: |
-            type=raw,value=${{ steps.version.outputs.version }}
+            type=raw,value=${{ steps.version.outputs.version }},enable=${{ github.ref == 'refs/heads/main' }}
             type=sha
-            type=raw,value=latest,enable=${{ !contains(steps.version.outputs.version, '-beta') }}
+            type=ref,event=branch,enable=${{ github.ref != 'refs/heads/main' }}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' && !contains(steps.version.outputs.version, '-beta') }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3

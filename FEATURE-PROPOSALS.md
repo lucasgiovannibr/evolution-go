@@ -41,10 +41,9 @@ Escala: **Esforço** = P (poucas linhas) · M · G (dias). **Recomendação**: �
 | 21 | **UI de chat no "sender"** (enviar/receber em tela) | PR [#182](https://github.com/evolution-foundation/evolution-go/pull/182) | 1,6 mil linhas | Ferramenta de teste; não é núcleo da API | ✖ por ora |
 | 22 | **Manager: drawer mobile e ações visíveis em touch** | PR [#184](https://github.com/evolution-foundation/evolution-go/pull/184) | 5 arquivos de UI | Melhoria de usabilidade, baixo risco; não avaliei visualmente | ◐ (abrir o manager no celular antes de decidir) |
 
-## Documentação a fazer
+## Documentação pendente
 
-- Documentar `POST /group/settings` (ações `announcement`, `not_announcement`, `locked`, `unlocked`, `approval_on/off`, `admin_add`, `all_member_add`) — resolve as issues #42/#98/#113.
-- Regenerar o swagger (`/group/description` está registrada e não aparece).
+- `POST /group/settings` e o campo `quoted.text` já estão no wiki. Falta o swagger: o `swag init` reescreve ~1.000 linhas e remove as rotas de licença, então precisa ser ajustado antes de regenerar (inclui `/group/description`, que está registrada e não aparece).
 - Documentar o comportamento de `/chat/archive` (usa `chat`, não `number`) e o status "TODO: not working" das rotas de archive.
 - Botões e listas em conta pessoal: registrar que dependem do whatsmeow/WhatsApp (ver FORK-TRIAGE.md §3) até haver validação.
 - README: instruções de Windows (PRs #201/#202 são um começo, mas duplicam o bloco "Setup").
