@@ -454,11 +454,18 @@ func (i instances) GetQr(instance *instance_model.Instance) (*QrcodeStruct, erro
 	if store := i.whatsmeowService.PasskeyCeremonyStore(); store != nil {
 		if token, state, ok := store.StateByInstance(instance.Id); ok {
 			logger.LogInfo("[%s] Passkey ceremony active (stage=%s) — returning passkey info instead of QR", instance.Id, state.Stage)
-			return &QrcodeStruct{
+			resp := &QrcodeStruct{
 				PasskeyStage:   state.Stage,
 				PasskeyCode:    state.Code,
 				PasskeyOpenURL: buildPasskeyOpenURL(token),
-			}, nil
+			}
+			// Keep returning the latest QR when there is one, so integrations that
+			// render their own QR screen do not lose it while the passkey fields are
+			// present (#148). During a ceremony it is normally empty.
+			if parts := strings.Split(instance.Qrcode, "|"); len(parts) >= 2 {
+				resp.Qrcode, resp.Code = parts[0], parts[1]
+			}
+			return resp, nil
 		}
 	}
 
