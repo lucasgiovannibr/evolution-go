@@ -53,6 +53,14 @@ and pull requests in `FORK-TRIAGE.md`.
 - `POST /user/contacts`: optional `saveOnPrimaryAddressbook` (contacts cannot be
   removed through the API).
 
+### Operational events from whatsmeow
+- `ReachoutTimelock`, `StreamError` and `ClientOutdated` are now published under the
+  `CONNECTION` subscription and shown in `GET /instance/{id}/runtime`.
+- The bare "server returned error 463" of a send now explains the reachout restriction
+  (and until when, if WhatsApp said so); the original error stays in the text.
+- On `ClientOutdated` (405) the cached WhatsApp Web version is dropped so the next
+  reconnection fetches the current one instead of retrying the refused version.
+
 ### Diagnostics
 - `GET /health` (readiness: databases with a 2s bound, `slow`/`error` states, 503 when a
   database is down) next to the unchanged `GET /server/ok` (liveness).

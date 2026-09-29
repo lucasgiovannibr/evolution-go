@@ -27,6 +27,7 @@ Documentação dos endpoints: [`docs/wiki/guias-api/api-fork-additions.md`](docs
 | **Health check** (`GET /health`) | Sugestão 24, issue #175 | Prontidão: ping de cada banco (2 s, em paralelo), `slow`/`error`, 503 com banco fora. `/server/ok` segue como liveness | ✅ 503 com o Postgres parado, volta a 200 sozinho |
 | `ENABLE_PPROF` (`/debug/pprof`, chave global, desligado por padrão) | Necessidade do diagnóstico | Permite ver as pilhas; foi ele que mostrou o vazamento do logger | ✅ |
 | Liberar o logger de instância apagada | Achado com o pprof | 1 arquivo aberto por instância criada nunca era fechado. Limite: a goroutine do `lumberjack` não pode ser parada (1 por instância já criada) | ✅ descritores estáveis em 6 ciclos |
+| **Eventos `ReachoutTimelock`, `StreamError` e `ClientOutdated`** | Levantamento do whatsmeow, sugestões 30 e 31 (issues #50, #124, #115, #185, 405) | Publicados sob `CONNECTION`, no diagnóstico do runtime; o erro 463 do envio agora explica a restrição e até quando; o 405 descarta o cache da versão | ✅ testes de ponta a ponta (evento → estado → webhook → assinante); ❌ os eventos reais não puderam ser provocados (dependem de o WhatsApp restringir a conta ou recusar a versão) |
 
 ## 2. Propostas ainda em aberto
 
@@ -52,7 +53,7 @@ Documentação dos endpoints: [`docs/wiki/guias-api/api-fork-additions.md`](docs
 
 ## 3. Sugestões novas (ainda não implementadas)
 
-As duas primeiras (diagnóstico do runtime e health check) já foram feitas (§1). As de whatsmeow vêm do levantamento em [`docs/WHATSMEOW-CAPABILITIES.md`](docs/WHATSMEOW-CAPABILITIES.md).
+As sugestões 23 e 24 (diagnóstico do runtime e health check) e as 30 e 31 (eventos operacionais do whatsmeow) já foram feitas (§1). As de whatsmeow vêm do levantamento em [`docs/WHATSMEOW-CAPABILITIES.md`](docs/WHATSMEOW-CAPABILITIES.md).
 
 | # | Sugestão | Por quê | Esforço | Recomendação |
 |---|---|---|---|---|
@@ -61,8 +62,6 @@ As duas primeiras (diagnóstico do runtime e health check) já foram feitas (§1
 | 27 | **Reativar o agendador de presença quando `alwaysOnline` é ligado em tempo de execução** | Hoje ele só nasce no evento `Connected`; ligar depois não tem efeito até reconectar | P | ◐ |
 | 28 | **Remover contato via API** | Impossível hoje: o encoder de app state do whatsmeow só gera `SET` (conferido no código). Detalhes e outros limites duros em `docs/WHATSMEOW-CAPABILITIES.md` §2 | — | ✖ (depende da lib) |
 | 29 | **Regenerar o swagger sem regressão** (o `swag init` reescreve ~1.000 linhas e remove as rotas de licença) | Documentação da API desatualizada (`/group/description`, `/group/settings`, novos endpoints) | M | ◐ |
-| 30 | **Tratar `NotifyAccountReachoutTimelock`** (conta restrita para iniciar conversas): publicar como evento, gravar o estado e devolver mensagem clara no lugar de "463" | É a causa provável do 463 (#50, #124, #115); o evento traz `IsActive` e `TimeEnforcementEnds` | P/M | ▶ |
-| 31 | **Tratar `StreamError` e `ClientOutdated`**: registrar, publicar como evento de conexão e mostrar no diagnóstico | `StreamError` é o caso do #185; `ClientOutdated` é o 405 da versão | P | ▶ |
 | 32 | **Retorno de falha de pareamento** (`PairError`, `QRScannedWithoutMultidevice`, `ManualLoginReconnect`) | Hoje o usuário fica sem retorno quando o pareamento falha | P | ◐ |
 | 33 | **Publicar mudanças de estado de chat feitas em outro aparelho** (`Mute`, `Pin`, `Star`, `MarkChatAsRead`, `DeleteChat`, `ClearChat`, `DeleteForMe`) | Só `Archive` é publicado; CRMs perdem essas mudanças | M | ◐ |
 | 34 | **Timer de mensagens temporárias**: expor `SetDisappearingTimer`/`SetDefaultDisappearingTimer` e aprender o timer por chat (`ContextInfo.Expiration`, `GroupInfo.Ephemeral`) | Resolve o #79; a lib não permite *ler* o timer, só aprendê-lo | M | ◐ |
