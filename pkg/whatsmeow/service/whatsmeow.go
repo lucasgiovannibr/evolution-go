@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -264,6 +265,17 @@ type ProxyConfig struct {
 	Username string `json:"username"`
 }
 
+// recoverAndLog must be used as `defer recoverAndLog(...)` at the top of code that
+// runs in its own goroutine. whatsmeow recovers panics in its event dispatch, but
+// goroutines started by this service (webhook fan-out, reconnects, client
+// supervisors) are outside that safety net: a panic in any of them killed the
+// whole process, and with it every instance.
+func recoverAndLog(lw *logger_wrapper.LoggerManager, instanceID, where string) {
+	if r := recover(); r != nil {
+		lw.GetLogger(instanceID).LogError("[%s] panic recovered in %s: %v\n%s", instanceID, where, r, debug.Stack())
+	}
+}
+
 // reconnecting holds the instances that currently have a ReconnectClient in
 // flight. whatsmeow can deliver two Disconnected events for the same drop within
 // the same second; each one used to start its own reconnect, and the two raced
@@ -272,6 +284,7 @@ type ProxyConfig struct {
 var reconnecting sync.Map
 
 func (w whatsmeowService) ReconnectClient(instanceId string) error {
+	defer recoverAndLog(w.loggerWrapper, instanceId, "ReconnectClient")
 	if _, busy := reconnecting.LoadOrStore(instanceId, struct{}{}); busy {
 		w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Reconnection already in progress, ignoring duplicate request", instanceId)
 		return nil
@@ -474,6 +487,7 @@ func (w whatsmeowService) getAuthContainer() (*sqlstore.Container, error) {
 }
 
 func (w whatsmeowService) StartClient(cd *ClientData) {
+	defer recoverAndLog(w.loggerWrapper, cd.Instance.Id, "StartClient")
 
 	w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("Starting websocket connection to Whatsapp for user '%s'", cd.Instance.Id)
 
@@ -2359,6 +2373,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 }
 
 func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueName string, jsonData []byte) {
+	defer recoverAndLog(w.loggerWrapper, instance.Id, "CallWebhook")
 	var data map[string]interface{}
 	if err := json.Unmarshal(jsonData, &data); err != nil {
 		return
@@ -2772,6 +2787,7 @@ func globalEventTypeFor(eventType string) string {
 }
 
 func (w *whatsmeowService) SendToGlobalQueues(eventType string, payload []byte, userId string) {
+	defer recoverAndLog(w.loggerWrapper, userId, "SendToGlobalQueues")
 	w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Starting sendToGlobalQueues for event: %s", userId, eventType)
 
 	// AMQP: AMQP_SPECIFIC_EVENTS tem prioridade sobre AMQP_GLOBAL_EVENTS
