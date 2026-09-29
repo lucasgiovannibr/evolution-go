@@ -9,16 +9,19 @@ Foco do fork: **corrigir, melhorar e ajustar**. O que é funcionalidade nova est
 - `main` do fork **idêntica** ao `upstream/main` (commit `9337afc`, versão `0.7.2`). Nada a atualizar.
 - O upstream tinha **61 issues + 61 PRs abertos** (todos analisados aqui).
 - A branch `upstream/develop` está *atrás* da `main` (VERSION `0.7.1`) — vários PRs abertos apontam para ela (#90, #132, #150, #159–#163, #177, #198) e por isso estão desalinhados com a `main`.
-- Observação importante sobre o fluxo do upstream: os commits da `main` pública são `sync: 0.7.x from main`, feitos por um bot — ela é um **espelho** de um repositório interno. Isso explica PRs parados há meses: o GitHub não lista nenhum PR como *merged*; os PRs #33 e #91 (AlwaysOnline) foram apenas **fechados** em 03/07 e a correção chegou à `main` por outro caminho. **O fork é o lugar prático para integrar correções.**
+- Observação importante sobre o fluxo do upstream: os commits da `main` pública são `sync: 0.7.x from main`, feitos por um bot — ela é um **espelho** de um repositório interno. Isso explica PRs parados há meses (o PR #33, citado em várias issues, nunca entrou). **O fork é o lugar prático para integrar correções.**
 
-## 2. O que foi entregue (nada foi enviado ao GitHub)
+## 2. O que foi entregue
 
-Dois branches locais, ambos com build, `go vet` e `go test -race ./...` verdes:
+Tudo foi enviado **somente ao fork** (`origin`). O remote `upstream` está com o push desabilitado localmente (`DISABLED_NEVER_PUSH_TO_UPSTREAM`) e `remote.pushDefault=origin`; nenhum PR foi aberto no repositório oficial.
 
-| Branch | Conteúdo |
+| Onde | Situação |
 |---|---|
-| `triage/fixes` | Correções abaixo, um commit por tema. Base: `main`. |
-| `deps/whatsmeow-bump` | `triage/fixes` + bump do `whatsmeow` para `20260929` (exige Go 1.26; Dockerfile atualizado; única quebra de API: `SetStatusMessage`). **Separado de propósito**: muda o protocolo e precisa de teste com sessão real. |
+| `main` do fork | Contém `triage/fixes` (PR #1 do próprio fork, mesclado). CI verde e imagem publicada em `ghcr.io/lucasgiovannibr/evolution-go` |
+| `triage/round2` | Segunda rodada (`quoted.text`, QR + passkey, docs do wiki, tags do workflow) |
+| `deps/whatsmeow-bump` | `triage/fixes` + bump do `whatsmeow` para `20260929` (exige Go 1.26; única quebra de API: `SetStatusMessage`). **Não mesclado de propósito**: muda o protocolo e precisa de teste com sessão real. CI verde |
+
+Build, `go vet` e `go test -race ./...` passam em todos.
 
 ### Correções em `triage/fixes`
 
@@ -93,14 +96,30 @@ Dois branches locais, ambos com build, `go vet` e `go test -race ./...` verdes:
 - Os itens 🟡 abaixo dependem de reprodução ao vivo.
 - O Go não está instalado nesta máquina; compilei em containers `golang:1.25` e `golang:1.26` (imagens baixadas com a sua autorização).
 
-## 5. Próximos passos sugeridos
+## 5. Situação atual e o que ainda falta
 
-1. Revisar e, se estiver ok, enviar `triage/fixes` ao fork (`git push origin triage/fixes`) e abrir PR para a sua `main`. **Nada foi enviado.**
-2. Testar `deps/whatsmeow-bump` com 1–2 instâncias reais (reconexão, envio, botões/lista). Só então mesclar.
-3. Desativar ou ajustar `.github/workflows/publish_docker_image.yml` no fork: ele publica em `evoapicloud/evolution-go` a cada push na `main` e vai falhar/poluir sem as credenciais do upstream.
-4. Decidir sobre os PRs não aplicados (⏸): **#145/#154** (redesenho do ciclo de vida — resolveriam de vez a família de reconexão, mas são grandes e pedem teste ao vivo), **#197** (backoff de até 30 min), **#191**, **#192**.
-5. Documentar `POST /group/settings` e regenerar o swagger (falta `/group/description` também).
-6. Fechar/comentar no upstream as issues marcadas 🔵 e 🔁, se quiser manter o quadro limpo.
+**Feito nesta segunda etapa**
+- Correções enviadas ao fork e mescladas na `main` do fork (PR #1); CI (build, vet, `test -race`) roda em todo push/PR.
+- `publish_docker_image.yml` reescrito: publica no **GHCR do fork** com o `GITHUB_TOKEN` (o original empurrava para o Docker Hub do upstream com segredos que não existem aqui). Só a `main` recebe `latest`; qualquer outro branch pode ser publicado manualmente (Actions → Run workflow) com tag do branch e sha, sem tocar em `latest`. O build da `main` foi confirmado.
+- `quoted.text` opcional (#189), QR junto do passkey (#148), `/group/settings` e `quoted` documentados no wiki.
+
+**Ainda falta (e por quê)**
+
+| Item | Motivo de não ter sido feito |
+|---|---|
+| Botões e lista (#59 #71 #110 #170 #204) | Só valida em aparelho. Testar `deps/whatsmeow-bump` (a imagem sai pelo workflow manual) e, se o whatsmeow novo gerar o `<biz>`, remover os wrappers manuais em `send_service.go` (§3) |
+| Erro 463 em contatos frios (#50 #124) | Depende do whatsmeow novo **e** de observação em produção; o relato do #50 indica que não vai a zero só com o bump |
+| Redesenho do ciclo de vida (PRs #145/#154), backoff (#197), #191, #192 | Grandes ou dependentes de comportamento ao vivo; recomendável só com instâncias reais para teste |
+| #32 (número fixo "not registered") | A checagem já tenta com e sem formatação; a recusa vem do `IsOnWhatsApp`. Sem log real não dá para corrigir com segurança. Workaround: `"formatJid": false` |
+| #69 (carrossel em 2 balões) | O código já envia body/footer dentro do `InteractiveMessage`; parece comportamento do cliente |
+| #107 (passkey preso em conta Business) | Comportamento do servidor WhatsApp |
+| Swagger | O `swag init` reescreve ~1.000 linhas e remove as rotas de licença; precisa ser ajustado com cuidado antes de regenerar |
+| Features (FEATURE-PROPOSALS.md) | Aguardam sua decisão |
+| `conteúdo da citação` automático | Exigiria persistir mensagens (`DATABASE_SAVE_MESSAGES`) |
+
+**Para você**
+1. Rodar o workflow manual em `deps/whatsmeow-bump` e testar com 1–2 instâncias reais; se estiver estável, mesclar (PR dentro do fork).
+2. Escolher quais propostas de FEATURE-PROPOSALS.md valem a pena.
 
 ## 6. Resumo numérico
 
@@ -108,12 +127,12 @@ Dois branches locais, ambos com build, `go vet` e `go test -race ./...` verdes:
 
 | Status | Qtde |
 |---|---|
-| ✅ Corrigido | 27 |
-| 🟡 Parcial / validar | 6 |
+| ✅ Corrigido | 28 |
+| 🟡 Parcial / validar | 7 |
 | 🟣 Depende do whatsmeow | 6 |
 | 📝 Proposta | 6 |
 | 🔵 Já na main | 5 |
-| 🔍 Investigar | 5 |
+| 🔍 Investigar | 3 |
 | 🔁 Duplicada | 4 |
 | ⚪ Sem ação de código | 2 |
 
@@ -138,7 +157,7 @@ Legenda de PRs: **Aplicado** = mesclado (com adaptações ao `safemap`); **Reimp
 | [#25](https://github.com/evolution-foundation/evolution-go/issues/25) | The uploaded image will only appear after clicking to download it. | ✅ Corrigido | Thumbnail JPEG já existia na main; agora `Width`/`Height` também vão no `ImageMessage` (mesma causa do #104). |
 | [#26](https://github.com/evolution-foundation/evolution-go/issues/26) | feat: add /send/pollVote endpoint to programmatically vote on polls | 📝 Proposta | Endpoint `POST /send/pollVote`. Ver FEATURE-PROPOSALS.md. |
 | [#32](https://github.com/evolution-foundation/evolution-go/issues/32) | erro ao enviar mensagem para numero fixo que tem whatsapp | 🔍 Investigar | Erro "not registered" com número fixo. Workaround: `"formatJid": false`. Causa exata (normalização do 9º dígito / `+` no `IsOnWhatsApp`) não reproduzida. |
-| [#42](https://github.com/evolution-foundation/evolution-go/issues/42) | UpdateGroupSettings function exists but no route is registered | 🔵 Já na main | `POST /group/settings` **já existe** na main (ações `announcement`, `not_announcement`, `locked`, `unlocked`, `approval_on/off`, `admin_add`, `all_member_add`). Falta só documentar/regenerar swagger. Rotas de *request participants* seguem sem rota (ver propostas). |
+| [#42](https://github.com/evolution-foundation/evolution-go/issues/42) | UpdateGroupSettings function exists but no route is registered | 🔵 Já na main | `POST /group/settings` **já existe** na main (ações `announcement`, `not_announcement`, `locked`, `unlocked`, `approval_on/off`, `admin_add`, `all_member_add`). Documentada no wiki (`api-groups.md`). O swagger não foi regenerado (o `swag init` gera diff enorme e remove as rotas de licença). Rotas de *request participants* seguem sem rota (ver propostas). |
 | [#45](https://github.com/evolution-foundation/evolution-go/issues/45) | [Feature] Novo endpoint POST /message/markplayed (microfone azul em áudios) | 📝 Proposta | `POST /message/markplayed` (receipt `played`). Ver propostas. |
 | [#50](https://github.com/evolution-foundation/evolution-go/issues/50) | Error 463 (NackCallerReachoutTimelocked) — tctoken/cstoken not persisted afte… | 🟣 Depende do whatsmeow | tctoken/cstoken. Depende do bump do whatsmeow (branch `deps/whatsmeow-bump`). Relato de produção em comentário indica que **463 não vai a zero** só com o bump. |
 | [#51](https://github.com/evolution-foundation/evolution-go/issues/51) | [BUG] Carousel message buttons (URL, CALL, COPY_CODE) lose their parameters d… | ✅ Corrigido | Carrossel: params dos botões agora são JSON válido; aceita `url`, `phoneNumber` e `COPY_CODE` (o payload do relato usava esses nomes e era ignorado). |
@@ -180,7 +199,7 @@ Legenda de PRs: **Aplicado** = mesclado (com adaptações ao `safemap`); **Reimp
 | [#123](https://github.com/evolution-foundation/evolution-go/issues/123) | feat(instance): expose safe proxy configuration and runtime status | 📝 Proposta | Status/config segura de proxy. Ver propostas. |
 | [#124](https://github.com/evolution-foundation/evolution-go/issues/124) | Error 463 permanent on cold sends for instances paired before v0.7.2 — NCT sa… | 🟣 Depende do whatsmeow | NCT salt não preenchido em instâncias pareadas antes da 0.7.2. Comentário de outro usuário discorda da causa. Depende do bump do whatsmeow; validar. |
 | [#146](https://github.com/evolution-foundation/evolution-go/issues/146) | Expose SubscribePresence (contact online) + decrypt edited messages (new text… | ✅ Corrigido | Parte 2 (edição criptografada) corrigida junto com #92. Parte 1 (`SubscribePresence`) → PR #152, ver propostas. |
-| [#148](https://github.com/evolution-foundation/evolution-go/issues/148) | QR Code Genetration not working ( version 0.7.2) | 🔍 Investigar | `/instance/qr` devolve link de passkey em vez do base64 para contas que exigem passkey (comportamento novo da 0.7.2). Sugestão: devolver também o QR quando existir. Ver propostas. |
+| [#148](https://github.com/evolution-foundation/evolution-go/issues/148) | QR Code Genetration not working ( version 0.7.2) | ✅ Corrigido | `/instance/qr` agora devolve também `qrcode`/`code` junto dos campos de passkey quando existir QR. Que a conta exija passkey é comportamento do WhatsApp. |
 | [#165](https://github.com/evolution-foundation/evolution-go/issues/165) | Postgres connection leak: StartClient creates a new sqlstore.Container per (r… | ✅ Corrigido | Leak de pool Postgres (mesma correção do #106). |
 | [#170](https://github.com/evolution-foundation/evolution-go/issues/170) | '[Bug] /send/list and /send/button fail with "server returned error 405" — le… | 🟣 Depende do whatsmeow | 405 em `/send/list` e `/send/button`. Ver "Botões e listas". |
 | [#172](https://github.com/evolution-foundation/evolution-go/issues/172) | Problem with passcode(webauthn) | ⚪ Sem ação de código | Pedido de uso do passkey helper; ver #173 (melhoria da extensão) e docs de passkey. |
@@ -190,7 +209,7 @@ Legenda de PRs: **Aplicado** = mesclado (com adaptações ao `safemap`); **Reimp
 | [#185](https://github.com/evolution-foundation/evolution-go/issues/185) | Cliente morre após stream:error <ack class="status" type="media"/> e nunca re… | 🟡 Parcial / validar | Cliente morto após `stream:error` desconhecido. Coberto por: KeepAlive recovery (PR #126) + whatsmeow novo no branch `deps/whatsmeow-bump`. |
 | [#186](https://github.com/evolution-foundation/evolution-go/issues/186) | QR Code stop generating untill I restart the docker container, Postgres error | ✅ Corrigido | Consequência do leak de pool (`too many clients`). Corrigido. |
 | [#188](https://github.com/evolution-foundation/evolution-go/issues/188) | Panic (nil pointer) in ReconnectClient kills the whole process - one instance… | ✅ Corrigido | Panic nil pointer em `ReconnectClient`: maps agora seguros + reconexão duplicada da mesma instância é ignorada. |
-| [#189](https://github.com/evolution-foundation/evolution-go/issues/189) | 'quoted' reply renders an empty, non-tappable quote card ('QuotedMessage' har… | 🔍 Investigar | `QuotedMessage` fixo vazio em ~20 pontos do `send_service.go`. O card de citação só renderiza com conteúdo — precisa de decisão de desenho (ver propostas). |
+| [#189](https://github.com/evolution-foundation/evolution-go/issues/189) | 'quoted' reply renders an empty, non-tappable quote card ('QuotedMessage' har… | 🟡 Parcial / validar | Novo campo opcional `quoted.text` preenche o card da citação. Sem ele continua vazio (o conteúdo original não é guardado). Preencher automaticamente exigiria persistir mensagens. |
 | [#193](https://github.com/evolution-foundation/evolution-go/issues/193) | PICTURE / USER_ABOUT / BUTTON_CLICK are accepted in NATS_GLOBAL_EVENTS but ne… | ✅ Corrigido | `PICTURE`, `USER_ABOUT` e `BUTTON_CLICK` agora publicados no NATS/AMQP (mapeamento único). |
 | [#203](https://github.com/evolution-foundation/evolution-go/issues/203) | 0.7.2: fatal error: concurrent map writes in whatsmeowService.StartClient (ki… | ✅ Corrigido | `fatal error: concurrent map writes`: maps compartilhados agora protegidos (`safemap`) + fim da recursão do `StartClient`. |
 | [#204](https://github.com/evolution-foundation/evolution-go/issues/204) | Correção de botões e Lista Resolvido | 🟣 Depende do whatsmeow | Relator diz ter resolvido botões/lista com whatsmeow mais novo e deixando a lib gerar o nó `<biz>`; ofereceu o diff. Ver "Botões e listas". |

@@ -513,6 +513,49 @@ curl -X POST http://localhost:4000/group/description \
 
 ---
 
+### Configurações do Grupo
+
+Altera uma configuração do grupo por chamada (abrir/fechar o grupo, travar a edição de informações, aprovação de entrada e quem pode adicionar membros).
+
+**Endpoint**: `POST /group/settings`
+
+**Body**:
+```json
+{
+  "groupJid": "120363XXXXXXXXXX@g.us",
+  "action": "announcement"
+}
+```
+
+**Ações (`action`)**:
+
+| Valor | Efeito |
+|-------|--------|
+| `announcement` | Só admins enviam mensagens (grupo fechado) |
+| `not_announcement` | Todos enviam mensagens (grupo aberto) |
+| `locked` | Só admins editam nome, foto e descrição |
+| `unlocked` | Todos editam as informações do grupo |
+| `approval_on` | Novos membros precisam de aprovação de admin |
+| `approval_off` | Entrada sem aprovação |
+| `admin_add` | Só admins adicionam membros |
+| `all_member_add` | Todos adicionam membros |
+
+**Nota**: apenas admins podem alterar as configurações. Para mudar mais de uma configuração, faça uma chamada por ação.
+
+**Resposta de Sucesso (200)**:
+```json
+{
+  "message": "success"
+}
+```
+
+**Exemplo cURL**:
+```bash
+curl -X POST http://localhost:4000/group/settings   -H "Content-Type: application/json"   -H "apikey: SUA-CHAVE-API"   -d '{"groupJid": "120363XXXXXXXXXX@g.us", "action": "announcement"}'
+```
+
+---
+
 ## Meus Grupos (Admin)
 
 Lista apenas os grupos onde você é o **proprietário/criador**.

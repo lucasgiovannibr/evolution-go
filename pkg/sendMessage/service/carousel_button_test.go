@@ -49,3 +49,12 @@ func TestBuildCarouselButtonEscapesSpecialCharacters(t *testing.T) {
 		t.Fatalf("values were not preserved: %#v", m)
 	}
 }
+
+func TestQuotedMessageFor(t *testing.T) {
+	if got := quotedMessageFor(QuotedStruct{Text: "original"}).GetConversation(); got != "original" {
+		t.Fatalf("quoted text not carried: %q", got)
+	}
+	if quotedMessageFor(QuotedStruct{}) == nil {
+		t.Fatal("must keep a non-nil quoted message when no text is given")
+	}
+}
