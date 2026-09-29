@@ -1243,6 +1243,13 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			return
 		}
 
+		// Edits arrive sealed in a secretEncryptedMessage envelope. Unwrap before typing the
+		// message, so it is classified as "edit" and the webhook carries the new text.
+		// This MUST run before the LID/PN swap below: the decryption key is derived from
+		// the sender JID in the form it had on the wire, and swapping it first makes the
+		// decrypt fail with "message authentication failed" for @lid contacts.
+		mycli.unwrapSecretEncryptedEdit(evt)
+
 		// Trata o caso especial onde Sender é @lid e SenderAlt é @s.whatsapp.net
 		// Neste caso, devemos inverter: Sender e Chat devem ser @s.whatsapp.net, SenderAlt deve ser @lid
 		senderStr := evt.Info.Sender.String()
@@ -1296,10 +1303,6 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				}
 			}()
 		}
-
-		// Edits arrive sealed in a secretEncryptedMessage envelope. Unwrap before typing the
-		// message, so it is classified as "edit" and the webhook carries the new text.
-		mycli.unwrapSecretEncryptedEdit(evt)
 
 		parsedMessageType := utils.GetMessageType(evt.Message)
 		if parsedMessageType == "ignore" || strings.HasPrefix(parsedMessageType, "unknown_protocol_") {

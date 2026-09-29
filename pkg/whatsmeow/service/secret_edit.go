@@ -65,7 +65,10 @@ func (mycli *MyClient) unwrapSecretEncryptedEdit(evt *events.Message) {
 		return
 	}
 
-	client := mycli.clientPointer[mycli.userID]
+	client := mycli.clientPointer.Get(mycli.userID)
+	if client == nil {
+		client = mycli.WAClient
+	}
 	if client == nil {
 		return
 	}
@@ -85,5 +88,6 @@ func (mycli *MyClient) unwrapSecretEncryptedEdit(evt *events.Message) {
 	}
 
 	evt.Message = rebuilt
+	evt.IsEdit = true
 	mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Decrypted edited message %s targeting %s", mycli.userID, evt.Info.ID, targetKey.GetID())
 }
