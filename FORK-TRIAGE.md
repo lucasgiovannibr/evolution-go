@@ -17,9 +17,8 @@ Tudo foi enviado **somente ao fork** (`origin`). O remote `upstream` está com o
 
 | Onde | Situação |
 |---|---|
-| `main` do fork | Contém `triage/fixes` (PR #1 do próprio fork, mesclado). CI verde e imagem publicada em `ghcr.io/lucasgiovannibr/evolution-go` |
-| `triage/round2` | Segunda rodada (`quoted.text`, QR + passkey, docs do wiki, tags do workflow) |
-| `deps/whatsmeow-bump` | `triage/fixes` + bump do `whatsmeow` para `20260929` (exige Go 1.26; única quebra de API: `SetStatusMessage`). **Não mesclado de propósito**: muda o protocolo e precisa de teste com sessão real. CI verde |
+| `main` do fork | Tudo mesclado por PRs **dentro do fork** (#1–#5): correções, whatsmeow novo + Go 1.26, hardening de autenticação, ciclo de vida. CI verde; imagem em `ghcr.io/lucasgiovannibr/evolution-go` |
+| `docs/changelog` | CHANGELOG com as notas de upgrade (PR a mesclar) |
 
 Build, `go vet` e `go test -race ./...` passam em todos.
 
@@ -91,7 +90,7 @@ Build, `go vet` e `go test -race ./...` passam em todos.
 - Hoje o projeto injeta `<biz>`/`<bot biz_bot="1">` manualmente e embrulha em `DocumentWithCaptionMessage` (workaround estilo Baileys). O #110 aponta que esse wrapper, criado só para `quick_reply`, também vai nos ramos `pix` e CTA.
 - **Conclusão**: sem aparelho de teste (conta pessoal e Business) qualquer mudança seria chute. Registrei a limitação no wiki (`api-interactive.md`). Se quiser atacar, o experimento é: enviar `ListMessage` cru (sem os nós manuais) e `quick_reply` sem o wrapper, comparando o que chega.
 
-## 3.1 Atualização do whatsmeow (branch `deps/whatsmeow-bump`)
+## 3.1 Atualização do whatsmeow (já na `main` do fork)
 
 O projeto estava fixo no whatsmeow de 30/06; o novo (29/09) são **72 commits**. Os que importam para as issues abertas: `client: ensure stream error is handled before reconnecting` e `don't reuse handler queue between connections` (#185, #190), `user: update IsOnWhatsApp query` + `fix parsing not on whatsapp responses` (#32), `send: always use LID for DMs`, `message: handle stateless pkmsgs correctly`, tokens de privacidade em LID (#50/#124) e vários updates de protobuf.
 
@@ -99,34 +98,32 @@ Verificado: build, `go vet`, `go test -race`, boot com Postgres, imagem Docker (
 
 ## 4. O que **não** foi possível verificar
 
-- **Nada foi testado contra sessões reais do WhatsApp.** Verificado: compila, `go vet`, `go test -race ./...` (inclui os testes novos) e o binário sobe com Postgres sem panic (101 rotas registradas, ~2 conexões no `evogo_auth`). As rotas HTTP não puderam ser exercitadas: a `main` exige ativação de licença e devolve 503 (`LICENSE_REQUIRED`).
+- **Nada foi testado contra sessões reais do WhatsApp.** Verificado: compila, `go vet`, `go test -race ./...` (inclui os testes novos), o binário sobe com Postgres sem panic (101 rotas registradas, ~2 conexões no `evogo_auth`) e um teste de integração prova que 50 reconexões simuladas não abrem conexões novas. As rotas HTTP não puderam ser exercitadas: a `main` exige ativação de licença e devolve 503 (`LICENSE_REQUIRED`).
 - Os itens 🟡 abaixo dependem de reprodução ao vivo.
-- O Go não está instalado nesta máquina; compilei em containers `golang:1.25` e `golang:1.26` (imagens baixadas com a sua autorização).
+- O Go não está instalado nesta máquina; compilei em containers `golang:1.25` e `golang:1.26` (imagens baixadas com a sua autorização); hoje a `main` exige Go 1.26.
 
 ## 5. Situação atual e o que ainda falta
 
-**Feito nesta segunda etapa**
-- Correções enviadas ao fork e mescladas na `main` do fork (PR #1); CI (build, vet, `test -race`) roda em todo push/PR.
-- `publish_docker_image.yml` reescrito: publica no **GHCR do fork** com o `GITHUB_TOKEN` (o original empurrava para o Docker Hub do upstream com segredos que não existem aqui). Só a `main` recebe `latest`; qualquer outro branch pode ser publicado manualmente (Actions → Run workflow) com tag do branch e sha, sem tocar em `latest`. O build da `main` foi confirmado.
-- `quoted.text` opcional (#189), QR junto do passkey (#148), `/group/settings` e `quoted` documentados no wiki.
+**Já feito e mesclado no fork**
+- Correções da triagem, whatsmeow novo (Go 1.26), CI, publicação da imagem no GHCR do fork (`main` → `latest`; qualquer branch manualmente, sem tocar em `latest`).
+- Hardening: comparação de chave em tempo constante (`AuthAdmin`, `AuthInstanceScoped`, `/ws`) e `/ws` não registra mais o token recebido.
+- Ciclo de vida: cada reconexão deixava uma goroutine `StartClient` antiga que passava a escutar o *novo* `killChannel` (vazava e um kill podia derrubar o cliente novo) — agora cada loop usa o próprio canal e encerra quando é substituído; `recover` com stack em `ReconnectClient`, `StartClient`, `CallWebhook` e `SendToGlobalQueues`; `CONNECT_ON_STARTUP` também restaura instâncias que estavam em `Reconnecting` no momento do restart/crash (antes ficavam offline até alguém chamar `/instance/connect`).
+- `quoted.text`, QR junto do passkey, docs do wiki, CHANGELOG.
 
 **Ainda falta (e por quê)**
 
 | Item | Motivo de não ter sido feito |
 |---|---|
-| Botões e lista (#59 #71 #110 #170 #204) | Só valida em aparelho. Testar `deps/whatsmeow-bump` (a imagem sai pelo workflow manual) e, se o whatsmeow novo gerar o `<biz>`, remover os wrappers manuais em `send_service.go` (§3) |
-| Erro 463 em contatos frios (#50 #124) | Depende do whatsmeow novo **e** de observação em produção; o relato do #50 indica que não vai a zero só com o bump |
-| Redesenho do ciclo de vida (PRs #145/#154), backoff (#197), #191, #192 | Grandes ou dependentes de comportamento ao vivo; recomendável só com instâncias reais para teste |
-| #32 (número fixo "not registered") | A checagem já tenta com e sem formatação; a recusa vem do `IsOnWhatsApp`. Sem log real não dá para corrigir com segurança. Workaround: `"formatJid": false` |
+| Botões e lista (#59 #71 #110 #170 #204) | Só valida em aparelho; o whatsmeow novo **não** muda isso (§3). Limitação documentada no wiki |
+| Erro 463 em contatos frios (#50 #124) | Depende de observação em produção com o whatsmeow novo (já incluído) |
+| Redesenho do ciclo de vida (PRs #145/#154), backoff (#197), #191, #192 | Grandes ou dependentes de comportamento ao vivo. Os pontos mais críticos deles (goroutines órfãs, restauração no startup) foram tratados de forma cirúrgica acima |
+| #32 (número fixo "not registered") | O whatsmeow novo corrige a query/parse do `IsOnWhatsApp`; reavaliar com a nova imagem. Workaround: `"formatJid": false` |
 | #69 (carrossel em 2 balões) | O código já envia body/footer dentro do `InteractiveMessage`; parece comportamento do cliente |
 | #107 (passkey preso em conta Business) | Comportamento do servidor WhatsApp |
-| Swagger | O `swag init` reescreve ~1.000 linhas e remove as rotas de licença; precisa ser ajustado com cuidado antes de regenerar |
-| Features (FEATURE-PROPOSALS.md) | Aguardam sua decisão |
-| `conteúdo da citação` automático | Exigiria persistir mensagens (`DATABASE_SAVE_MESSAGES`) |
+| Swagger | O `swag init` reescreve ~1.000 linhas e remove as rotas de licença |
+| Features (FEATURE-PROPOSALS.md) | Aguardam decisão |
 
-**Para você**
-1. Rodar o workflow manual em `deps/whatsmeow-bump` e testar com 1–2 instâncias reais; se estiver estável, mesclar (PR dentro do fork).
-2. Escolher quais propostas de FEATURE-PROPOSALS.md valem a pena.
+**Para você:** subir a imagem do GHCR (fazendo backup do `evogo_auth`), acompanhar 1–2 instâncias reais e me dizer o que aparecer nos logs; e escolher as propostas de FEATURE-PROPOSALS.md que valem a pena.
 
 ## 6. Resumo numérico
 
