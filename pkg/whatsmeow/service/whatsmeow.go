@@ -795,7 +795,22 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 
 	for {
 		select {
-		case <-kill:
+		case _, open := <-kill:
+			// A CLOSED channel means the instance was deleted or stopped for good
+			// (Delete/ClearInstanceCache): shut down without restarting. Only an
+			// explicit `true` (QR timeout, disconnect...) restarts the client. Treating
+			// both alike resurrected deleted instances in an endless QR loop.
+			if !open {
+				w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Kill channel closed, shutting the runtime down without restart", cd.Instance.Id)
+				client.Disconnect()
+				if w.clientPointer.Get(cd.Instance.Id) == client {
+					w.clientPointer.Delete(cd.Instance.Id)
+					w.myClientPointer.Delete(cd.Instance.Id)
+				}
+				w.userInfoCache.Delete(cd.Instance.Token)
+				return
+			}
+
 			w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("Received kill signal for user '%s'", cd.Instance.Id)
 			client.Disconnect()
 
@@ -850,6 +865,12 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 			// Not a direct (recursive) call: every restart used to stack another
 			// StartClient frame on this goroutine (visible as the repeated
 			// whatsmeow.go:629 frames in issue #203).
+			// Never restart an instance whose row is gone.
+			if _, err := w.instanceRepository.GetInstanceByID(cd.Instance.Id); err != nil {
+				w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Instance no longer exists, not restarting", cd.Instance.Id)
+				return
+			}
+
 			release() // free the slot so the restarted run can take it
 			go w.StartClient(cd)
 			return
@@ -1098,11 +1119,16 @@ func (mycli *MyClient) teardownQR(reason string, forceLogout bool) {
 	if killChan, exists := mycli.killChannel.Lookup(instanceID); exists {
 		// Bounded: if the supervisor loop already ended (client replaced) nobody is
 		// receiving and an unbounded send would block this goroutine forever.
-		select {
-		case killChan <- true:
-		case <-time.After(10 * time.Second):
-			mycli.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Kill signal not received (client already replaced?), giving up", instanceID)
-		}
+		// The channel may be closed concurrently by Delete: a send on a closed
+		// channel panics, so contain it.
+		func() {
+			defer recoverAndLog(mycli.loggerWrapper, instanceID, "teardownQR kill signal")
+			select {
+			case killChan <- true:
+			case <-time.After(10 * time.Second):
+				mycli.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Kill signal not received (client already replaced?), giving up", instanceID)
+			}
+		}()
 	}
 }
 
@@ -1593,6 +1619,14 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 						// Salvar no banco com timeout de segurança
 						ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 						defer cancel()
+
+						// Voters that only have a @lid (e.g. votes from our own phone) got the LID
+						// digits as "phone". Resolve the real number from the LID store.
+						if evt.Info.Sender.Server == types.HiddenUserServer && mycli.WAClient != nil && mycli.WAClient.Store.LIDs != nil {
+							if pn, err := mycli.WAClient.Store.LIDs.GetPNForLID(ctx, evt.Info.Sender.ToNonAD()); err == nil && !pn.IsEmpty() {
+								pollVote.VoterPhone = pn.User
+							}
+						}
 
 						if err := mycli.pollService.SavePollVote(ctx, pollVote); err != nil {
 							mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to save poll vote to database: %v", mycli.userID, err)
@@ -3071,12 +3105,8 @@ func (w whatsmeowService) ClearInstanceCache(instanceId string, token string) er
 
 	// Limpar killChannel se existir
 	if killChan, exists := w.killChannel.Lookup(instanceId); exists {
-		select {
-		case killChan <- true:
-			// Canal recebeu o sinal
-		default:
-			// Canal pode estar bloqueado, apenas fecha
-		}
+		// Closing is the "stop for good" signal; sending `true` would make the
+		// supervisor restart the client.
 		close(killChan)
 		w.killChannel.Delete(instanceId)
 		w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Kill channel cleared", instanceId)
