@@ -1,8 +1,8 @@
 package main
 
 import (
-	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"context"
+	"crypto/subtle"
 	"database/sql"
 	"flag"
 	"fmt"
@@ -65,6 +65,7 @@ import (
 	user_service "github.com/evolution-foundation/evolution-go/pkg/user/service"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 )
 
 var devMode = flag.Bool("dev", false, "Enable development mode")
@@ -250,8 +251,10 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		token := c.Query("token")
 		instanceId := c.Query("instanceId")
 
-		if token != config.GlobalApiKey {
-			logger.LogError("Token inválido: %s", token)
+		// Constant-time compare, and never log the token that was sent: it may be a
+		// near-miss of the real global key.
+		if subtle.ConstantTimeCompare([]byte(token), []byte(config.GlobalApiKey)) != 1 {
+			logger.LogError("Token inválido na conexão WebSocket")
 			c.JSON(http.StatusUnauthorized, gin.H{"error": "Token inválido"})
 			return
 		}

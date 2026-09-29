@@ -1,6 +1,7 @@
 package auth_middleware
 
 import (
+	"crypto/subtle"
 	"net/http"
 
 	"github.com/evolution-foundation/evolution-go/pkg/config"
@@ -44,7 +45,7 @@ func (m middleware) AuthAdmin(ctx *gin.Context) {
 		return
 	}
 
-	if token != m.config.GlobalApiKey {
+	if !isGlobalKey(token, m.config.GlobalApiKey) {
 		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "not authorized"})
 		return
 	}
@@ -64,7 +65,7 @@ func (m middleware) AuthInstanceScoped(ctx *gin.Context) {
 		return
 	}
 
-	if m.config.GlobalApiKey != "" && token == m.config.GlobalApiKey {
+	if isGlobalKey(token, m.config.GlobalApiKey) {
 		ctx.Next()
 		return
 	}
@@ -83,6 +84,15 @@ func (m middleware) AuthInstanceScoped(ctx *gin.Context) {
 	ctx.Set("instance", instance)
 
 	ctx.Next()
+}
+
+// isGlobalKey compares in constant time so the global API key cannot be probed
+// byte by byte through response timing. An empty configured key never matches.
+func isGlobalKey(token, globalKey string) bool {
+	if globalKey == "" {
+		return false
+	}
+	return subtle.ConstantTimeCompare([]byte(token), []byte(globalKey)) == 1
 }
 
 func NewMiddleware(config *config.Config, instanceService instance_service.InstanceService) *middleware {
