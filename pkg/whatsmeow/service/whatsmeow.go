@@ -736,9 +736,16 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 
 	// Removed auto-reconnect logic to prevent infinite loops
 
+	// Bind this loop to the channel that existed when it started. It used to
+	// re-read the shared map on every iteration, so after a reconnect (which puts
+	// a NEW channel in the map) every old loop kept polling the new channel: they
+	// never ended (one leaked goroutine per reconnect) and a later kill could be
+	// consumed by a stale loop that then tore down the NEW client's state.
+	kill := w.killChannel.Get(cd.Instance.Id)
+
 	for {
 		select {
-		case <-w.killChannel.Get(cd.Instance.Id):
+		case <-kill:
 			w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("Received kill signal for user '%s'", cd.Instance.Id)
 			client.Disconnect()
 
@@ -796,6 +803,13 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 			go w.StartClient(cd)
 			return
 		default:
+			// This client was replaced (ReconnectClient removed it and started a new
+			// one): nothing left to supervise, end quietly without touching the
+			// state that now belongs to the new client.
+			if w.clientPointer.Get(cd.Instance.Id) != client {
+				w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Client was replaced, ending its supervisor loop", cd.Instance.Id)
+				return
+			}
 			time.Sleep(1000 * time.Millisecond)
 		}
 	}
@@ -804,6 +818,9 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 func schedulePresenceUpdates(mycli *MyClient) {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
+
+	// Bound to the channel of the run that started it (see StartClient).
+	kill := mycli.killChannel.Get(mycli.userID)
 
 	for {
 		select {
@@ -833,7 +850,7 @@ func schedulePresenceUpdates(mycli *MyClient) {
 			randomInterval := time.Duration(1+rand.Intn(3)) * time.Hour
 			ticker = time.NewTicker(randomInterval)
 
-		case <-mycli.killChannel.Get(mycli.userID):
+		case <-kill:
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Received kill signal, stopping presence updates", mycli.userID)
 			return // Encerra a goroutine quando receber sinal de kill
 		}
@@ -1028,7 +1045,13 @@ func (mycli *MyClient) teardownQR(reason string, forceLogout bool) {
 	// the original timeout branch so the signal is never dropped.
 	mycli.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] QR timeout — signaling kill channel", instanceID)
 	if killChan, exists := mycli.killChannel.Lookup(instanceID); exists {
-		killChan <- true
+		// Bounded: if the supervisor loop already ended (client replaced) nobody is
+		// receiving and an unbounded send would block this goroutine forever.
+		select {
+		case killChan <- true:
+		case <-time.After(10 * time.Second):
+			mycli.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Kill signal not received (client already replaced?), giving up", instanceID)
+		}
 	}
 }
 
