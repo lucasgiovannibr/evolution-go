@@ -87,6 +87,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.DELETE("/delete/:instanceId", r.instanceHandler.Delete)
 			routes.POST("/proxy/:instanceId", r.instanceHandler.SetProxy)
 			routes.DELETE("/proxy/:instanceId", r.instanceHandler.DeleteProxy)
+			routes.GET("/proxy/:instanceId", r.instanceHandler.GetProxyStatus)
 			routes.POST("/forcereconnect/:instanceId", r.instanceHandler.ForceReconnect)
 			routes.GET("/logs/:instanceId", r.instanceHandler.GetLogs)
 		}
@@ -124,6 +125,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/link", r.jidValidationMiddleware.ValidateNumberFieldWithFormatJid(), r.sendHandler.SendLink)
 			routes.POST("/media", r.jidValidationMiddleware.ValidateNumberFieldWithFormatJid(), r.sendHandler.SendMedia)
 			routes.POST("/poll", r.jidValidationMiddleware.ValidateNumberFieldWithFormatJid(), r.sendHandler.SendPoll)
+			routes.POST("/pollVote", r.jidValidationMiddleware.ValidateNumberFieldWithFormatJid(), r.sendHandler.SendPollVote)
 			routes.POST("/sticker", r.jidValidationMiddleware.ValidateNumberFieldWithFormatJid(), r.sendHandler.SendSticker)
 			routes.POST("/location", r.jidValidationMiddleware.ValidateNumberFieldWithFormatJid(), r.sendHandler.SendLocation)
 			routes.POST("/contact", r.jidValidationMiddleware.ValidateContactFields(), r.sendHandler.SendContact) // TODO: send multiple contacts
@@ -142,6 +144,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/check", r.jidValidationMiddleware.ValidateNumberFieldWithFormatJid(), r.userHandler.CheckUser)
 			routes.POST("/avatar", r.jidValidationMiddleware.ValidateNumberField(), r.userHandler.GetAvatar)
 			routes.GET("/contacts", r.userHandler.GetContacts)
+			routes.POST("/contacts", r.userHandler.SaveContact)
 			routes.GET("/privacy", r.userHandler.GetPrivacy)
 			routes.POST("/privacy", r.userHandler.SetPrivacy)
 			routes.POST("/block", r.jidValidationMiddleware.ValidateNumberField(), r.userHandler.BlockContact)
@@ -150,6 +153,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/profilePicture", r.userHandler.SetProfilePicture)
 			routes.POST("/profileName", r.userHandler.SetProfileName)
 			routes.POST("/profileStatus", r.userHandler.SetProfileStatus)
+			routes.POST("/lid", r.jidValidationMiddleware.ValidateJIDFields("lid", "groupJid"), r.userHandler.ResolveLid)
 		}
 	}
 	routes = eng.Group("/message")
@@ -158,6 +162,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 		{
 			routes.POST("/react", r.jidValidationMiddleware.ValidateJIDFields("number"), r.messageHandler.React)
 			routes.POST("/presence", r.jidValidationMiddleware.ValidateNumberField(), r.messageHandler.ChatPresence)
+			routes.POST("/subscribe", r.jidValidationMiddleware.ValidateNumberField(), r.messageHandler.SubscribePresence)
 			routes.POST("/markread", r.jidValidationMiddleware.ValidateNumberField(), r.messageHandler.MarkRead)
 			routes.POST("/markplayed", r.jidValidationMiddleware.ValidateNumberField(), r.messageHandler.MarkPlayed)
 			routes.POST("/downloadmedia", r.messageHandler.DownloadMedia)
@@ -195,6 +200,8 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/join", r.groupHandler.JoinGroupLink)
 			routes.POST("/leave", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.LeaveGroup)
 			routes.POST("/settings", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.UpdateGroupSettings)
+			routes.POST("/requests", r.groupHandler.GetGroupRequests)
+			routes.POST("/requests/update", r.jidValidationMiddleware.ValidateMultipleNumbers("participants"), r.groupHandler.UpdateGroupRequests)
 		}
 	}
 	routes = eng.Group("/call")

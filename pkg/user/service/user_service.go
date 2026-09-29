@@ -23,14 +23,22 @@ import (
 // get a clear HTTP error instead of a hung connection waiting for the ~75s IQ default.
 const avatarRequestTimeout = 8 * time.Second
 
+// userInfoRequestTimeout bounds the usync query of POST /user/info.
+const userInfoRequestTimeout = 10 * time.Second
+
+// pictureURLEnrichBudget is the total wall-clock budget for the best-effort
+// PictureURL lookups of one POST /user/info call (shared by all users in it).
+const pictureURLEnrichBudget = 5 * time.Second
+
 // clientReadyWait is the max time to wait after StartInstance before failing.
 const clientReadyWait = 2 * time.Second
 
 type UserService interface {
-	GetUser(data *CheckUserStruct, instance *instance_model.Instance) (*UserCollection, error)
+	GetUser(ctx context.Context, data *CheckUserStruct, instance *instance_model.Instance) (*UserCollection, error)
 	CheckUser(data *CheckUserStruct, instance *instance_model.Instance) (*CheckUserCollection, error)
 	GetAvatar(ctx context.Context, data *GetAvatarStruct, instance *instance_model.Instance) (*types.ProfilePictureInfo, error)
 	GetContacts(instance *instance_model.Instance) ([]ContactInfo, error)
+	SaveContact(data *SaveContactStruct, instance *instance_model.Instance) error
 	GetPrivacy(instance *instance_model.Instance) (types.PrivacySettings, error)
 	SetPrivacy(data *PrivacyStruct, instance *instance_model.Instance) (*types.PrivacySettings, error)
 	BlockContact(data *BlockStruct, instance *instance_model.Instance) (*types.Blocklist, error)
@@ -39,6 +47,7 @@ type UserService interface {
 	SetProfilePicture(data *SetProfilePictureStruct, instance *instance_model.Instance) (bool, error)
 	SetProfileName(data *SetProfileNameStruct, instance *instance_model.Instance) (bool, error)
 	SetProfileStatus(data *SetProfileStatusStruct, instance *instance_model.Instance) (bool, error)
+	ResolveLid(data *ResolveLidStruct, instance *instance_model.Instance) (*ResolveLidResult, error)
 }
 
 type userService struct {
@@ -60,6 +69,7 @@ type UserInfo struct {
 	VerifiedName *types.VerifiedName
 	Status       string
 	PictureID    string
+	PictureURL   string
 	Devices      []types.JID
 	LID          *string // The local ID (if available)
 }
@@ -105,6 +115,17 @@ type SetProfileNameStruct struct {
 
 type SetProfileStatusStruct struct {
 	Status string `json:"status"`
+}
+
+type ResolveLidStruct struct {
+	Lid      string `json:"lid"`
+	GroupJid string `json:"groupJid,omitempty"`
+}
+
+type ResolveLidResult struct {
+	Lid         string `json:"lid"`
+	PhoneNumber string `json:"phoneNumber"`
+	JID         string `json:"jid"`
 }
 
 type PrivacyStruct struct {
@@ -175,8 +196,12 @@ func (u *userService) waitForClientReady(ctx context.Context, instanceId string,
 	}
 }
 
-func (u *userService) GetUser(data *CheckUserStruct, instance *instance_model.Instance) (*UserCollection, error) {
-	client, err := u.ensureClientConnected(instance.Id)
+func (u *userService) GetUser(ctx context.Context, data *CheckUserStruct, instance *instance_model.Instance) (*UserCollection, error) {
+	if ctx == nil {
+		ctx = context.Background()
+	}
+
+	client, err := u.ensureClientConnectedCtx(ctx, instance.Id)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +214,10 @@ func (u *userService) GetUser(data *CheckUserStruct, instance *instance_model.In
 		}
 		jids = append(jids, jid)
 	}
-	resp, err := client.GetUserInfo(context.Background(), jids)
+
+	usyncCtx, cancel := context.WithTimeout(ctx, userInfoRequestTimeout)
+	defer cancel()
+	resp, err := client.GetUserInfo(usyncCtx, jids)
 	if err != nil {
 		return nil, err
 	}
@@ -197,13 +225,39 @@ func (u *userService) GetUser(data *CheckUserStruct, instance *instance_model.In
 	uc := new(UserCollection)
 	uc.Users = make(map[types.JID]UserInfo)
 
+	enrichDeadline := time.Now().Add(pictureURLEnrichBudget)
+	skipPictureEnrich := false
+
 	for jid, whatsmeowInfo := range resp {
 		// Consultar LID Store para obter LID associado ao JID
 		var lidStr *string
 		if client.Store.LIDs != nil {
-			if lid, err := client.Store.LIDs.GetLIDForPN(context.TODO(), jid); err == nil && !lid.IsEmpty() {
+			if lid, err := client.Store.LIDs.GetLIDForPN(ctx, jid); err == nil && !lid.IsEmpty() {
 				lidString := fmt.Sprintf("%v", lid)
 				lidStr = &lidString
+			}
+		}
+
+		// Best-effort picture URL: PictureID alone is not usable by consumers. It
+		// shares one time budget across all users and stops on WhatsApp rate limits,
+		// so a large batch can never make /user/info hang.
+		pictureURL := ""
+		if !skipPictureEnrich && whatsmeowInfo.PictureID != "" {
+			remaining := time.Until(enrichDeadline)
+			if remaining <= 0 {
+				skipPictureEnrich = true
+			} else {
+				picCtx, picCancel := context.WithTimeout(ctx, remaining)
+				pic, picErr := client.GetProfilePictureInfo(picCtx, utils.CanonicalJID(jid).ToNonAD(), &whatsmeow.GetProfilePictureParams{Preview: true})
+				picCancel()
+				if picErr != nil {
+					u.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Failed to enrich PictureURL for %s: %v", instance.Id, jid, picErr)
+					if errors.Is(picErr, whatsmeow.ErrIQRateOverLimit) {
+						skipPictureEnrich = true
+					}
+				} else if pic != nil {
+					pictureURL = pic.URL
+				}
 			}
 		}
 
@@ -212,6 +266,7 @@ func (u *userService) GetUser(data *CheckUserStruct, instance *instance_model.In
 			VerifiedName: whatsmeowInfo.VerifiedName,
 			Status:       whatsmeowInfo.Status,
 			PictureID:    whatsmeowInfo.PictureID,
+			PictureURL:   pictureURL,
 			Devices:      whatsmeowInfo.Devices,
 			LID:          lidStr,
 		}
@@ -341,6 +396,62 @@ func (u *userService) mergeCheckUserResults(original, retry *CheckUserCollection
 	}
 
 	return merged
+}
+
+// ResolveLid resolves the phone number mapped to a LID (Linked Identity, "xxxx@lid").
+// This only reads whatsmeow's local LID store: the WhatsApp protocol has no
+// server query for LID->PN (only the inverse, PN->LID, is supported). The
+// mapping is only known locally after it has been received passively (e.g.
+// a message from that LID, or a group with LID-based participants). As a
+// best-effort fallback, when a groupJid is provided and the mapping is
+// missing, a fresh GetGroupInfo on that group can populate it, since group
+// participant lists include the phone number for LID participants.
+func (u *userService) ResolveLid(data *ResolveLidStruct, instance *instance_model.Instance) (*ResolveLidResult, error) {
+	client, err := u.ensureClientConnected(instance.Id)
+	if err != nil {
+		return nil, err
+	}
+
+	lidJID, ok := utils.ParseJID(data.Lid)
+	if !ok || lidJID.Server != types.HiddenUserServer {
+		return nil, errors.New("invalid lid")
+	}
+
+	if client.Store.LIDs == nil {
+		return nil, errors.New("lid store unavailable")
+	}
+
+	ctx := context.Background()
+
+	pn, err := client.Store.LIDs.GetPNForLID(ctx, lidJID)
+	if err != nil {
+		return nil, err
+	}
+
+	if pn.IsEmpty() && data.GroupJid != "" {
+		groupJID, ok := utils.ParseJID(data.GroupJid)
+		if !ok || groupJID.Server != types.GroupServer {
+			return nil, errors.New("invalid groupJid")
+		}
+
+		u.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] No cached phone number for lid %s, refreshing group %s as fallback", instance.Id, lidJID, groupJID)
+
+		if _, groupErr := client.GetGroupInfo(ctx, groupJID); groupErr != nil {
+			u.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Failed to refresh group %s for lid fallback: %v", instance.Id, groupJID, groupErr)
+		} else if pn, err = client.Store.LIDs.GetPNForLID(ctx, lidJID); err != nil {
+			return nil, err
+		}
+	}
+
+	if pn.IsEmpty() {
+		return nil, errors.New("no phone number mapping found for this lid")
+	}
+
+	return &ResolveLidResult{
+		Lid:         lidJID.String(),
+		PhoneNumber: pn.User,
+		JID:         pn.String(),
+	}, nil
 }
 
 func (u *userService) GetAvatar(ctx context.Context, data *GetAvatarStruct, instance *instance_model.Instance) (*types.ProfilePictureInfo, error) {

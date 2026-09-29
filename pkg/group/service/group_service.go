@@ -338,11 +338,11 @@ func (g *groupService) CreateGroup(data *CreateGroupStruct, instance *instance_m
 	var participants []types.JID
 	for _, participant := range data.Participants {
 		recipient, ok := utils.ParseJID(participant)
-		participants = append(participants, recipient)
 		if !ok {
 			g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
 			return nil, errors.New("invalid phone number")
 		}
+		participants = append(participants, utils.CanonicalJID(recipient))
 	}
 
 	resp, err := client.CreateGroup(context.Background(), whatsmeow.ReqCreateGroup{
@@ -391,11 +391,12 @@ func (g *groupService) UpdateParticipant(data *AddParticipantStruct, instance *i
 	var participants []types.JID
 	for _, participant := range data.Participants {
 		recipient, ok := utils.ParseJID(participant)
-		participants = append(participants, recipient)
 		if !ok {
 			g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
 			return errors.New("invalid phone number")
 		}
+		// Participant JIDs go into raw group IQ attributes: no "+" prefix.
+		participants = append(participants, utils.CanonicalJID(recipient))
 	}
 
 	_, err = client.UpdateGroupParticipants(context.Background(), data.GroupJID, participants, data.Action)
@@ -628,7 +629,7 @@ func (g *groupService) UpdateGroupRequestParticipants(data *UpdateGroupRequestPa
 			g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating participant jid: %s", instance.Id, participant)
 			return nil, errors.New("invalid participant jid: " + participant)
 		}
-		participants = append(participants, participantJID)
+		participants = append(participants, utils.CanonicalJID(participantJID))
 	}
 
 	results, err := client.UpdateGroupRequestParticipants(context.Background(), recipient, participants, action)

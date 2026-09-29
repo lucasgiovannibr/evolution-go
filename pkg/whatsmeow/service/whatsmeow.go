@@ -64,6 +64,7 @@ type WhatsmeowService interface {
 	ForceUpdateJid(instanceId string, number string) error
 	UpdateInstanceSettings(instanceId string) error
 	UpdateInstanceAdvancedSettings(instanceId string) error
+	ProxyStatus(instanceId string) (ProxyRuntimeStatus, bool)
 	GetPollService() poll_service.PollService // NOVO: Acesso ao serviço de polls
 
 	// Passkey (WebAuthn) pairing bridge — read by the public ceremony endpoint,
@@ -625,16 +626,24 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		}
 
 		proxyAddress, err := utils.BuildProxyAddress(proxyProtocol, proxyHost, proxyPort, proxyUsername, proxyPassword)
+		if err == nil {
+			err = client.SetProxyAddress(proxyAddress)
+		}
 		if err != nil {
+			// The error text may echo the address (with credentials): keep it out of the status.
+			proxyFailed(cd.Instance.Id, "invalid proxy configuration", !w.config.ProxyFailClosed)
+			if w.config.ProxyFailClosed {
+				w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Proxy error and PROXY_FAIL_CLOSED is set; not connecting directly: %v", cd.Instance.Id, err)
+				w.clientPointer.Delete(cd.Instance.Id)
+				return
+			}
 			w.loggerWrapper.GetLogger(cd.Instance.Id).LogWarn("[%s] Proxy error, continuing without proxy: %v", cd.Instance.Id, err)
 		} else {
-			err = client.SetProxyAddress(proxyAddress)
-			if err != nil {
-				w.loggerWrapper.GetLogger(cd.Instance.Id).LogWarn("[%s] Proxy error, continuing without proxy: %v", cd.Instance.Id, err)
-			} else {
-				w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Proxy enabled (%s)", cd.Instance.Id, utils.NormalizeProxyProtocol(proxyProtocol, proxyPort))
-			}
+			proxyEnabled(cd.Instance.Id)
+			w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Proxy enabled (%s)", cd.Instance.Id, utils.NormalizeProxyProtocol(proxyProtocol, proxyPort))
 		}
+	} else {
+		proxyRuntime.Delete(cd.Instance.Id)
 	}
 
 	client.EnableAutoReconnect = false
@@ -695,8 +704,10 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 			} else if strings.Contains(err.Error(), "username/password authentication failed") {
 				w.loggerWrapper.GetLogger(cd.Instance.Id).LogWarn("[%s] Proxy authentication failed, attempting to connect without proxy", cd.Instance.Id)
 
-				// Desabilita o proxy
-				client.SetProxy(nil)
+				// Desabilita o proxy (ou aborta com PROXY_FAIL_CLOSED)
+				if !w.fallbackWithoutProxy(cd.Instance.Id, client, err) {
+					return
+				}
 
 				// Tenta conectar sem proxy
 				err = client.Connect()
@@ -730,8 +741,10 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 			} else if strings.Contains(err.Error(), "username/password authentication failed") {
 				w.loggerWrapper.GetLogger(cd.Instance.Id).LogWarn("[%s] Proxy authentication failed during QR connection, attempting without proxy", cd.Instance.Id)
 
-				// Desabilita o proxy
-				client.SetProxy(nil)
+				// Desabilita o proxy (ou aborta com PROXY_FAIL_CLOSED)
+				if !w.fallbackWithoutProxy(cd.Instance.Id, client, err) {
+					return
+				}
 
 				// Tenta conectar sem proxy
 				err = client.Connect()
@@ -2035,12 +2048,15 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	case *events.Presence:
 		doWebhook = true
 		postMap["event"] = "Presence"
+		// Explicit top-level fields so consumers don't depend on types.JID/time marshaling.
+		postMap["from"] = evt.From.String()
 
 		if evt.Unavailable {
 			postMap["state"] = "offline"
 			if evt.LastSeen.IsZero() {
 				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] User is now offline", mycli.userID)
 			} else {
+				postMap["lastSeen"] = evt.LastSeen.Unix()
 				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] User is now offline since %s", mycli.userID, evt.LastSeen.Format("2006-01-02 15:04:05"))
 			}
 		} else {
@@ -3089,6 +3105,11 @@ func NewWhatsmeowService(
 }
 
 // GetPollService retorna o serviço de polls (evita dupla inicialização)
+// ProxyStatus reports what the running client did with its proxy.
+func (w *whatsmeowService) ProxyStatus(instanceId string) (ProxyRuntimeStatus, bool) {
+	return GetProxyRuntimeStatus(instanceId)
+}
+
 func (w *whatsmeowService) GetPollService() poll_service.PollService {
 	return w.pollService
 }

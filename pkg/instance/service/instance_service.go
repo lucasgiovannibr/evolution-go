@@ -40,6 +40,7 @@ type InstanceService interface {
 	SetProxy(id string, proxyConfig *ProxyConfig) error
 	SetProxyFromStruct(id string, data *SetProxyStruct) error
 	RemoveProxy(id string) error
+	GetProxyStatus(id string) (*ProxyStatus, error)
 	ForceReconnect(instanceId string, number string) error
 	GetInstanceByToken(token string) (*instance_model.Instance, error)
 	GetLogs(instanceId string, startDate, endDate time.Time, level string, limit int) ([]logger_wrapper.LogEntry, error)
@@ -678,6 +679,61 @@ func (i instances) SetProxyFromStruct(id string, data *SetProxyStruct) error {
 	}
 
 	return i.SetProxy(id, proxyConfig)
+}
+
+// ProxyStatus tells whether an instance's proxy is configured AND actually in use by
+// the running client. It never contains credentials.
+type ProxyStatus struct {
+	Configured bool `json:"configured"`
+	// Source is "instance" (POST /instance/proxy), "global" (PROXY_* env) or "none".
+	Source   string `json:"source"`
+	Protocol string `json:"protocol,omitempty"`
+	Host     string `json:"host,omitempty"`
+	Port     string `json:"port,omitempty"`
+	HasAuth  bool   `json:"hasAuth"`
+	// FailClosed mirrors PROXY_FAIL_CLOSED: when true the client never falls back to a direct connection.
+	FailClosed           bool       `json:"failClosed"`
+	RuntimeEnabled       bool       `json:"runtimeEnabled"`
+	FallbackWithoutProxy bool       `json:"fallbackWithoutProxy"`
+	LastError            string     `json:"lastError,omitempty"`
+	LastAppliedAt        *time.Time `json:"lastAppliedAt,omitempty"`
+}
+
+func (i instances) GetProxyStatus(id string) (*ProxyStatus, error) {
+	instance, err := i.instanceRepository.GetInstanceByID(id)
+	if err != nil {
+		return nil, err
+	}
+
+	st := &ProxyStatus{Source: "none", FailClosed: i.config.ProxyFailClosed}
+
+	var cfg ProxyConfig
+	if instance.Proxy != "" {
+		_ = json.Unmarshal([]byte(instance.Proxy), &cfg)
+	}
+	switch {
+	case cfg.Host != "":
+		st.Source = "instance"
+	case i.config.ProxyHost != "":
+		st.Source = "global"
+		cfg = ProxyConfig{Protocol: i.config.ProxyProtocol, Host: i.config.ProxyHost, Port: i.config.ProxyPort, Username: i.config.ProxyUsername, Password: i.config.ProxyPassword}
+	}
+	if st.Source != "none" {
+		st.Configured = true
+		st.Protocol = utils.NormalizeProxyProtocol(cfg.Protocol, cfg.Port)
+		st.Host = cfg.Host
+		st.Port = cfg.Port
+		st.HasAuth = cfg.Username != "" || cfg.Password != ""
+	}
+
+	if rt, ok := i.whatsmeowService.ProxyStatus(id); ok {
+		st.RuntimeEnabled = rt.RuntimeEnabled
+		st.FallbackWithoutProxy = rt.FallbackWithoutProxy
+		st.LastError = rt.LastError
+		st.LastAppliedAt = rt.LastAppliedAt
+	}
+
+	return st, nil
 }
 
 func (i instances) RemoveProxy(id string) error {

@@ -27,6 +27,18 @@ correto para a biometria/PIN. Ela **não** interage com o login do WhatsApp Web 
 Nenhuma `host_permission` é necessária: as chamadas partem do origin
 `web.whatsapp.com` e o backend do Evolution já libera CORS para essa origem.
 
+### Gerenciadores de senha (1Password, Bitwarden…) — v1.1.0
+
+A chamada `navigator.credentials.get()` roda em um script separado
+(`webauthn-main.js`) declarado com `"world": "MAIN"`, isto é, no mesmo mundo
+JavaScript da página. Gerenciadores de senha só interceptam o WebAuthn ali; a
+partir do content script (mundo isolado) o Chrome pedia "Insira sua chave de
+segurança". O script do mundo MAIN **não faz requisições de rede** (o CSP do
+WhatsApp Web as bloquearia): recebe o desafio do `content.js` por
+`window.postMessage` e devolve a assinatura. Também não força `transports` nem
+envia `allowCredentials` vazio, para o navegador escolher o autenticador.
+Requer **Chrome/Edge 111 ou superior**.
+
 ## Endpoints usados (Evolution GO)
 
 - `GET  {base}/passkey-ceremony/{token}` — status/desafio da cerimônia

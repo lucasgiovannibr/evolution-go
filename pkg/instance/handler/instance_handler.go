@@ -26,6 +26,7 @@ type InstanceHandler interface {
 	Pair(ctx *gin.Context)
 	SetProxy(ctx *gin.Context)
 	DeleteProxy(ctx *gin.Context)
+	GetProxyStatus(ctx *gin.Context)
 	ForceReconnect(ctx *gin.Context)
 	GetLogs(ctx *gin.Context)
 	GetAdvancedSettings(ctx *gin.Context)
@@ -485,6 +486,33 @@ func (i *instanceHandler) DeleteProxy(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "success"})
+}
+
+// Get proxy status
+// @Summary Get proxy status
+// @Description Whether the instance's proxy is configured and actually in use by the running client. Never returns credentials.
+// @Tags Instance
+// @Produce json
+// @Param instanceId path string true "Instance id"
+// @Success 200 {object} instance_service.ProxyStatus "Proxy status"
+// @Failure 400 {object} gin.H "Error on validation"
+// @Failure 500 {object} gin.H "Internal server error"
+// @Router /instance/proxy/{instanceId} [get]
+func (i *instanceHandler) GetProxyStatus(ctx *gin.Context) {
+	instanceId := ctx.Param("instanceId")
+
+	if instanceId == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		return
+	}
+
+	status, err := i.instanceService.GetProxyStatus(instanceId)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, status)
 }
 
 // Force reconnect

@@ -8,8 +8,9 @@
  * 1. O manager/CRM abre https://web.whatsapp.com/#wapk=<payload>, onde payload
  *    e um base64url de JSON { t: <token_da_instancia>, b: <url_base_da_api> }.
  * 2. Este content script le o payload, faz polling do status da cerimonia na
- *    API, e quando o desafio (publicKey) esta disponivel executa
- *    navigator.credentials.get() (permitido pois roda no origin whatsapp.com).
+ *    API, e quando o desafio (publicKey) esta disponivel pede a webauthn-main.js
+ *    (executada no mundo MAIN da pagina) que rode navigator.credentials.get() —
+ *    permitido pois roda no origin whatsapp.com e visivel a gerenciadores de senha.
  * 3. A assertion e enviada de volta para a API; quando o pareamento exige a
  *    confirmacao manual do codigo, um botao de confirmar e exibido.
  *
@@ -132,38 +133,41 @@
   // ---------------------------------------------------------------------------
   // WebAuthn ceremony
   // ---------------------------------------------------------------------------
-  function buildPublicKeyOptions(pk) {
-    return {
-      challenge: b64uToBuf(pk.challenge),
-      timeout: pk.timeout || 60000,
-      rpId: pk.rpId || "whatsapp.com",
-      allowCredentials: (pk.allowCredentials || []).map(function (c) {
-        return {
-          type: c.type || "public-key",
-          id: b64uToBuf(c.id),
-          transports: c.transports,
-        };
-      }),
-      userVerification: pk.userVerification || "required",
-    };
-  }
+  // navigator.credentials.get() must run in the PAGE world (webauthn-main.js,
+  // manifest "world": "MAIN"): password managers such as 1Password only hook it
+  // there, and from this isolated world Chrome asked for a physical security key.
+  // The challenge goes over window.postMessage; the answer is the serialized
+  // assertion. Network calls stay in this script (the page CSP would block them
+  // from the page world).
+  var bridgeSeq = 0;
 
-  function toWebAuthnResponse(cred) {
-    var r = cred.response;
-    var body = {
-      id: cred.id,
-      rawId: bufToB64u(cred.rawId),
-      type: cred.type,
-      response: {
-        clientDataJSON: bufToB64u(r.clientDataJSON),
-        authenticatorData: bufToB64u(r.authenticatorData),
-        signature: bufToB64u(r.signature),
-      },
-    };
-    if (r.userHandle && r.userHandle.byteLength) {
-      body.response.userHandle = bufToB64u(r.userHandle);
-    }
-    return body;
+  function getCredentialInPageWorld(pk) {
+    return new Promise(function (resolve, reject) {
+      var id = "evo-" + Date.now() + "-" + ++bridgeSeq;
+      var timer = null;
+
+      function cleanup() {
+        window.removeEventListener("message", onMessage);
+        if (timer) clearTimeout(timer);
+      }
+
+      function onMessage(ev) {
+        if (ev.source !== window || !ev.data || ev.data.type !== "evo-wapk:response" || ev.data.id !== id) return;
+        cleanup();
+        if (ev.data.ok) resolve(ev.data.credential);
+        else reject(new Error(ev.data.error || "Falha na autenticacao."));
+      }
+
+      window.addEventListener("message", onMessage);
+      // Small grace period over the WebAuthn timeout; also covers the case where the
+      // page-world script is missing (browser older than Chrome 111).
+      timer = setTimeout(function () {
+        cleanup();
+        reject(new Error("Sem resposta da chave de acesso. Verifique se a extensao esta atualizada e se o Chrome e 111 ou superior."));
+      }, ((pk && pk.timeout) || 60000) + 5000);
+
+      window.postMessage({ type: "evo-wapk:request", id: id, publicKey: pk }, window.location.origin);
+    });
   }
 
   // ---------------------------------------------------------------------------
@@ -334,10 +338,9 @@
     showCode("");
     setStatus("Aguardando a sua chave de acesso...");
     try {
-      var cred = await navigator.credentials.get({ publicKey: buildPublicKeyOptions(pk) });
-      if (!cred) throw new Error("Autenticacao cancelada.");
+      var assertion = await getCredentialInPageWorld(pk);
       setStatus("Enviando assinatura...");
-      await sendResponse(cer, toWebAuthnResponse(cred));
+      await sendResponse(cer, assertion);
       hideButton();
       setStatus("Assinatura enviada. Concluindo pareamento...");
     } catch (e) {

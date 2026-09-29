@@ -40,6 +40,14 @@ and pull requests in `FORK-TRIAGE.md`.
   events under `CONNECTION`.
 
 ### Additions (small)
+- Endpoints (details in `docs/wiki/guias-api/api-fork-additions.md`): `viewOnce` in
+  `/send/media`; `POST /send/pollVote`; `POST /message/subscribe` (contact
+  presence); `POST /user/lid`; `POST /user/contacts`; `PictureURL` in
+  `/user/info`; `POST /group/requests` and `/group/requests/update`;
+  `GET /instance/proxy/{id}` (runtime proxy status, no credentials) and
+  `PROXY_FAIL_CLOSED`.
+- `passkey-helper` 1.1.0: WebAuthn runs in the page's MAIN world so password
+  managers (1Password, Bitwarden) work; requires Chrome/Edge 111+.
 - `quoted.text` (optional) fills the quote card of replies.
 - `/instance/qr` keeps returning the QR alongside the passkey fields.
 - `REREQUEST_FROM_PHONE` (opt-in) re-requests undecryptable messages.
