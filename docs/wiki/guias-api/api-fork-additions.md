@@ -194,3 +194,33 @@ O estado fica em memória: depois de reiniciar o processo ele só volta quando o
 ```
 
 O WhatsApp recusou a versão do cliente. O projeto **descarta o cache da versão** (que valia 1 hora e faria todas as novas tentativas repetirem a versão recusada) para a próxima reconexão buscar a atual. Se `versionPinned` for `true`, as variáveis `WHATSAPP_VERSION_*` fixam a versão e precisam ser atualizadas ou removidas. O diagnóstico traz `runtime.clientOutdatedAt` e, por 30 minutos, o aviso `client_outdated`.
+
+## Eventos de pareamento e de estado de chat
+
+Eventos que o whatsmeow emitia e o projeto ignorava. Todos usam o mesmo envelope dos demais (`event`, `data`, `instanceId`, `instanceName`, `instanceToken`).
+
+### Falhas de pareamento (assinatura `QRCODE`)
+
+| Evento | Quando | `data` |
+|---|---|---|
+| `PairError` | O servidor confirmou o pareamento, mas concluí-lo localmente falhou | `id`, `lid`, `businessName`, `platform`, `error` |
+| `QRScannedWithoutMultidevice` | O QR foi lido por um celular **sem multi-dispositivo**; o mesmo QR continua válido depois de ativá-lo | `message` |
+
+Antes o usuário ficava sem nenhum retorno quando o pareamento não completava. `CATRefreshError` (`data.error`) segue a assinatura `CONNECTION`. `ManualLoginReconnect` só existe com `DisableLoginAutoReconnect`, que o projeto nunca liga, e por isso não é tratado.
+
+### Mudanças de estado de chat feitas em outro aparelho (assinatura `CHAT_PRESENCE`)
+
+Onde o `Archive` já era publicado. Uma integração (CRM, caixa de entrada) passa a saber que um chat foi fixado, silenciado, marcado como lido, limpo ou apagado.
+
+| Evento | `data` |
+|---|---|
+| `Mute` | `jid`, `timestamp`, `muted`, `muteEndTimestamp` |
+| `Pin` | `jid`, `timestamp`, `pinned` |
+| `Star` | `chatJid`, `senderJid`, `isFromMe`, `messageId`, `timestamp`, `starred` |
+| `MarkChatAsRead` | `jid`, `timestamp`, `read` |
+| `ClearChat` / `DeleteChat` | `jid`, `timestamp`, `deleteMedia` |
+| `DeleteForMe` | `chatJid`, `senderJid`, `isFromMe`, `messageId`, `timestamp`, `deleteMedia` |
+| `UnarchiveChatsSetting` | `timestamp`, `unarchiveChats` |
+| `UserStatusMute` | `jid`, `timestamp`, `muted` |
+
+**Eventos de full sync não são publicados.** Logo depois de um pareamento o celular reenvia todo o seu estado (cada chat fixado, silenciado ou com estrela). Publicar isso inundaria o assinante com milhares de "mudanças" que não são mudanças; por isso só o que acontece depois vai para os webhooks.

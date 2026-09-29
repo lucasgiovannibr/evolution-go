@@ -2335,6 +2335,25 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		doWebhook = true
 		postMap["event"] = "ClientOutdated"
 		postMap["data"] = map[string]interface{}{"versionPinned": pinned}
+	case *events.PairError, *events.QRScannedWithoutMultidevice, *events.CATRefreshError,
+		*events.Mute, *events.Pin, *events.Star, *events.MarkChatAsRead, *events.ClearChat,
+		*events.DeleteChat, *events.DeleteForMe, *events.UnarchiveChatsSetting, *events.UserStatusMute:
+		name, data, publish, _ := pairAndChatEventData(rawEvt)
+		switch rawEvt.(type) {
+		case *events.PairError:
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Pairing failed: %v", mycli.userID, data["error"])
+		case *events.QRScannedWithoutMultidevice:
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] The QR code was scanned by a phone without multi-device enabled; the same code can be scanned again after enabling it", mycli.userID)
+		case *events.CATRefreshError:
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] CAT refresh failed: %v", mycli.userID, data["error"])
+		}
+		if !publish {
+			// app state replayed by a full sync (e.g. right after pairing): not a change
+			return
+		}
+		doWebhook = true
+		postMap["event"] = name
+		postMap["data"] = data
 	case *events.ConnectFailure:
 		doWebhook = true
 		postMap["event"] = "ConnectFailure"
@@ -2626,7 +2645,7 @@ func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueN
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
 		}
-	case "ChatPresence", "Archive":
+	case "ChatPresence", "Archive", "Mute", "Pin", "Star", "MarkChatAsRead", "ClearChat", "DeleteChat", "DeleteForMe", "UnarchiveChatsSetting", "UserStatusMute":
 		if contains(subscriptions, "CHAT_PRESENCE") {
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
@@ -2636,7 +2655,7 @@ func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueN
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
 		}
-	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored", "ReachoutTimelock", "StreamError", "ClientOutdated":
+	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored", "ReachoutTimelock", "StreamError", "ClientOutdated", "CATRefreshError":
 		if contains(subscriptions, "CONNECTION") {
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
@@ -2672,7 +2691,7 @@ func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueN
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
 		}
 	// Passkey* are part of the device-pairing flow (like QRCode), so they follow the QRCODE subscription (#105).
-	case "QRCode", "QRTimeout", "QRSuccess", "PasskeyRequest", "PasskeyConfirmation", "PasskeyError":
+	case "QRCode", "QRTimeout", "QRSuccess", "PasskeyRequest", "PasskeyConfirmation", "PasskeyError", "PairError", "QRScannedWithoutMultidevice":
 		if contains(subscriptions, "QRCODE") {
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
@@ -2904,11 +2923,11 @@ func globalEventTypeFor(eventType string) string {
 		return "PRESENCE"
 	case "HistorySync":
 		return "HISTORY_SYNC"
-	case "ChatPresence", "Archive":
+	case "ChatPresence", "Archive", "Mute", "Pin", "Star", "MarkChatAsRead", "ClearChat", "DeleteChat", "DeleteForMe", "UnarchiveChatsSetting", "UserStatusMute":
 		return "CHAT_PRESENCE"
 	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency":
 		return "CALL"
-	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored", "ReachoutTimelock", "StreamError", "ClientOutdated":
+	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored", "ReachoutTimelock", "StreamError", "ClientOutdated", "CATRefreshError":
 		return "CONNECTION"
 	case "LabelEdit", "LabelAssociationChat", "LabelAssociationMessage":
 		return "LABEL"
@@ -2922,7 +2941,7 @@ func globalEventTypeFor(eventType string) string {
 		return "GROUP"
 	case "NewsletterJoin", "NewsletterLeave":
 		return "NEWSLETTER"
-	case "QRCode", "QRTimeout", "QRSuccess", "PasskeyRequest", "PasskeyConfirmation", "PasskeyError":
+	case "QRCode", "QRTimeout", "QRSuccess", "PasskeyRequest", "PasskeyConfirmation", "PasskeyError", "PairError", "QRScannedWithoutMultidevice":
 		return "QRCODE"
 	case "ButtonClick":
 		return "BUTTON_CLICK"
