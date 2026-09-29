@@ -299,14 +299,20 @@ Adiciona, remove ou promove participantes do grupo.
 **Resposta de Sucesso (200)**:
 ```json
 {
-  "message": "success"
+  "message": "success",
+  "failed": 1,
+  "data": [
+    { "JID": "5531900000009@s.whatsapp.net", "Error": 404, "IsAdmin": false, "IsSuperAdmin": false }
+  ]
 }
 ```
+
+`data` traz o resultado de **cada participante**: `Error` é `0` quando deu certo (ex.: `404` = número não está no WhatsApp, `403` = sem permissão) e `failed` conta os que falharam. A requisição responde `200` mesmo com falhas parciais — confira `failed`/`Error`.
 
 **Resposta de Erro (500)**:
 ```json
 {
-  "error": "error create group: 403 forbidden"
+  "error": "error updating group participants: 403 forbidden"
 }
 ```
 

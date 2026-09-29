@@ -362,13 +362,22 @@ func (g *groupHandler) UpdateParticipant(ctx *gin.Context) {
 		return
 	}
 
-	err = g.groupService.UpdateParticipant(data, instance)
+	results, err := g.groupService.UpdateParticipant(data, instance)
 	if err != nil {
 		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 
-	ctx.JSON(http.StatusOK, gin.H{"message": "success"})
+	// Per-participant outcome: Error is 0 on success (e.g. 404 = number not on
+	// WhatsApp, 403 = not allowed). The request itself still answers 200.
+	failed := 0
+	for _, r := range results {
+		if r.Error != 0 {
+			failed++
+		}
+	}
+
+	ctx.JSON(http.StatusOK, gin.H{"message": "success", "data": results, "failed": failed})
 }
 
 // Get my groups
