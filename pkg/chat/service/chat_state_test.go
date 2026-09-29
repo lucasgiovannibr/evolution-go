@@ -66,14 +66,3 @@ func TestChatStateValidatesBeforeTouchingTheClient(t *testing.T) {
 }
 
 func first(_ string, err error) error { return err }
-
-func TestAppStateChatJIDWithoutAClientKeepsTheJID(t *testing.T) {
-	pn := types.NewJID("5531999990001", types.DefaultUserServer)
-	if got := appStateChatJID(nil, pn); got != pn {
-		t.Fatalf("got %v", got)
-	}
-	g := types.NewJID("120363000000000001", types.GroupServer)
-	if got := appStateChatJID(nil, g); got != g {
-		t.Fatalf("got %v", got)
-	}
-}

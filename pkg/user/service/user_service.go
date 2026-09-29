@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
@@ -602,6 +601,11 @@ func (u *userService) BlockContact(data *BlockStruct, instance *instance_model.I
 	if !ok {
 		return nil, errors.New("invalid phone number")
 	}
+	// UpdateBlocklist resolves the LID of a phone number through the store and, when it
+	// is unknown, through a usync query. With the "+" that CreateJID adds, neither
+	// finds the user: the query waited for its timeout and the call failed (see
+	// utils.CanonicalJID).
+	jid = utils.CanonicalJID(jid)
 
 	resp, err := client.UpdateBlocklist(context.Background(), jid, events.BlocklistChangeActionBlock)
 	if err != nil {
@@ -621,6 +625,11 @@ func (u *userService) UnlockContact(data *BlockStruct, instance *instance_model.
 	if !ok {
 		return nil, errors.New("invalid phone number")
 	}
+	// UpdateBlocklist resolves the LID of a phone number through the store and, when it
+	// is unknown, through a usync query. With the "+" that CreateJID adds, neither
+	// finds the user: the query waited for its timeout and the call failed (see
+	// utils.CanonicalJID).
+	jid = utils.CanonicalJID(jid)
 
 	resp, err := client.UpdateBlocklist(context.Background(), jid, events.BlocklistChangeActionUnblock)
 	if err != nil {
@@ -652,7 +661,7 @@ func (u *userService) SetProfilePicture(data *SetProfilePictureStruct, instance 
 
 	var filedata []byte
 
-	resp, err := http.Get(data.Image)
+	resp, err := utils.DownloadClient.Get(data.Image)
 	if err != nil {
 		return false, fmt.Errorf("failed to fetch image from URL: %v", err)
 	}

@@ -7,7 +7,6 @@ import (
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
-	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/types"
 )
@@ -66,17 +65,6 @@ func parseChat(chat string) (types.JID, error) {
 	return utils.CanonicalJID(parsed), nil
 }
 
-// appStateChatJID maps a phone-number JID to the LID the phone knows the chat by.
-func appStateChatJID(client *whatsmeow.Client, jid types.JID) types.JID {
-	if jid.Server != types.DefaultUserServer || client == nil || client.Store == nil || client.Store.LIDs == nil {
-		return jid
-	}
-	if lid, err := client.Store.LIDs.GetLIDForPN(context.Background(), jid); err == nil && !lid.IsEmpty() {
-		return lid.ToNonAD()
-	}
-	return jid
-}
-
 // applyChatState builds and sends one chat-state patch. It returns the moment it was
 // applied (the routes used to return a zero time).
 func (c *chatService) applyChatState(instance *instance_model.Instance, chat, what string, build func(target types.JID) appstate.PatchInfo) (string, error) {
@@ -88,7 +76,7 @@ func (c *chatService) applyChatState(instance *instance_model.Instance, chat, wh
 	if err != nil {
 		return "", err
 	}
-	target := appStateChatJID(client, jid)
+	target := utils.AppStateChatJID(client, jid)
 
 	if err := client.SendAppState(context.Background(), build(target)); err != nil {
 		c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error %s chat %s: %v", instance.Id, what, target, err)

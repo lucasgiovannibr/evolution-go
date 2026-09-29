@@ -270,8 +270,7 @@ func (i instances) Connect(data *ConnectStruct, instance *instance_model.Instanc
 		}
 
 		if instance.Proxy != "" || i.config.ProxyHost != "" {
-			var proxyConfig ProxyConfig
-			err := json.Unmarshal([]byte(instance.Proxy), &proxyConfig)
+			proxyConfig, err := parseProxyConfig(instance.Proxy)
 			if err != nil {
 				i.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error unmarshalling proxy config: %v", instance.Id, err)
 				return nil, "", "", err
@@ -787,8 +786,7 @@ func (i instances) ForceReconnect(instanceId string, number string) error {
 	}
 
 	if instance.Proxy != "" || i.config.ProxyHost != "" {
-		var proxyConfig ProxyConfig
-		err := json.Unmarshal([]byte(instance.Proxy), &proxyConfig)
+		proxyConfig, err := parseProxyConfig(instance.Proxy)
 		if err != nil {
 			i.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error unmarshalling proxy config: %v", instance.Id, err)
 			return err
@@ -990,4 +988,19 @@ func NewInstanceService(
 		config:             config,
 		loggerWrapper:      loggerWrapper,
 	}
+}
+
+// parseProxyConfig reads the proxy JSON stored on an instance. An instance without a
+// proxy holds "" (or "null"); that is an empty config, not an error. With a proxy
+// configured through the environment (PROXY_HOST...), an instance created before it
+// was set has no proxy JSON of its own, and treating "" as malformed made
+// connecting it fail with "unexpected end of JSON input".
+func parseProxyConfig(raw string) (ProxyConfig, error) {
+	var cfg ProxyConfig
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "null" {
+		return cfg, nil
+	}
+	err := json.Unmarshal([]byte(raw), &cfg)
+	return cfg, err
 }

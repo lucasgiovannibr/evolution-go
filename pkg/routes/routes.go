@@ -180,12 +180,12 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 	{
 		routes.Use(r.authMiddleware.Auth)
 		{
-			routes.POST("/pin", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatPin)             // TODO: not working
-			routes.POST("/unpin", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatUnpin)         // TODO: not working
-			routes.POST("/archive", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatArchive)     // TODO: not working
-			routes.POST("/unarchive", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatUnarchive) // TODO: not working
-			routes.POST("/mute", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatMute)           // TODO: not working
-			routes.POST("/unmute", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatUnmute)       // TODO: not working
+			routes.POST("/pin", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatPin)
+			routes.POST("/unpin", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatUnpin)
+			routes.POST("/archive", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatArchive)
+			routes.POST("/unarchive", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatUnarchive)
+			routes.POST("/mute", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatMute)
+			routes.POST("/unmute", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatUnmute)
 			routes.POST("/history-sync", r.chatHandler.HistorySyncRequest)
 			routes.POST("/disappearing", r.chatHandler.SetDisappearing)
 		}
@@ -202,7 +202,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/description", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.SetGroupDescription)
 			routes.POST("/create", r.jidValidationMiddleware.ValidateMultipleNumbers("participants"), r.groupHandler.CreateGroup)
 			routes.POST("/participant", r.jidValidationMiddleware.ValidateMultipleNumbers("participants"), r.groupHandler.UpdateParticipant)
-			routes.GET("/myall", r.groupHandler.GetMyGroups) // TODO: not working
+			routes.GET("/myall", r.groupHandler.GetMyGroups)
 			routes.POST("/join", r.groupHandler.JoinGroupLink)
 			routes.POST("/inviteinfo", r.groupHandler.GetInviteInfo)
 			routes.POST("/joininvite", r.groupHandler.JoinGroupInvite)
