@@ -1,12 +1,12 @@
 package whatsmeow_service
 
 import (
-	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"bytes"
 	"context"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image/png"
 	"io"
@@ -47,6 +47,7 @@ import (
 	message_repository "github.com/evolution-foundation/evolution-go/pkg/message/repository"
 	"github.com/evolution-foundation/evolution-go/pkg/passkey/ceremony"
 	poll_service "github.com/evolution-foundation/evolution-go/pkg/poll/service"
+	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	storage_interfaces "github.com/evolution-foundation/evolution-go/pkg/storage/interfaces"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 )
@@ -351,8 +352,23 @@ func (w whatsmeowService) ForceUpdateJid(instanceId string, number string) error
 	}
 
 	if instance.Jid == "" && number != "" {
-		sqlDeviceSearch := fmt.Sprintf("SELECT jid FROM whatsmeow_device WHERE jid LIKE '%%%s%%'", number)
-		rows, err := w.authDB.Query(sqlDeviceSearch)
+		if w.authDB == nil {
+			return errors.New("ForceUpdateJid requires the PostgreSQL auth database")
+		}
+
+		// `number` comes from the request body: keep only digits and pass it as a
+		// bound parameter. It used to be formatted straight into the SQL string.
+		digits := strings.Map(func(r rune) rune {
+			if r >= '0' && r <= '9' {
+				return r
+			}
+			return -1
+		}, number)
+		if digits == "" {
+			return errors.New("invalid number")
+		}
+
+		rows, err := w.authDB.Query("SELECT jid FROM whatsmeow_device WHERE jid LIKE $1", "%"+digits+"%")
 		if err != nil {
 			w.loggerWrapper.GetLogger(instanceId).LogError("[%s] Error getting device: %v", instanceId, err)
 			return err
