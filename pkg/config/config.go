@@ -50,6 +50,7 @@ type Config struct {
 	WhatsappVersionPatch int
 	ProxyProtocol        string
 	ProxyHost            string
+	ProxyFailClosed      bool
 	ProxyPort            string
 	ProxyUsername        string
 	ProxyPassword        string
@@ -371,6 +372,7 @@ func Load() *Config {
 		WhatsappVersionPatch: patch,
 		ProxyProtocol:        proxyProtocol,
 		ProxyHost:            proxyHost,
+		ProxyFailClosed:      os.Getenv(config_env.PROXY_FAIL_CLOSED) == "true",
 		ProxyPort:            proxyPort,
 		ProxyUsername:        proxyUsername,
 		ProxyPassword:        proxyPassword,
