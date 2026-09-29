@@ -697,6 +697,18 @@ func schedulePresenceUpdates(mycli *MyClient) {
 				return // Encerra a goroutine se a instância não existir mais
 			}
 
+			// Stop when this client was replaced by a reconnect (each reconnect used to
+			// leave one of these goroutines behind, still holding the old flag values)
+			// or when alwaysOnline was switched off at runtime (#55).
+			if current, ok := mycli.myClientPointer.Lookup(mycli.userID); !ok || current != mycli {
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Client was replaced, stopping presence updates", mycli.userID)
+				return
+			}
+			if !mycli.Instance.AlwaysOnline {
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] alwaysOnline disabled, stopping presence updates", mycli.userID)
+				return
+			}
+
 			processPresenceUpdates(mycli)
 
 			ticker.Stop()
