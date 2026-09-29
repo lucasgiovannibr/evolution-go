@@ -318,13 +318,8 @@ func (s *sendHandler) SendPoll(ctx *gin.Context) {
 		return
 	}
 
-	if data.Question == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "question is required"})
-		return
-	}
-
-	if len(data.Options) < 2 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "minimum 2 options are required"})
+	if err := data.ValidatePoll(); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -459,23 +454,8 @@ func (s *sendHandler) SendLocation(ctx *gin.Context) {
 		return
 	}
 
-	if data.Latitude == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "latitude is required"})
-		return
-	}
-
-	if data.Longitude == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "longitude is required"})
-		return
-	}
-
-	if data.Address == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "address is required"})
-		return
-	}
-
-	if data.Name == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+	if err := data.Validate(); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 

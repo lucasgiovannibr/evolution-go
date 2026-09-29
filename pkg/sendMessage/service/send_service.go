@@ -15,6 +15,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/url"
 	"os/exec"
 	"regexp"
 	"strconv"
@@ -636,14 +637,15 @@ func (s *sendService) checkSingleUserExists(client *whatsmeow.Client, phone stri
 	return remoteJID, true, nil
 }
 
+// urlPattern matches an http(s) URL up to the next whitespace, angle bracket or quote.
+var urlPattern = regexp.MustCompile(`https?://[^\s<>"']+`)
+
+// findURL returns the first URL of a text. Punctuation that belongs to the sentence,
+// not to the link ("see https://x.com/a.", "(https://x.com)"), is left out: the
+// preview used to be fetched for "https://x.com/a." and fail.
 func findURL(text string) string {
-	urlRegex := `http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\\(\\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+`
-	re := regexp.MustCompile(urlRegex)
-	urls := re.FindAllString(text, -1)
-	if len(urls) > 0 {
-		return urls[0]
-	}
-	return ""
+	m := urlPattern.FindString(text)
+	return strings.TrimRight(m, ".,;:!?)]}")
 }
 
 func (s *sendService) SendText(data *TextStruct, instance *instance_model.Instance) (*MessageSendStruct, error) {
@@ -700,25 +702,39 @@ func (s *sendService) sendTextWithRetry(data *TextStruct, instance *instance_mod
 	return nil, fmt.Errorf("failed to send text after %d attempts", maxRetries)
 }
 
-func fetchLinkMetadata(url string) (string, string, string, error) {
-	resp, err := utils.QuickClient.Get(url)
+// fetchLinkMetadata reads the title, description and image of a page for a link
+// preview. The title is og:title, else the FIRST <title> (a later inline SVG <title>
+// used to replace it), and a relative og:image is resolved against the page URL (it
+// used to be fetched as-is, which failed the whole send).
+func fetchLinkMetadata(pageURL string) (string, string, string, error) {
+	resp, err := utils.QuickClient.Get(pageURL)
 	if err != nil {
 		return "", "", "", err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode < 200 || resp.StatusCode > 299 {
+		return "", "", "", fmt.Errorf("link preview: HTTP status %d", resp.StatusCode)
+	}
 
 	doc, err := html.Parse(io.LimitReader(resp.Body, 2<<20))
 	if err != nil {
 		return "", "", "", err
 	}
 
-	var title, description, imgURL string
+	title, description, imgURL := parseLinkMetadata(doc)
+	return title, description, resolveImageURL(pageURL, imgURL), nil
+}
+
+// parseLinkMetadata extracts the preview fields from a parsed page.
+func parseLinkMetadata(doc *html.Node) (title, description, imgURL string) {
+	var docTitle, ogTitle string
 
 	var f func(*html.Node)
 	f = func(n *html.Node) {
 		if n.Type == html.ElementNode {
-			if n.Data == "title" && n.FirstChild != nil {
-				title = n.FirstChild.Data
+			if n.Data == "title" && n.FirstChild != nil && docTitle == "" {
+				docTitle = n.FirstChild.Data
 			}
 			if n.Data == "meta" {
 				var property, content string
@@ -731,12 +747,13 @@ func fetchLinkMetadata(url string) (string, string, string, error) {
 					}
 				}
 
-				if (property == "description" || property == "og:description") && content != "" {
+				switch {
+				case (property == "description" || property == "og:description") && content != "":
 					description = content
-				}
-
-				if property == "og:image" && content != "" {
+				case property == "og:image" && content != "":
 					imgURL = content
+				case property == "og:title" && content != "":
+					ogTitle = content
 				}
 			}
 		}
@@ -745,10 +762,80 @@ func fetchLinkMetadata(url string) (string, string, string, error) {
 			f(c)
 		}
 	}
-
 	f(doc)
 
-	return title, description, imgURL, nil
+	title = ogTitle
+	if title == "" {
+		title = docTitle
+	}
+	return title, description, imgURL
+}
+
+// resolveImageURL makes a possibly relative image URL absolute.
+func resolveImageURL(pageURL, img string) string {
+	img = strings.TrimSpace(img)
+	if img == "" {
+		return ""
+	}
+	base, err := url.Parse(pageURL)
+	if err != nil {
+		return img
+	}
+	ref, err := url.Parse(img)
+	if err != nil {
+		return img
+	}
+	return base.ResolveReference(ref).String()
+}
+
+// linkPreview is what SendLink puts in the message.
+type linkPreview struct {
+	MatchedText string
+	Title       string
+	Description string
+	Thumbnail   []byte
+}
+
+// buildLinkPreview gathers the preview of a link message. It is best effort: a page
+// that cannot be fetched, or an image that cannot be downloaded, no longer fails the
+// send (a site that blocks bots or has a relative image made the message impossible
+// to send); the message goes out with what could be gathered. Values the caller
+// supplied win over what was scraped (they used to be overwritten, even by empty ones).
+func (s *sendService) buildLinkPreview(data *LinkStruct, instanceID string) linkPreview {
+	p := linkPreview{Title: data.Title, Description: data.Description}
+	imgURL := data.ImgUrl
+
+	p.MatchedText = strings.TrimSpace(data.Url)
+	if p.MatchedText == "" {
+		p.MatchedText = findURL(data.Text)
+	}
+
+	if p.MatchedText != "" {
+		title, description, image, err := fetchLinkMetadata(p.MatchedText)
+		if err != nil {
+			s.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Link preview: could not read %s: %v", instanceID, p.MatchedText, err)
+		} else {
+			if p.Title == "" {
+				p.Title = title
+			}
+			if p.Description == "" {
+				p.Description = description
+			}
+			if imgURL == "" {
+				imgURL = image
+			}
+		}
+	}
+
+	if imgURL != "" {
+		thumb, err := utils.DownloadBytes(imgURL, utils.MaxThumbnailDownload)
+		if err != nil {
+			s.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Link preview: no thumbnail: %v", instanceID, err)
+		} else {
+			p.Thumbnail = thumb
+		}
+	}
+	return p
 }
 
 func (s *sendService) SendLink(data *LinkStruct, instance *instance_model.Instance) (*MessageSendStruct, error) {
@@ -756,6 +843,9 @@ func (s *sendService) SendLink(data *LinkStruct, instance *instance_model.Instan
 }
 
 func (s *sendService) sendLinkWithRetry(data *LinkStruct, instance *instance_model.Instance, maxRetries int) (*MessageSendStruct, error) {
+	// The page is read once, not once per connection attempt.
+	preview := s.buildLinkPreview(data, instance.Id)
+
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] SendLink attempt %d/%d", instance.Id, attempt, maxRetries)
 
@@ -767,43 +857,14 @@ func (s *sendService) sendLinkWithRetry(data *LinkStruct, instance *instance_mod
 			continue
 		}
 
-		matchedText := findURL(data.Text)
-
-		if matchedText != "" {
-			title, description, imgUrl, err := fetchLinkMetadata(matchedText)
-			if err != nil {
-				if attempt == maxRetries {
-					return nil, err
-				}
-				continue
-			}
-
-			data.Title = title
-			data.Description = description
-			data.ImgUrl = imgUrl
-		}
-
-		var fileData []byte
-		if data.ImgUrl != "" {
-			resp, err := utils.DownloadClient.Get(data.ImgUrl)
-			if err != nil {
-				if attempt == maxRetries {
-					return nil, err
-				}
-				continue
-			}
-			defer resp.Body.Close()
-			fileData, _ = io.ReadAll(resp.Body)
-		}
-
 		previewType := waE2E.ExtendedTextMessage_VIDEO
 		msg := &waE2E.Message{
 			ExtendedTextMessage: &waE2E.ExtendedTextMessage{
 				Text:          &data.Text,
-				Title:         &data.Title,
-				MatchedText:   &matchedText,
-				JPEGThumbnail: fileData,
-				Description:   &data.Description,
+				Title:         &preview.Title,
+				MatchedText:   &preview.MatchedText,
+				JPEGThumbnail: preview.Thumbnail,
+				Description:   &preview.Description,
 				PreviewType:   &previewType,
 			},
 		}
@@ -913,8 +974,15 @@ func convertAudioWithApi(apiUrl string, apiKey string, convertData ConvertAudio)
 	return base64ToBytes, apiResponse.Duration, nil
 }
 
+// ffmpegTimeout bounds one audio conversion: a corrupt or endless input used to keep
+// ffmpeg (and the request waiting on it) running forever.
+const ffmpegTimeout = 3 * time.Minute
+
 func convertAudioToOpusWithDuration(inputData []byte) ([]byte, int, error) {
-	cmd := exec.Command("ffmpeg", "-i", "pipe:0",
+	ctx, cancel := context.WithTimeout(context.Background(), ffmpegTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "ffmpeg", "-i", "pipe:0",
 		"-f",
 		"ogg",
 		"-vn",
@@ -957,6 +1025,9 @@ func convertAudioToOpusWithDuration(inputData []byte) ([]byte, int, error) {
 	cmd.Stderr = &errBuffer
 
 	err := cmd.Run()
+	if ctx.Err() == context.DeadlineExceeded {
+		return nil, 0, fmt.Errorf("audio conversion timed out after %v", ffmpegTimeout)
+	}
 	if err != nil {
 		return nil, 0, fmt.Errorf("error during conversion: %v, details: %s", err, errBuffer.String())
 	}
@@ -1291,20 +1362,13 @@ func (s *sendService) sendMediaUrlWithRetry(data *MediaStruct, instance *instanc
 
 		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Iniciando download da URL: %s", instance.Id, data.Url)
 
-		resp, err := utils.DownloadClient.Get(data.Url)
+		// An error page is not the file (a 404 used to be sent as a document), and the
+		// size is bounded.
+		fileData, err := utils.DownloadBytes(data.Url, utils.MaxMediaDownload)
 		if err != nil {
 			return nil, err
 		}
-		defer resp.Body.Close()
-
-		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Download concluído em %v. Lendo dados...", instance.Id, time.Since(startTime))
-
-		downloadStart := time.Now()
-		fileData, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return nil, err
-		}
-		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Leitura dos dados concluída em %v. Tamanho: %d bytes", instance.Id, time.Since(downloadStart), len(fileData))
+		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Download concluído em %v. Tamanho: %d bytes", instance.Id, time.Since(startTime), len(fileData))
 
 		mime, _ := mimetype.DetectReader(bytes.NewReader(fileData))
 		mimeType := mime.String()
@@ -1642,13 +1706,12 @@ func convertToWebP(imageData string) ([]byte, error) {
 	var img image.Image
 	var err error
 
-	resp, err := utils.DownloadClient.Get(imageData)
+	raw, err := utils.DownloadBytes(imageData, utils.MaxImageDownload)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch image from URL: %v", err)
 	}
-	defer resp.Body.Close()
 
-	img, _, err = image.Decode(resp.Body)
+	img, _, err = image.Decode(bytes.NewReader(raw))
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode image: %v", err)
 	}
@@ -1939,10 +2002,10 @@ func (s *sendService) SendButton(data *ButtonStruct, instance *instance_model.In
 
 		// Optional media header (image or video URL).
 		if data.ImageUrl != "" {
-			if resp, err := utils.DownloadClient.Get(data.ImageUrl); err == nil {
-				fileData, readErr := io.ReadAll(resp.Body)
-				resp.Body.Close()
-				if readErr == nil {
+			if fileData, readErr := utils.DownloadBytes(data.ImageUrl, utils.MaxImageDownload); readErr != nil {
+				s.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Button header ImageUrl not attached: %v", instance.Id, readErr)
+			} else {
+				{
 					if uploaded, upErr := client.Upload(context.Background(), fileData, whatsmeow.MediaImage); upErr == nil {
 						buttonsMsg.HeaderType = waE2E.ButtonsMessage_IMAGE.Enum()
 						buttonsMsg.Header = &waE2E.ButtonsMessage_ImageMessage{
@@ -1960,10 +2023,10 @@ func (s *sendService) SendButton(data *ButtonStruct, instance *instance_model.In
 				}
 			}
 		} else if data.VideoUrl != "" {
-			if resp, err := utils.DownloadClient.Get(data.VideoUrl); err == nil {
-				fileData, readErr := io.ReadAll(resp.Body)
-				resp.Body.Close()
-				if readErr == nil {
+			if fileData, readErr := utils.DownloadBytes(data.VideoUrl, utils.MaxMediaDownload); readErr != nil {
+				s.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Button header VideoUrl not attached: %v", instance.Id, readErr)
+			} else {
+				{
 					if uploaded, upErr := client.Upload(context.Background(), fileData, whatsmeow.MediaVideo); upErr == nil {
 						buttonsMsg.HeaderType = waE2E.ButtonsMessage_VIDEO.Enum()
 						buttonsMsg.Header = &waE2E.ButtonsMessage_VideoMessage{
@@ -2469,9 +2532,17 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 
 	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Recipient validated: %s (Server: %s)", instance.Id, recipient.String(), recipient.Server)
 
+	// One lookup for the whole send. The instance can be stopped or replaced while a
+	// send is in flight (a delay, an upload), and the repeated lookups below used to
+	// dereference the nil that leaves behind.
+	client := s.clientPointer.Get(instance.Id)
+	if client == nil || client.Store == nil || client.Store.ID == nil {
+		return nil, errors.New("no active session found")
+	}
+
 	var message string
 	if data.Id == "" {
-		message = s.clientPointer.Get(instance.Id).GenerateMessageID()
+		message = client.GenerateMessageID()
 	} else {
 		message = data.Id
 	}
@@ -2482,14 +2553,14 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 			media = "audio"
 		}
 
-		err := s.clientPointer.Get(instance.Id).SendChatPresence(context.Background(), recipient, types.ChatPresence("composing"), types.ChatPresenceMedia(media))
+		err := client.SendChatPresence(context.Background(), recipient, types.ChatPresence("composing"), types.ChatPresenceMedia(media))
 		if err != nil {
 			return nil, err
 		}
 
 		time.Sleep(time.Duration(data.Delay) * time.Millisecond)
 
-		err = s.clientPointer.Get(instance.Id).SendChatPresence(context.Background(), recipient, types.ChatPresence("paused"), types.ChatPresenceMedia(media))
+		err = client.SendChatPresence(context.Background(), recipient, types.ChatPresence("paused"), types.ChatPresenceMedia(media))
 		if err != nil {
 			return nil, err
 		}
@@ -2744,7 +2815,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	// Only try to get participants for actual groups, not newsletters
 	if isGroup && !isNewsletter {
 		if data.MentionAll {
-			groupInfo, err := s.clientPointer.Get(instance.Id).GetGroupInfo(context.Background(), recipient)
+			groupInfo, err := client.GetGroupInfo(context.Background(), recipient)
 			if err != nil {
 				return nil, err
 			}
@@ -2787,7 +2858,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 		sendExtra.AdditionalNodes = data.AdditionalNodes
 	}
 
-	response, err := s.clientPointer.Get(instance.Id).SendMessage(context.Background(), recipient, msg, sendExtra)
+	response, err := client.SendMessage(context.Background(), recipient, msg, sendExtra)
 	if err != nil {
 		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error sending message: %v", instance.Id, err)
 		// A bare "server returned error 463" says nothing to a person: explain it and,
@@ -2800,7 +2871,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	messageInfo := types.MessageInfo{
 		MessageSource: types.MessageSource{
 			Chat:     recipient,
-			Sender:   *s.clientPointer.Get(instance.Id).Store.ID,
+			Sender:   *client.Store.ID,
 			IsFromMe: true,
 			IsGroup:  isGroup,
 		},
@@ -2854,15 +2925,15 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 		sticker := msg.GetStickerMessage()
 
 		if img != nil {
-			data, err = s.clientPointer.Get(instance.Id).Download(context.Background(), img)
+			data, err = client.Download(context.Background(), img)
 		} else if audio != nil {
-			data, err = s.clientPointer.Get(instance.Id).Download(context.Background(), audio)
+			data, err = client.Download(context.Background(), audio)
 		} else if document != nil {
-			data, err = s.clientPointer.Get(instance.Id).Download(context.Background(), document)
+			data, err = client.Download(context.Background(), document)
 		} else if video != nil {
-			data, err = s.clientPointer.Get(instance.Id).Download(context.Background(), video)
+			data, err = client.Download(context.Background(), video)
 		} else if sticker != nil {
-			data, err = s.clientPointer.Get(instance.Id).Download(context.Background(), sticker)
+			data, err = client.Download(context.Background(), sticker)
 
 			webpReader := bytes.NewReader(data)
 			img, err := webp.Decode(webpReader)
@@ -2964,11 +3035,11 @@ func (s *sendService) SendCarousel(data *CarouselStruct, instance *instance_mode
 
 			if card.Header.ImageUrl != "" {
 				// Download image
-				resp, err := utils.DownloadClient.Get(card.Header.ImageUrl)
-				if err == nil {
-					defer resp.Body.Close()
-					fileData, err := io.ReadAll(resp.Body)
-					if err == nil {
+				fileData, err := utils.DownloadBytes(card.Header.ImageUrl, utils.MaxImageDownload)
+				if err != nil {
+					s.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Carousel card image not attached: %v", instance.Id, err)
+				} else {
+					{
 						uploaded, err := client.Upload(context.Background(), fileData, whatsmeow.MediaImage)
 						if err == nil {
 							// Generate JPEG thumbnail for iOS compatibility
@@ -2996,11 +3067,11 @@ func (s *sendService) SendCarousel(data *CarouselStruct, instance *instance_mode
 				}
 			} else if card.Header.VideoUrl != "" {
 				// Download and upload video
-				resp, err := utils.DownloadClient.Get(card.Header.VideoUrl)
-				if err == nil {
-					defer resp.Body.Close()
-					fileData, err := io.ReadAll(resp.Body)
-					if err == nil {
+				fileData, err := utils.DownloadBytes(card.Header.VideoUrl, utils.MaxMediaDownload)
+				if err != nil {
+					s.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Carousel card video not attached: %v", instance.Id, err)
+				} else {
+					{
 						uploaded, err := client.Upload(context.Background(), fileData, whatsmeow.MediaVideo)
 						if err == nil {
 							header.HasMediaAttachment = proto.Bool(true)
@@ -3202,9 +3273,12 @@ func (s *sendService) SendStatusMediaUrl(data *StatusMediaStruct, instance *inst
 		return nil, fmt.Errorf("failed to download file: HTTP status %d", resp.StatusCode)
 	}
 
-	fileData, err := io.ReadAll(resp.Body)
+	fileData, err := io.ReadAll(io.LimitReader(resp.Body, utils.MaxMediaDownload+1))
 	if err != nil {
 		return nil, err
+	}
+	if int64(len(fileData)) > utils.MaxMediaDownload {
+		return nil, utils.ErrDownloadTooLarge
 	}
 
 	return s.sendStatusMedia(client, data, fileData, instance)

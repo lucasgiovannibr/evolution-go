@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
@@ -659,17 +658,9 @@ func (u *userService) SetProfilePicture(data *SetProfilePictureStruct, instance 
 		return false, err
 	}
 
-	var filedata []byte
-
-	resp, err := utils.DownloadClient.Get(data.Image)
+	filedata, err := utils.DownloadBytes(data.Image, utils.MaxImageDownload)
 	if err != nil {
 		return false, fmt.Errorf("failed to fetch image from URL: %v", err)
-	}
-	defer resp.Body.Close()
-
-	filedata, err = io.ReadAll(resp.Body)
-	if err != nil {
-		return false, fmt.Errorf("failed to read image data: %v", err)
 	}
 
 	_, err = client.SetGroupPhoto(context.Background(), types.EmptyJID, filedata)

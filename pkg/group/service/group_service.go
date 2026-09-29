@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"strings"
 	"time"
 
@@ -238,17 +237,11 @@ func (g *groupService) SetGroupPhoto(data *SetGroupPhotoStruct, instance *instan
 	var fileData []byte
 
 	if strings.HasPrefix(data.Image, "http://") || strings.HasPrefix(data.Image, "https://") {
-		resp, err := utils.DownloadClient.Get(data.Image)
+		var err error
+		fileData, err = utils.DownloadBytes(data.Image, utils.MaxImageDownload)
 		if err != nil {
-			g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Could not download image from URL", instance.Id)
+			g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Could not download image from URL: %v", instance.Id, err)
 			return "", fmt.Errorf("failed to fetch image from URL: %v", err)
-		}
-		defer resp.Body.Close()
-
-		fileData, err = io.ReadAll(resp.Body)
-		if err != nil {
-			g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Could not read image data from URL", instance.Id)
-			return "", fmt.Errorf("failed to read image data: %v", err)
 		}
 
 	} else if strings.HasPrefix(data.Image, "data:image/jpeg;base64,") || strings.HasPrefix(data.Image, "data:image/png;base64,") {
