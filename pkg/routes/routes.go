@@ -173,6 +173,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/status", r.messageHandler.GetMessageStatus)
 			routes.POST("/delete", r.jidValidationMiddleware.ValidateNumberField(), r.messageHandler.DeleteMessageEveryone)
 			routes.POST("/edit", r.jidValidationMiddleware.ValidateNumberField(), r.messageHandler.EditMessage) // TODO: edit MediaMessage too
+			routes.POST("/rerequest", r.messageHandler.RerequestMessage)
 		}
 	}
 	routes = eng.Group("/chat")
