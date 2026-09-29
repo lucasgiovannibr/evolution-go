@@ -4,29 +4,33 @@ Tudo aqui é **novo comportamento** (não correção) e por isso **não foi impl
 
 Escala: **Esforço** = P (poucas linhas) · M · G (dias). **Recomendação**: ▶ implementar · ◐ avaliar antes · ✖ descartar por enquanto.
 
-## Quick wins (baixo esforço, PR pronto ou quase)
+## Implementado no fork
 
-| # | Proposta | Origem | Esforço | Risco | Recomendação |
-|---|---|---|---|---|---|
-| 1 | **Mídia "ver uma vez"** em `/send/media` (`viewOnce`) | PR [#147](https://github.com/evolution-foundation/evolution-go/pull/147) (37 linhas) | P | Baixo: campo opcional | ▶ |
-| 2 | **`POST /message/markplayed`** — receipt `played` (microfone azul em áudio) | Issue [#45](https://github.com/evolution-foundation/evolution-go/issues/45) | P | Baixo: simétrico ao `markread`, usa `types.ReceiptTypePlayed` | ▶ |
-| 3 | **`POST /message/subscribe`** — assinar presença de um contato (online/visto por último). Envia presença própria antes de assinar | PR [#152](https://github.com/evolution-foundation/evolution-go/pull/152), issue [#146](https://github.com/evolution-foundation/evolution-go/issues/146) | P | Médio: enviar presença própria interage com `alwaysOnline` (#55) — precisa ficar consistente | ◐ |
-| 4 | **`PictureURL` em `POST /user/info`** | PR [#121](https://github.com/evolution-foundation/evolution-go/pull/121) (depende do #120, já aplicado) | M | Baixo | ▶ |
-| 5 | **Resolver telefone a partir de LID** (`/user/...`) | PR [#179](https://github.com/evolution-foundation/evolution-go/pull/179) (111 linhas) | P | Baixo; útil porque as contas migram para LID | ▶ |
-| 6 | **Salvar contato** na agenda do aparelho (`POST /user/contacts`) | PRs [#129](https://github.com/evolution-foundation/evolution-go/pull/129) / [#162](https://github.com/evolution-foundation/evolution-go/pull/162) | P | Baixo | ◐ |
-| 7 | **Rotas de solicitações de entrada em grupo** (`GetGroupRequestParticipants` / `UpdateGroupRequestParticipants` existem no service e não têm rota) | Issue [#42](https://github.com/evolution-foundation/evolution-go/issues/42) | P | Baixo | ▶ |
-| 8 | **Voto em enquete** `POST /send/pollVote` (usa `BuildPollVote` do whatsmeow; a correção do #60 já deixa o decrypt correto) | Issue [#26](https://github.com/evolution-foundation/evolution-go/issues/26) | M | Baixo/Médio | ◐ |
+Documentação dos endpoints: [`docs/wiki/guias-api/api-fork-additions.md`](docs/wiki/guias-api/api-fork-additions.md).
+
+| Proposta | Origem | Resultado |
+|---|---|---|
+| Mídia "ver uma vez" (`viewOnce`) em `/send/media` | PR #147 | Feito (helper único + teste) |
+| `POST /message/markplayed` | Issue #45 | **Já existia** na main; issue desatualizada |
+| `POST /message/subscribe` (presença de contato) | PR #152, issue #146 | Feito; devolve a presença ao celular após 2 min se `alwaysOnline` estiver desligado (o PR original a deixava "online" para sempre) |
+| `PictureURL` em `/user/info` | PR #121 | Feito com orçamento de tempo compartilhado e 429/504 |
+| `POST /user/lid` | PR #179 | Feito |
+| `POST /user/contacts` | PR #129 | Feito, com normalização do número (o PR usava o número cru) |
+| Rotas de solicitações de entrada em grupo | Issue #42 | `POST /group/requests` e `/group/requests/update`; JIDs de participantes canônicos (sem `+`) |
+| `POST /send/pollVote` | Issue #26 | Feito com `BuildPollVote`; testes da identidade da enquete |
+| Status seguro do proxy + `PROXY_FAIL_CLOSED` | Issue #123 | Feito: `GET /instance/proxy/{id}`, sem credenciais; opção de nunca cair para conexão direta |
+| Melhoria do `passkey-helper` (1Password) | Issue #173 | Feito: WebAuthn no mundo MAIN (v1.1.0) |
+| `quoted.text` | Issue #189 | Feito antes |
+| QR junto do passkey | Issue #148 | Feito antes |
+
+## Ainda em aberto
 
 ## Melhorias de comportamento (precisam de decisão)
 
 | # | Proposta | Origem | Esforço | Comentário | Recomendação |
 |---|---|---|---|---|---|
-| 9 | **Conteúdo da mensagem citada** (`quoted`). Hoje `QuotedMessage` vai fixo vazio em ~20 pontos do `send_service.go` e o card de resposta aparece vazio/sem toque | Issue [#189](https://github.com/evolution-foundation/evolution-go/issues/189) | M | Duas opções: (a) aceitar o conteúdo no payload; (b) buscar a mensagem original no banco (`DATABASE_SAVE_MESSAGES`) — só funciona com persistência ligada. Sugiro (a) opcional + (b) como fallback | ▶ |
 | 10 | **Timer de mensagens temporárias** herdado do chat nas mensagens enviadas (o destinatário vê "esta mensagem não vai desaparecer") | Issue [#79](https://github.com/evolution-foundation/evolution-go/issues/79) | M | Precisa do timer sincronizado por chat (app-state) ou um campo `expiration` opcional. Cosmético, mas visível ao usuário final | ◐ |
 | 11 | **Thumbnail HQ em `/send/link`** (card grande de preview) | PR [#207](https://github.com/evolution-foundation/evolution-go/pull/207) (572 linhas), issue [#103](https://github.com/evolution-foundation/evolution-go/issues/103) | M | Envolve upload de mídia de link (`MediaLinkThumbnail`) — precisa de teste em aparelho | ◐ |
-| 12 | **Status/config segura do proxy** (`GET /instance/proxy/{id}/status`, sem expor credenciais; opção `failClosed` — hoje há fallback silencioso para conexão direta) | Issue [#123](https://github.com/evolution-foundation/evolution-go/issues/123) | M | O fallback sem proxy vaza o IP real do servidor; para quem usa proxy por privacidade isso é relevante | ▶ |
-| 13 | **`/instance/qr` devolver também o QR** quando existir, mesmo em conta que exige passkey | Issue [#148](https://github.com/evolution-foundation/evolution-go/issues/148) | P | Hoje devolve só o link de passkey (comportamento novo da 0.7.2) e quem integra uma tela própria perde o QR | ◐ |
-| 14 | **Melhoria do `passkey-helper`** (WebAuthn/1Password): `navigator.credentials.get()` no MAIN world + service worker para as chamadas HTTP (evita o CSP do WhatsApp Web) | Issue [#173](https://github.com/evolution-foundation/evolution-go/issues/173) | M | O relator descreve a solução completa; a extensão está em `passkey-helper/`. Bloqueia quem usa gerenciador de senhas | ▶ |
 | 15 | **Histórico profundo no pareamento** (`HistorySyncConfig`: 10 anos / 2 GB) | parte do PR [#133](https://github.com/evolution-foundation/evolution-go/pull/133) | P | Aumenta banda/armazenamento e tempo de sync; deveria ser configurável por env, não constante | ◐ |
 | 16 | **Backoff do loop de reconexão** (até 30 min de espera) | PR [#197](https://github.com/evolution-foundation/evolution-go/pull/197) | M | Evita martelar o servidor com instância deslogada, mas atrasa recuperação legítima; janela e degraus deveriam ser configuráveis | ◐ |
 | 17 | **Redesenho do ciclo de vida** (1 runtime por instância, restauração no startup, `GetQr` 409, backoff com jitter) | PRs [#145](https://github.com/evolution-foundation/evolution-go/pull/145), [#154](https://github.com/evolution-foundation/evolution-go/pull/154) | G | Resolveria de vez a família reconexão/duplicação, mas toca o coração do `StartClient` e sobrepõe o que já foi feito. Fazer só com ambiente de teste com sessões reais | ◐ |
