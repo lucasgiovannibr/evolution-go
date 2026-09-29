@@ -138,6 +138,9 @@ type MyClient struct {
 	processedMessages  *cache.Cache
 	natsProducer       producer_interfaces.Producer
 	loggerWrapper      *logger_wrapper.LoggerManager
+	// presenceRunning is set while this client's presence scheduler goroutine lives,
+	// so switching alwaysOnline on at runtime cannot start a second one.
+	presenceRunning atomic.Bool
 	// qrcodeCount is written by the QR rotation goroutine and read by diagnostics.
 	qrcodeCount atomic.Int32
 	// Observability (RuntimeInfo): last event seen, when it was connected, total events.
@@ -902,6 +905,38 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 	}
 }
 
+// startPresenceUpdates starts the periodic presence goroutine unless this client
+// already has one. It reports whether it started one.
+func startPresenceUpdates(mycli *MyClient) bool {
+	if !mycli.presenceRunning.CompareAndSwap(false, true) {
+		return false
+	}
+	go func() {
+		defer mycli.presenceRunning.Store(false)
+		schedulePresenceUpdates(mycli)
+	}()
+	return true
+}
+
+// applyAlwaysOnlineChange makes a runtime change of alwaysOnline take effect now, the
+// same way the Connected event does. Turning it off needs no goroutine handling: the
+// scheduler notices the flag on its next tick and ends.
+func applyAlwaysOnlineChange(mycli *MyClient, alwaysOnline bool) {
+	if mycli.WAClient == nil || !mycli.WAClient.IsConnected() {
+		return
+	}
+	presence := types.PresenceUnavailable
+	if alwaysOnline {
+		presence = types.PresenceAvailable
+		startPresenceUpdates(mycli)
+	}
+	if err := mycli.WAClient.SendPresence(context.Background(), presence); err != nil {
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Failed to send %s presence after alwaysOnline changed: %v", mycli.userID, presence, err)
+		return
+	}
+	mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] alwaysOnline switched to %v at runtime: presence now %s", mycli.userID, alwaysOnline, presence)
+}
+
 func schedulePresenceUpdates(mycli *MyClient) {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
@@ -1248,7 +1283,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			// the user's phone. When alwaysOnline is false we now send Unavailable instead.
 			var err error
 			if mycli.Instance.AlwaysOnline {
-				go schedulePresenceUpdates(mycli)
+				startPresenceUpdates(mycli)
 
 				err = mycli.WAClient.SendPresence(context.Background(), types.PresenceAvailable)
 				if err != nil {
@@ -3185,7 +3220,15 @@ func (w whatsmeowService) UpdateInstanceAdvancedSettings(instanceId string) erro
 	}
 
 	// Atualiza a instância no MyClient com as advanced settings atualizadas
+	wasAlwaysOnline := myClient.Instance != nil && myClient.Instance.AlwaysOnline
 	myClient.Instance = instance
+
+	// The presence scheduler and the "available"/"unavailable" mark used to happen only
+	// on the Connected event, so switching alwaysOnline at runtime did nothing until the
+	// next reconnect.
+	if wasAlwaysOnline != instance.AlwaysOnline {
+		applyAlwaysOnlineChange(myClient, instance.AlwaysOnline)
+	}
 
 	w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Advanced settings updated in runtime successfully", instanceId)
 	return nil

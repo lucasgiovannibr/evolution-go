@@ -58,7 +58,7 @@ func (c *chatHandler) ChatPin(ctx *gin.Context) {
 
 	ts, err := c.chatService.ChatPin(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		ctx.JSON(statusForChatError(err), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -103,7 +103,7 @@ func (c *chatHandler) ChatUnpin(ctx *gin.Context) {
 
 	ts, err := c.chatService.ChatUnpin(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		ctx.JSON(statusForChatError(err), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -148,7 +148,7 @@ func (c *chatHandler) ChatArchive(ctx *gin.Context) {
 
 	ts, err := c.chatService.ChatArchive(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		ctx.JSON(statusForChatError(err), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -193,7 +193,7 @@ func (c *chatHandler) ChatUnarchive(ctx *gin.Context) {
 
 	ts, err := c.chatService.ChatUnarchive(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		ctx.JSON(statusForChatError(err), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -206,7 +206,7 @@ func (c *chatHandler) ChatUnarchive(ctx *gin.Context) {
 
 // Mute a chat
 // @Summary Mute a chat
-// @Description Mute a chat
+// @Description Mute a chat. Optional duration: "8h", "1w", "always" or a duration such as "30m" (default 1 hour).
 // @Tags Chat
 // @Accept json
 // @Produce json
@@ -238,7 +238,7 @@ func (c *chatHandler) ChatMute(ctx *gin.Context) {
 
 	ts, err := c.chatService.ChatMute(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		ctx.JSON(statusForChatError(err), gin.H{"error": err.Error()})
 		return
 	}
 
@@ -283,7 +283,7 @@ func (c *chatHandler) ChatUnmute(ctx *gin.Context) {
 
 	ts, err := c.chatService.ChatUnmute(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		ctx.JSON(statusForChatError(err), gin.H{"error": err.Error()})
 		return
 	}
 

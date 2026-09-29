@@ -19,43 +19,43 @@ type RerequestStruct struct {
 	Sender string `json:"sender,omitempty"`
 }
 
-// rerequestError marks a failure caused by what the caller sent.
-type rerequestError struct{ msg string }
+// requestError marks a failure caused by what the caller sent.
+type requestError struct{ msg string }
 
-func (e *rerequestError) Error() string { return e.msg }
+func (e *requestError) Error() string { return e.msg }
 
-// IsRerequestRequestError reports whether err is a problem with the request.
-func IsRerequestRequestError(err error) bool {
-	var re *rerequestError
+// IsRequestError reports whether err is a problem with the request.
+func IsRequestError(err error) bool {
+	var re *requestError
 	return errors.As(err, &re)
 }
 
 // resolve validates the request and returns the canonical chat and sender JIDs.
 func (d *RerequestStruct) resolve() (chat, sender types.JID, err error) {
 	if d.MessageID == "" {
-		return chat, sender, &rerequestError{"messageId is required"}
+		return chat, sender, &requestError{"messageId is required"}
 	}
 	if d.Chat == "" {
-		return chat, sender, &rerequestError{"chat is required"}
+		return chat, sender, &requestError{"chat is required"}
 	}
 	parsedChat, ok := utils.ParseJID(d.Chat)
 	if !ok {
-		return chat, sender, &rerequestError{"invalid chat"}
+		return chat, sender, &requestError{"invalid chat"}
 	}
 	chat = utils.CanonicalJID(parsedChat)
 	if chat.Server == types.NewsletterServer || chat.Server == types.BroadcastServer {
-		return chat, sender, &rerequestError{"channels and status have no copy to re-request"}
+		return chat, sender, &requestError{"channels and status have no copy to re-request"}
 	}
 
 	if d.Sender != "" {
 		parsedSender, ok := utils.ParseJID(d.Sender)
 		if !ok {
-			return chat, sender, &rerequestError{"invalid sender"}
+			return chat, sender, &requestError{"invalid sender"}
 		}
 		return chat, utils.CanonicalJID(parsedSender), nil
 	}
 	if chat.Server == types.GroupServer {
-		return chat, sender, &rerequestError{"sender is required in a group"}
+		return chat, sender, &requestError{"sender is required in a group"}
 	}
 	// One-to-one: the message came from the other side of the chat.
 	return chat, chat, nil
