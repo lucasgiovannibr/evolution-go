@@ -1,6 +1,7 @@
 package whatsmeow_service
 
 import (
+	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
 	"runtime"
 	"sort"
 	"time"
@@ -215,4 +216,15 @@ func GetProcessInfo() ProcessInfo {
 		NumGC:         m.NumGC,
 		GoVersion:     runtime.Version(),
 	}
+}
+
+// WebhookStats reports the webhook delivery queues, or nil when the producer does not
+// keep any.
+func (w *whatsmeowService) WebhookStats() *producer_interfaces.WebhookStats {
+	sp, ok := w.webhookProducer.(producer_interfaces.StatsProducer)
+	if !ok {
+		return nil
+	}
+	st := sp.WebhookStats()
+	return &st
 }

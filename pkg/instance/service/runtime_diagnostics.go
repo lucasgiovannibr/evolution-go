@@ -3,6 +3,7 @@ package instance_service
 import (
 	"sort"
 
+	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 )
@@ -30,6 +31,9 @@ type RuntimeDiagnostics struct {
 // RuntimesReport is the answer of GET /instance/runtimes.
 type RuntimesReport struct {
 	Process   whatsmeow_service.ProcessInfo `json:"process"`
+	// Webhook is the state of the webhook delivery queues: what is waiting, and what
+	// was dropped because a receiver could not keep up.
+	Webhook   *producer_interfaces.WebhookStats `json:"webhook,omitempty"`
 	Summary   RuntimesSummary               `json:"summary"`
 	Instances []RuntimeDiagnostics          `json:"instances"`
 }
@@ -138,5 +142,7 @@ func (i instances) GetRuntimes() (*RuntimesReport, error) {
 	if err != nil {
 		return nil, err
 	}
-	return buildReport(rows, i.whatsmeowService.RuntimeInfos(), whatsmeow_service.GetProcessInfo()), nil
+	report := buildReport(rows, i.whatsmeowService.RuntimeInfos(), whatsmeow_service.GetProcessInfo())
+	report.Webhook = i.whatsmeowService.WebhookStats()
+	return report, nil
 }
