@@ -172,7 +172,20 @@ type ProxyConfig struct {
 	Username string `json:"username"`
 }
 
+// reconnecting holds the instances that currently have a ReconnectClient in
+// flight. whatsmeow can deliver two Disconnected events for the same drop within
+// the same second; each one used to start its own reconnect, and the two raced
+// on the shared maps (nil dereference in ReconnectClient, issue #188) and could
+// leave two runtimes for one instance.
+var reconnecting sync.Map
+
 func (w whatsmeowService) ReconnectClient(instanceId string) error {
+	if _, busy := reconnecting.LoadOrStore(instanceId, struct{}{}); busy {
+		w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Reconnection already in progress, ignoring duplicate request", instanceId)
+		return nil
+	}
+	defer reconnecting.Delete(instanceId)
+
 	w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Starting reconnection process - simulating restart", instanceId)
 
 	// Passo 1: Limpar conexão existente se houver
@@ -186,7 +199,7 @@ func (w whatsmeowService) ReconnectClient(instanceId string) error {
 		}
 
 		// Remover event handler se existir
-		if mycli, ok := w.myClientPointer.Lookup(instanceId); ok {
+		if mycli, ok := w.myClientPointer.Lookup(instanceId); ok && mycli != nil {
 			if mycli.eventHandlerID != 0 {
 				client.RemoveEventHandler(mycli.eventHandlerID)
 				w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Event handler removed", instanceId)
@@ -302,12 +315,62 @@ func (w whatsmeowService) ForceUpdateJid(instanceId string, number string) error
 	return nil
 }
 
+// sharedAuthContainer is the single whatsmeow store container of the process.
+//
+// StartClient used to call sqlstore.New on every invocation — first connect AND
+// every reconnect — and never closed the result. Each sqlstore.New opens its own
+// *sql.DB, so every websocket drop, QR timeout or /instance/connect leaked a
+// whole connection pool until Postgres answered "too many clients already".
+// The DSN is the same for every instance, so one container serves all of them.
+//
+// A failed creation is NOT memoized (a Mutex rather than sync.Once): a database
+// that is briefly unreachable must not poison the process for its lifetime.
+var (
+	sharedAuthContainer   *sqlstore.Container
+	sharedAuthContainerMu sync.Mutex
+)
+
+// getAuthContainer returns the process-wide whatsmeow store container, creating
+// it on first use. On Postgres it reuses the already-bounded authDB pool instead
+// of opening a new one.
+func (w whatsmeowService) getAuthContainer() (*sqlstore.Container, error) {
+	sharedAuthContainerMu.Lock()
+	defer sharedAuthContainerMu.Unlock()
+
+	if sharedAuthContainer != nil {
+		return sharedAuthContainer, nil
+	}
+
+	var dbLog waLog.Logger
+	if w.config.WaDebug != "" {
+		dbLog = waLog.Stdout("Database", w.config.WaDebug, true)
+	}
+
+	var container *sqlstore.Container
+	var err error
+	switch {
+	case w.config.PostgresAuthDB != "" && w.authDB != nil:
+		container = sqlstore.NewWithDB(w.authDB, "postgres", dbLog)
+		err = container.Upgrade(context.Background())
+	case w.config.PostgresAuthDB != "":
+		container, err = sqlstore.New(context.Background(), "postgres", w.config.PostgresAuthDB, dbLog)
+	default:
+		dsn := fmt.Sprintf("file:%s/dbdata/main.db?_pragma=foreign_keys(1)&_busy_timeout=5000&cache=shared&mode=rwc&_journal_mode=WAL", w.exPath)
+		container, err = sqlstore.New(context.Background(), "sqlite", dsn, dbLog)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	sharedAuthContainer = container
+	return container, nil
+}
+
 func (w whatsmeowService) StartClient(cd *ClientData) {
 
 	w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("Starting websocket connection to Whatsapp for user '%s'", cd.Instance.Id)
 
 	var deviceStore *store.Device
-	var err error
 
 	if w.clientPointer.Get(cd.Instance.Id) != nil {
 		if w.clientPointer.Get(cd.Instance.Id).IsConnected() {
@@ -315,25 +378,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		}
 	}
 
-	var container *sqlstore.Container
-
-	if w.config.WaDebug != "" {
-		dbLog := waLog.Stdout("Database", w.config.WaDebug, true)
-		if w.config.PostgresAuthDB != "" {
-			container, err = sqlstore.New(context.Background(), "postgres", w.config.PostgresAuthDB, dbLog)
-		} else {
-			dsn := fmt.Sprintf("file:%s/dbdata/main.db?_pragma=foreign_keys(1)&_busy_timeout=5000&cache=shared&mode=rwc&_journal_mode=WAL", w.exPath)
-			container, err = sqlstore.New(context.Background(), "sqlite", dsn, dbLog)
-		}
-	} else {
-		if w.config.PostgresAuthDB != "" {
-			container, err = sqlstore.New(context.Background(), "postgres", w.config.PostgresAuthDB, nil)
-		} else {
-			dsn := fmt.Sprintf("file:%s/dbdata/main.db?_pragma=foreign_keys(1)&_busy_timeout=5000&cache=shared&mode=rwc&_journal_mode=WAL", w.exPath)
-			container, err = sqlstore.New(context.Background(), "sqlite", dsn, nil)
-		}
-	}
-
+	container, err := w.getAuthContainer()
 	if err != nil {
 		w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to create container: %v", cd.Instance.Id, err)
 		return
@@ -627,7 +672,10 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 
 			// restart client
 			w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Restarting client", cd.Instance.Id)
-			w.StartClient(cd)
+			// Not a direct (recursive) call: every restart used to stack another
+			// StartClient frame on this goroutine (visible as the repeated
+			// whatsmeow.go:629 frames in issue #203).
+			go w.StartClient(cd)
 			return
 		default:
 			time.Sleep(1000 * time.Millisecond)
@@ -1818,12 +1866,15 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		doWebhook = true
 		postMap["event"] = "Archive"
 
-		dataMap := postMap["data"].(map[string]interface{})
-		dataMap["JID"] = evt.JID
-		dataMap["Timestamp"] = evt.Timestamp
-		dataMap["Action"] = evt.Action
-		dataMap["FromFullSync"] = evt.FromFullSync
-		postMap["data"] = dataMap
+		// postMap["data"] still holds the raw *events.Archive here, so asserting it
+		// to a map panicked on every archive/unarchive (issues #95, #101). Build
+		// the payload explicitly instead.
+		postMap["data"] = map[string]interface{}{
+			"JID":          evt.JID,
+			"Timestamp":    evt.Timestamp,
+			"Action":       evt.Action,
+			"FromFullSync": evt.FromFullSync,
+		}
 
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Chat archived", mycli.userID)
 	case *events.HistorySync:
@@ -2258,7 +2309,8 @@ func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueN
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
 		}
-	case "QRCode", "QRTimeout", "QRSuccess":
+	// Passkey* are part of the device-pairing flow (like QRCode), so they follow the QRCODE subscription (#105).
+	case "QRCode", "QRTimeout", "QRSuccess", "PasskeyRequest", "PasskeyConfirmation", "PasskeyError":
 		if contains(subscriptions, "QRCODE") {
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
@@ -2473,6 +2525,52 @@ func getExtensionFromMimeType(mimeType string) string {
 	}
 }
 
+// globalEventTypeFor maps a whatsmeow event name (the "event" field of the
+// payload) to the global event group used by AMQP_GLOBAL_EVENTS and
+// NATS_GLOBAL_EVENTS. It returns "" for events that have no group.
+//
+// AMQP and NATS used to carry two hand-copied switches that drifted apart:
+// PICTURE, USER_ABOUT and BUTTON_CLICK were accepted by NATS_GLOBAL_EVENTS but
+// silently never published (issue #193). Keep a single source of truth here.
+func globalEventTypeFor(eventType string) string {
+	switch eventType {
+	case "Message":
+		return "MESSAGE"
+	case "SendMessage":
+		return "SEND_MESSAGE"
+	case "Receipt":
+		return "READ_RECEIPT"
+	case "Presence":
+		return "PRESENCE"
+	case "HistorySync":
+		return "HISTORY_SYNC"
+	case "ChatPresence", "Archive":
+		return "CHAT_PRESENCE"
+	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency":
+		return "CALL"
+	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected":
+		return "CONNECTION"
+	case "LabelEdit", "LabelAssociationChat", "LabelAssociationMessage":
+		return "LABEL"
+	case "Contact", "PushName":
+		return "CONTACT"
+	case "Picture":
+		return "PICTURE"
+	case "UserAbout":
+		return "USER_ABOUT"
+	case "GroupInfo", "JoinedGroup":
+		return "GROUP"
+	case "NewsletterJoin", "NewsletterLeave":
+		return "NEWSLETTER"
+	case "QRCode", "QRTimeout", "QRSuccess", "PasskeyRequest", "PasskeyConfirmation", "PasskeyError":
+		return "QRCODE"
+	case "ButtonClick":
+		return "BUTTON_CLICK"
+	default:
+		return ""
+	}
+}
+
 func (w *whatsmeowService) SendToGlobalQueues(eventType string, payload []byte, userId string) {
 	w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Starting sendToGlobalQueues for event: %s", userId, eventType)
 
@@ -2495,39 +2593,8 @@ func (w *whatsmeowService) SendToGlobalQueues(eventType string, payload []byte, 
 			w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Using AMQP_GLOBAL_EVENTS (fallback mode)", userId)
 
 			// Mapeia o evento do Whatsmeow para o tipo de evento global
-			var globalEventType string
-			switch eventType {
-			case "Message":
-				globalEventType = "MESSAGE"
-			case "SendMessage":
-				globalEventType = "SEND_MESSAGE"
-			case "Receipt":
-				globalEventType = "READ_RECEIPT"
-			case "Presence":
-				globalEventType = "PRESENCE"
-			case "HistorySync":
-				globalEventType = "HISTORY_SYNC"
-			case "ChatPresence", "Archive":
-				globalEventType = "CHAT_PRESENCE"
-			case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency":
-				globalEventType = "CALL"
-			case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected":
-				globalEventType = "CONNECTION"
-			case "LabelEdit", "LabelAssociationChat", "LabelAssociationMessage":
-				globalEventType = "LABEL"
-			case "Contact", "PushName":
-				globalEventType = "CONTACT"
-			case "Picture":
-				globalEventType = "PICTURE"
-			case "UserAbout":
-				globalEventType = "USER_ABOUT"
-			case "GroupInfo", "JoinedGroup":
-				globalEventType = "GROUP"
-			case "NewsletterJoin", "NewsletterLeave":
-				globalEventType = "NEWSLETTER"
-			case "QRCode", "QRTimeout", "QRSuccess":
-				globalEventType = "QRCODE"
-			default:
+			globalEventType := globalEventTypeFor(eventType)
+			if globalEventType == "" {
 				w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Event %s not mapped to global event type", userId, eventType)
 				return
 			}
@@ -2557,37 +2624,7 @@ func (w *whatsmeowService) SendToGlobalQueues(eventType string, payload []byte, 
 	// NATS: Mantém o comportamento original por enquanto (só NATS_GLOBAL_EVENTS)
 	if w.config.NatsGlobalEnabled {
 		// Mapeia o evento para grupo (necessário para NATS por enquanto)
-		var globalEventType string
-		switch eventType {
-		case "Message":
-			globalEventType = "MESSAGE"
-		case "SendMessage":
-			globalEventType = "SEND_MESSAGE"
-		case "Receipt":
-			globalEventType = "READ_RECEIPT"
-		case "Presence":
-			globalEventType = "PRESENCE"
-		case "HistorySync":
-			globalEventType = "HISTORY_SYNC"
-		case "ChatPresence", "Archive":
-			globalEventType = "CHAT_PRESENCE"
-		case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency":
-			globalEventType = "CALL"
-		case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected":
-			globalEventType = "CONNECTION"
-		case "LabelEdit", "LabelAssociationChat", "LabelAssociationMessage":
-			globalEventType = "LABEL"
-		case "Contact", "PushName":
-			globalEventType = "CONTACT"
-		case "GroupInfo", "JoinedGroup":
-			globalEventType = "GROUP"
-		case "NewsletterJoin", "NewsletterLeave":
-			globalEventType = "NEWSLETTER"
-		case "QRCode", "QRTimeout", "QRSuccess":
-			globalEventType = "QRCODE"
-		default:
-			globalEventType = ""
-		}
+		globalEventType := globalEventTypeFor(eventType)
 
 		// Verifica se o evento está na lista de eventos globais NATS
 		if globalEventType != "" && utils.Find(w.config.NatsGlobalEvents, globalEventType) {
