@@ -299,14 +299,18 @@ type ListStruct struct {
 // avoid mixing REPLY with CTA buttons (URL/CALL/COPY) in the same card —
 // mixed sets do not render on WhatsApp Web. Prefer only-REPLY or only-CTAs per card.
 type CarouselButtonStruct struct {
-	// Button kind (case-insensitive). One of: REPLY (default), URL, CALL, COPY.
+	// Button kind (case-insensitive). One of: REPLY (default), URL, CALL, COPY (COPY_CODE is accepted as an alias).
 	Type string `json:"type" enums:"REPLY,URL,CALL,COPY,reply,url,call,copy" example:"REPLY"`
 	// Label rendered inside the button.
 	DisplayText string `json:"displayText" example:"Quero saber mais"`
 	// Context-dependent: REPLY payload, URL target (type=URL) or phone number (type=CALL).
 	Id string `json:"id" example:"card1_info"`
-	// Code placed in the clipboard when type=COPY.
+	// Code placed in the clipboard when type=COPY (alias: COPY_CODE).
 	CopyCode string `json:"copyCode,omitempty" example:"PROMO2026"`
+	// Explicit URL target for type=URL. Optional: `id` is used when empty.
+	URL string `json:"url,omitempty" example:"https://example.com"`
+	// Explicit phone number for type=CALL. Optional: `id` is used when empty.
+	PhoneNumber string `json:"phoneNumber,omitempty" example:"5511999999999"`
 }
 
 // CarouselCardHeaderStruct is the top area of a carousel card.
@@ -2103,6 +2107,44 @@ func stringPointer(s string) *string {
 	return &s
 }
 
+// buildCarouselButton maps a carousel button to its native-flow name and
+// buttonParamsJSON. The params are built with json.Marshal: they used to be
+// assembled with fmt.Sprintf, so any quote or backslash in a label produced
+// invalid JSON. URL/CALL values come from the explicit `url` / `phoneNumber`
+// fields and fall back to `id`; COPY_CODE is accepted as an alias of COPY (#51).
+func buildCarouselButton(btn CarouselButtonStruct) (name string, paramsJSON string) {
+	firstNonEmpty := func(values ...string) string {
+		for _, v := range values {
+			if v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+
+	var params map[string]string
+	switch strings.ToUpper(btn.Type) {
+	case "URL":
+		name = "cta_url"
+		params = map[string]string{"display_text": btn.DisplayText, "url": firstNonEmpty(btn.URL, btn.Id)}
+	case "CALL":
+		name = "cta_call"
+		params = map[string]string{"display_text": btn.DisplayText, "phone_number": firstNonEmpty(btn.PhoneNumber, btn.Id)}
+	case "COPY", "COPY_CODE":
+		name = "cta_copy"
+		params = map[string]string{"display_text": btn.DisplayText, "copy_code": firstNonEmpty(btn.CopyCode, btn.Id)}
+	default: // REPLY or empty
+		name = "quick_reply"
+		params = map[string]string{"display_text": btn.DisplayText, "id": btn.Id}
+	}
+
+	encoded, err := json.Marshal(params)
+	if err != nil { // a map[string]string cannot fail to marshal
+		return name, "{}"
+	}
+	return name, string(encoded)
+}
+
 // imageDimensions returns the pixel width and height of an encoded image as
 // proto pointers, or (nil, nil) when it cannot be decoded so the fields stay
 // unset instead of advertising a 0x0 image. Cheap: it only reads the header.
@@ -2941,34 +2983,7 @@ func (s *sendService) SendCarousel(data *CarouselStruct, instance *instance_mode
 		if len(card.Buttons) > 0 {
 			buttons := make([]*waE2E.InteractiveMessage_NativeFlowMessage_NativeFlowButton, len(card.Buttons))
 			for j, btn := range card.Buttons {
-				buttonType := strings.ToUpper(btn.Type)
-				if buttonType == "" {
-					buttonType = "REPLY" // Default type
-				}
-
-				var buttonName string
-				var buttonParams string
-
-				switch buttonType {
-				case "URL":
-					// URL button - opens a link
-					buttonName = "cta_url"
-					buttonParams = fmt.Sprintf(`{"display_text":"%s","url":"%s"}`, btn.DisplayText, btn.Id)
-				case "CALL":
-					// Call button - initiates a phone call
-					buttonName = "cta_call"
-					buttonParams = fmt.Sprintf(`{"display_text":"%s","phone_number":"%s"}`, btn.DisplayText, btn.Id)
-				case "COPY":
-					// Copy button - copies text to clipboard
-					buttonName = "cta_copy"
-					buttonParams = fmt.Sprintf(`{"display_text":"%s","copy_code":"%s"}`, btn.DisplayText, btn.CopyCode)
-				case "REPLY":
-					fallthrough
-				default:
-					// Quick reply button (default)
-					buttonName = "quick_reply"
-					buttonParams = fmt.Sprintf(`{"display_text":"%s","id":"%s"}`, btn.DisplayText, btn.Id)
-				}
+				buttonName, buttonParams := buildCarouselButton(btn)
 
 				buttons[j] = &waE2E.InteractiveMessage_NativeFlowMessage_NativeFlowButton{
 					Name:             proto.String(buttonName),
