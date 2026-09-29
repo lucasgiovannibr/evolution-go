@@ -540,6 +540,15 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		}
 	}
 
+	// Apply the resolved version to the connection handshake. It used to be written
+	// only to DeviceProps.Version (the version advertised while pairing), so
+	// WHATSAPP_VERSION_* and the value fetched from WhatsApp Web never reached the
+	// handshake, which kept using the version compiled into whatsmeow until
+	// WhatsApp refused it with "Client outdated (405)" (PR #199).
+	if version.Major != 0 || version.Minor != 0 || version.Patch != 0 {
+		store.SetWAVersion(store.WAVersionContainer{uint32(version.Major), uint32(version.Minor), uint32(version.Patch)})
+	}
+
 	// 🔒 FIX: Sempre criar logger, mesmo que WaDebug esteja vazio
 	// Usar "INFO" como nível mínimo para garantir que logs importantes apareçam
 	minLevel := w.config.WaDebug
