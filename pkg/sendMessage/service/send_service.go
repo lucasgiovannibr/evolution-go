@@ -415,6 +415,14 @@ func (s *sendService) ensureClientConnected(instanceId string) (*whatsmeow.Clien
 		return nil, errors.New("client disconnected")
 	}
 
+	// A socket without a paired device can never send. Failing here, with an error
+	// the retry wrappers do not treat as a disconnection, avoids the ~80s of nested
+	// reconnect/backoff cycles before "the store doesn't contain a device JID" (#77).
+	if client.Store == nil || client.Store.ID == nil {
+		s.loggerWrapper.GetLogger(instanceId).LogWarn("[%s] Client is connected but has no paired device", instanceId)
+		return nil, errors.New("instance is not logged in: pair the device (QR code or pairing code) first")
+	}
+
 	s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Client successfully validated - Connected: %v", instanceId, client.IsConnected())
 	return client, nil
 }

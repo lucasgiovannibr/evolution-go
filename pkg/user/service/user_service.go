@@ -14,6 +14,7 @@ import (
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/appstate"
 	"go.mau.fi/whatsmeow/types"
 	"go.mau.fi/whatsmeow/types/events"
 )
@@ -556,7 +557,13 @@ func (u *userService) SetProfileName(data *SetProfileNameStruct, instance *insta
 		return false, err
 	}
 
-	err = client.SetGroupName(context.Background(), types.EmptyJID, data.Name)
+	// The account's own display name (push name) is an app-state setting. It used
+	// to call SetGroupName with an empty JID, which sends a group IQ to nobody and
+	// never gets an answer, so the request hung until the client gave up (#176).
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+
+	err = client.SendAppState(ctx, appstate.BuildSettingPushName(data.Name))
 	if err != nil {
 		return false, err
 	}

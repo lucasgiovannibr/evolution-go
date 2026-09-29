@@ -472,7 +472,7 @@ func (u *userHandler) SetProfilePicture(ctx *gin.Context) {
 // @Tags User
 // @Accept json
 // @Produce json
-// @Param message body user_service.SetProfilePictureStruct true "Profile name data"
+// @Param message body user_service.SetProfileNameStruct true "Profile name data"
 // @Success 200 {object} gin.H "success"
 // @Failure 400 {object} gin.H "Error on validation"
 // @Failure 500 {object} gin.H "Internal server error"
@@ -505,7 +505,7 @@ func (u *userHandler) SetProfileName(ctx *gin.Context) {
 	}
 
 	if !resp {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set profile picture"})
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set profile name"})
 		return
 	}
 
