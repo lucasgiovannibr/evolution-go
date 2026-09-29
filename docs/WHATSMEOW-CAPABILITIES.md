@@ -10,8 +10,8 @@ Levantamento feito em 29/09/2026 sobre `go.mau.fi/whatsmeow v0.0.0-2026092911232
 | Usados pelo projeto | 65 |
 | Não usados | 71 (por categoria no §4) |
 | Tipos de evento emitidos (`types/events`) | 75 |
-| Tratados em `myEventHandler` | 42 |
-| Não tratados | 33 (§5) |
+| Tratados em `myEventHandler` | 45 (42 + os 3 do §6, tratados em 29/09) |
+| Não tratados | 30 (§5) |
 
 O projeto usa bem o núcleo (conexão, envio, grupos, newsletters, privacidade, app state). O que sobra são recursos periféricos e, mais importante, **eventos operacionais** que explicam falhas relatadas nas issues.
 
@@ -60,9 +60,9 @@ Todos chegam ao handler e caem no ramo de "evento não tratado" (só log). Os qu
 
 | Evento | O que significa | Por que importa |
 |---|---|---|
-| `NotifyAccountReachoutTimelock` (`EnforcementType`, `IsActive`, `TimeEnforcementEnds`) | O WhatsApp **restringiu a conta** para iniciar conversas com quem nunca falou com ela | É a causa provável do **erro 463** (#50, #124, #115). Hoje o usuário só vê "463" na hora de enviar; o evento diz até quando dura. Dá para publicá-lo como webhook e gravar o estado da instância |
-| `StreamError` (`Code`, `Raw`) | `<stream:error>` com código **desconhecido** (os conhecidos viram outros eventos) | É exatamente o caso do #185 (`<ack class="status" type="media"/>`): a conexão cai e o projeto não sabe por quê. Registrar e expor no diagnóstico |
-| `ClientOutdated` | O servidor rejeitou a versão do cliente (405) | Ligado à versão que só agora chega ao handshake (PR #199). Deveria gerar aviso claro e talvez forçar nova busca de versão |
+| ✅ **Tratado** — `NotifyAccountReachoutTimelock` (`EnforcementType`, `IsActive`, `TimeEnforcementEnds`) | O WhatsApp **restringiu a conta** para iniciar conversas com quem nunca falou com ela | É a causa provável do **erro 463** (#50, #124, #115). Hoje o usuário só vê "463" na hora de enviar; o evento diz até quando dura. Dá para publicá-lo como webhook e gravar o estado da instância |
+| ✅ **Tratado** — `StreamError` (`Code`, `Raw`) | `<stream:error>` com código **desconhecido** (os conhecidos viram outros eventos) | É exatamente o caso do #185 (`<ack class="status" type="media"/>`): a conexão cai e o projeto não sabe por quê. Registrar e expor no diagnóstico |
+| ✅ **Tratado** — `ClientOutdated` | O servidor rejeitou a versão do cliente (405) | Ligado à versão que só agora chega ao handshake (PR #199). Deveria gerar aviso claro e talvez forçar nova busca de versão |
 | `PairError`, `QRScannedWithoutMultidevice`, `ManualLoginReconnect`, `CATRefreshError` | Falhas de pareamento/login | Hoje o usuário fica sem retorno quando o pareamento falha |
 | `MediaRetry`, `MediaRetryError` | Mídia que o remetente precisa reenviar | Ligado a "a imagem só aparece depois de baixar" (#25) e a mídias que não baixam |
 | `OfflineSyncPreview` | Quantas mensagens estão na fila offline | Diagnóstico do #190 (fila que só cresce) |
@@ -74,11 +74,12 @@ Todos chegam ao handler e caem no ramo de "evento não tratado" (só log). Os qu
 
 ## 6. Recomendação (o que fazer com isso)
 
-Em ordem de custo-benefício:
+**Feito em 29/09/2026** (item 1): `NotifyAccountReachoutTimelock`, `StreamError` e `ClientOutdated` agora são publicados como eventos de conexão, aparecem no diagnóstico do runtime e têm efeito prático: o erro 463 do envio passa a explicar a restrição (e até quando), e o 405 descarta o cache da versão para a próxima reconexão buscar a atual. Detalhes em `docs/wiki/guias-api/api-fork-additions.md`.
 
-1. **Tratar `NotifyAccountReachoutTimelock`, `StreamError` e `ClientOutdated`**: publicar como evento de conexão, registrar no diagnóstico (`/instance/{id}/runtime`) e, no caso do timelock, devolver uma mensagem clara em vez de "463". Ataca #50, #124, #115, #185 e o 405, com pouco código e sem risco.
-2. **`PairError` e companhia**: dar retorno ao usuário quando o pareamento falha.
-3. **Eventos de estado de chat** (`Mute`, `Pin`, `Star`, `DeleteChat`...): publicar sob a assinatura `CHAT_PRESENCE` ou uma nova; útil para CRMs.
-4. **Mensagens temporárias**: expor `SetDisappearingTimer` e aprender o timer por chat a partir de `ContextInfo.Expiration`, para resolver o #79.
-5. **Newsletters** (seguir/silenciar/reagir) e **informações de grupo por convite**: completam APIs que hoje são parciais.
-6. Não prometer: remoção de contato, atender/discar chamadas e encaminhar por ID sem persistência (§2).
+Em ordem de custo-benefício, o que resta:
+
+1. **`PairError` e companhia**: dar retorno ao usuário quando o pareamento falha.
+2. **Eventos de estado de chat** (`Mute`, `Pin`, `Star`, `DeleteChat`...): publicar sob a assinatura `CHAT_PRESENCE` ou uma nova; útil para CRMs.
+3. **Mensagens temporárias**: expor `SetDisappearingTimer` e aprender o timer por chat a partir de `ContextInfo.Expiration`, para resolver o #79.
+4. **Newsletters** (seguir/silenciar/reagir) e **informações de grupo por convite**: completam APIs que hoje são parciais.
+5. Não prometer: remoção de contato, atender/discar chamadas e encaminhar por ID sem persistência (§2).

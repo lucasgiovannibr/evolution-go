@@ -66,6 +66,7 @@ type WhatsmeowService interface {
 	UpdateInstanceSettings(instanceId string) error
 	UpdateInstanceAdvancedSettings(instanceId string) error
 	ProxyStatus(instanceId string) (ProxyRuntimeStatus, bool)
+	ReachoutTimelock(instanceId string) *ReachoutTimelockStatus
 	RuntimeInfo(instanceId string) RuntimeInfo
 	RuntimeInfos() []RuntimeInfo
 	GetPollService() poll_service.PollService // NOVO: Acesso ao serviço de polls
@@ -142,6 +143,10 @@ type MyClient struct {
 	lastEventType atomic.Value // string
 	connectedAt   atomic.Int64 // unix nanoseconds of the last events.Connected
 	eventCount    atomic.Uint64
+	// State reported by operational events (see operational_events.go).
+	reachoutTimelock atomic.Pointer[ReachoutTimelockStatus]
+	lastStreamError  atomic.Pointer[StreamErrorInfo]
+	clientOutdatedAt atomic.Int64 // unix nanoseconds of the last events.ClientOutdated
 	passkeyCeremony    *ceremony.Store
 	appStateRecoveryMu sync.Mutex
 	appStateRecovery   map[appstate.WAPatchName]appStateRecoveryAttempt
@@ -2293,6 +2298,43 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	case *events.OfflineSyncCompleted:
 		doWebhook = true
 		postMap["event"] = "OfflineSyncCompleted"
+	case *events.NotifyAccountReachoutTimelock:
+		status := reachoutTimelockFromEvent(evt, time.Now())
+		mycli.reachoutTimelock.Store(status)
+		if status.Active {
+			until := "unknown"
+			if status.EndsAt != nil {
+				until = status.EndsAt.Format(time.RFC3339)
+			}
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] WhatsApp restricted this account from starting conversations with new contacts (%s) until %s; sends to contacts that never wrote to it fail with error 463", mycli.userID, status.EnforcementType, until)
+		} else {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Reachout restriction lifted (%s)", mycli.userID, status.EnforcementType)
+		}
+		doWebhook = true
+		postMap["event"] = "ReachoutTimelock"
+		postMap["data"] = status.webhookData()
+	case *events.StreamError:
+		info := streamErrorFromEvent(evt, time.Now())
+		mycli.lastStreamError.Store(info)
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] WhatsApp sent an unknown stream error (code %q): %s", mycli.userID, info.Code, info.Raw)
+		doWebhook = true
+		postMap["event"] = "StreamError"
+		postMap["data"] = info.webhookData()
+	case *events.ClientOutdated:
+		mycli.clientOutdatedAt.Store(time.Now().UnixNano())
+		// The cached version is the one that was just refused: drop it so the next
+		// reconnection looks the current one up instead of retrying the stale one for
+		// up to an hour.
+		invalidateWebVersionCache()
+		pinned := mycli.config.WhatsappVersionMajor != 0 && mycli.config.WhatsappVersionMinor != 0 && mycli.config.WhatsappVersionPatch != 0
+		if pinned {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] WhatsApp refused the client version (405) and WHATSAPP_VERSION_* pins it: update or remove those variables", mycli.userID)
+		} else {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] WhatsApp refused the client version (405); the version cache was cleared and the next reconnection fetches the current one", mycli.userID)
+		}
+		doWebhook = true
+		postMap["event"] = "ClientOutdated"
+		postMap["data"] = map[string]interface{}{"versionPinned": pinned}
 	case *events.ConnectFailure:
 		doWebhook = true
 		postMap["event"] = "ConnectFailure"
@@ -2594,7 +2636,7 @@ func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueN
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
 		}
-	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored":
+	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored", "ReachoutTimelock", "StreamError", "ClientOutdated":
 		if contains(subscriptions, "CONNECTION") {
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
@@ -2866,7 +2908,7 @@ func globalEventTypeFor(eventType string) string {
 		return "CHAT_PRESENCE"
 	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency":
 		return "CALL"
-	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored":
+	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored", "ReachoutTimelock", "StreamError", "ClientOutdated":
 		return "CONNECTION"
 	case "LabelEdit", "LabelAssociationChat", "LabelAssociationMessage":
 		return "LABEL"

@@ -159,3 +159,38 @@ Devolve o mesmo diagnóstico de cada instância (inclusive de runtimes sem linha
 ### `ENABLE_PPROF=true` — profiler (opcional)
 
 Expõe `/debug/pprof/*` (goroutine, heap, cpu…) **somente com a chave global**. Desligado por padrão. Ex.: `GET /debug/pprof/goroutine?debug=1` lista as pilhas agrupadas.
+
+## Eventos de conexão novos
+
+Três eventos que o whatsmeow já emitia e o projeto ignorava (só aparecia "Unhandled event" no log). Chegam pela assinatura **`CONNECTION`** (webhook, RabbitMQ, NATS, WebSocket e filas globais), como os demais eventos de conexão, e também aparecem em `GET /instance/{id}/runtime`.
+
+### `ReachoutTimelock` — conta restrita para iniciar conversas
+
+O WhatsApp restringiu a conta: ela não pode iniciar conversa com quem nunca falou com ela. Enviar para esse contato falha com o erro **463** (`NackCallerReachoutTimelocked`). Contatos que já conversaram continuam funcionando.
+
+```json
+{ "event": "ReachoutTimelock", "data": { "active": true, "enforcementType": "…", "endsAt": "2026-10-01T12:00:00Z" } }
+```
+
+`active: false` avisa que a restrição foi levantada. `endsAt` só aparece quando o WhatsApp informa o fim. Além do evento:
+
+- o **erro do envio** deixa de ser "server returned error 463" e passa a explicar o que houve (e até quando, se a restrição é conhecida). O texto original continua na mensagem;
+- o diagnóstico mostra `runtime.reachoutTimelock` e o aviso `reachout_timelock_active`.
+
+O estado fica em memória: depois de reiniciar o processo ele só volta quando o WhatsApp o enviar de novo.
+
+### `StreamError` — erro de stream desconhecido
+
+```json
+{ "event": "StreamError", "data": { "code": "…", "raw": "{…}" } }
+```
+
+`<stream:error>` com um código que a lib não conhece (os conhecidos viram outros eventos). É o que antecede a conexão morta do issue #185 do upstream. O diagnóstico traz `runtime.lastStreamError` e, por 30 minutos, o aviso `recent_stream_error`.
+
+### `ClientOutdated` — versão do cliente recusada (405)
+
+```json
+{ "event": "ClientOutdated", "data": { "versionPinned": false } }
+```
+
+O WhatsApp recusou a versão do cliente. O projeto **descarta o cache da versão** (que valia 1 hora e faria todas as novas tentativas repetirem a versão recusada) para a próxima reconexão buscar a atual. Se `versionPinned` for `true`, as variáveis `WHATSAPP_VERSION_*` fixam a versão e precisam ser atualizadas ou removidas. O diagnóstico traz `runtime.clientOutdatedAt` e, por 30 minutos, o aviso `client_outdated`.

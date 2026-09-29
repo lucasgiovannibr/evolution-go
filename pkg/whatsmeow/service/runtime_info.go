@@ -48,6 +48,11 @@ type RuntimeInfo struct {
 
 	Proxy *ProxyRuntimeStatus `json:"proxy,omitempty"`
 
+	// Operational events reported by WhatsApp (see operational_events.go).
+	ReachoutTimelock *ReachoutTimelockStatus `json:"reachoutTimelock,omitempty"`
+	LastStreamError  *StreamErrorInfo        `json:"lastStreamError,omitempty"`
+	ClientOutdatedAt *time.Time              `json:"clientOutdatedAt,omitempty"`
+
 	Warnings []Warning `json:"warnings"`
 }
 
@@ -89,6 +94,9 @@ func (w *whatsmeowService) RuntimeInfo(instanceID string) RuntimeInfo {
 			info.LastEventType = v
 		}
 		info.EventsSeen = mycli.eventCount.Load()
+		info.ReachoutTimelock = mycli.reachoutTimelock.Load()
+		info.LastStreamError = mycli.lastStreamError.Load()
+		info.ClientOutdatedAt = nsToTime(mycli.clientOutdatedAt.Load())
 		if mycli.passkeyCeremony != nil {
 			info.PasskeyCeremonyActive = mycli.passkeyCeremony.HasActiveByInstance(instanceID)
 		}
@@ -133,6 +141,14 @@ func (w *whatsmeowService) RuntimeInfos() []RuntimeInfo {
 // runtimeWarnings derives the inconsistencies from a snapshot. Pure function so it
 // can be unit tested.
 func runtimeWarnings(i RuntimeInfo) []Warning {
+	return runtimeWarningsAt(i, time.Now())
+}
+
+// recentEventWindow is how long a stream error or a version refusal keeps being
+// reported as a warning.
+const recentEventWindow = 30 * time.Minute
+
+func runtimeWarningsAt(i RuntimeInfo, now time.Time) []Warning {
 	out := []Warning{}
 	add := func(code, msg string) { out = append(out, Warning{Code: code, Message: msg}) }
 
@@ -157,6 +173,18 @@ func runtimeWarnings(i RuntimeInfo) []Warning {
 
 	if i.ClientRegistered && i.DeviceJID == "" && i.QRMax > 0 && i.QRCount >= i.QRMax-1 && !i.PasskeyCeremonyActive {
 		add("qr_limit_near", "waiting for a QR scan and the QR limit is about to be reached (the runtime will restart)")
+	}
+
+	if i.ReachoutTimelock.InEffect(now) {
+		add("reachout_timelock_active", "WhatsApp restricted this account from starting conversations with new contacts: sends to contacts that never wrote to it fail with error 463")
+	}
+
+	if i.LastStreamError != nil && now.Sub(i.LastStreamError.At) < recentEventWindow {
+		add("recent_stream_error", "WhatsApp sent an unknown stream error recently (code "+i.LastStreamError.Code+"); the connection may drop")
+	}
+
+	if i.ClientOutdatedAt != nil && now.Sub(*i.ClientOutdatedAt) < recentEventWindow {
+		add("client_outdated", "WhatsApp refused the client version (405) recently; check WHATSAPP_VERSION_* or update the image")
 	}
 
 	return out

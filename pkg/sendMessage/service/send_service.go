@@ -2782,7 +2782,9 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	response, err := s.clientPointer.Get(instance.Id).SendMessage(context.Background(), recipient, msg, sendExtra)
 	if err != nil {
 		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error sending message: %v", instance.Id, err)
-		return nil, err
+		// A bare "server returned error 463" says nothing to a person: explain it and,
+		// when WhatsApp told us about the restriction, say until when.
+		return nil, explainSendError(err, s.whatsmeowService.ReachoutTimelock(instance.Id), time.Now())
 	}
 
 	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent successfully! ServerID: %d", instance.Id, response.ServerID)

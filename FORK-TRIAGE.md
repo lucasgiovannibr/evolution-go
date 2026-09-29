@@ -110,6 +110,10 @@ Features aprovadas (PR #7), documentadas em `docs/wiki/guias-api/api-fork-additi
 | Logger de instância apagada liberado | Descritores de arquivo estáveis em 6 ciclos criar/apagar. A goroutine do `lumberjack` não pode ser parada (limite da biblioteca): 1 por instância já criada até o processo reiniciar |
 | `docs/WHATSMEOW-CAPABILITIES.md` | Do `Client` do whatsmeow (136 métodos) o projeto usa 65; dos 75 tipos de evento trata 42. Lista os **limites duros** (remover contato, atender/discar chamadas, encaminhar por ID, ler o timer de temporárias) e os eventos não tratados que explicam issues abertas: `NotifyAccountReachoutTimelock` (o 463), `StreamError` (#185), `ClientOutdated` (405) |
 
+### Eventos operacionais do whatsmeow (PR #13)
+
+`NotifyAccountReachoutTimelock`, `StreamError` e `ClientOutdated` deixaram de cair no "Unhandled event": são publicados sob `CONNECTION`, aparecem no diagnóstico do runtime, e o erro 463 do envio agora explica a restrição e até quando. O 405 descarta o cache da versão (1 h) para a reconexão seguinte buscar a atual. **Não foi possível provocar os eventos reais**: dependem de o WhatsApp restringir a conta ou recusar a versão. O que foi verificado são testes de ponta a ponta com eventos sintéticos (evento → estado → webhook → assinante `CONNECTION`), mais o `go test -race` completo.
+
 ### Validação ao vivo (instância real, 29/09/2026)
 
 Instância pareada e conectada por você; mensagens só para o seu próprio número; grupo de teste só com você (removido no fim).
