@@ -2161,6 +2161,35 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				mycli.loggerWrapper.GetLogger(instanceID).LogError("[%s] Failed to restart instance: %v", instanceID, err)
 			}
 		}(mycli.userID)
+	case *events.KeepAliveTimeout:
+		doWebhook = true
+		postMap["event"] = "KeepAliveTimeout"
+		postMap["data"] = map[string]interface{}{
+			"ErrorCount":  evt.ErrorCount,
+			"LastSuccess": evt.LastSuccess,
+		}
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Keepalive ping timed out (%d consecutive, last success: %s)", mycli.userID, evt.ErrorCount, evt.LastSuccess.Format(time.RFC3339))
+
+		// With EnableAutoReconnect disabled, a TCP connection that silently dies
+		// keeps timing out keepalives forever without ever emitting
+		// events.Disconnected — the instance stays "connected" but is a zombie
+		// (PR #126, see also #185). whatsmeow's docs suggest using this event to
+		// force a faster disconnect+reconnect, so after 3 consecutive timeouts
+		// restart the instance through the same path the Disconnected handler
+		// uses. Exact match keeps counts 4, 5, ... from piling up restarts while
+		// one is already underway (ReconnectClient also ignores duplicates).
+		if evt.ErrorCount == 3 {
+			go func(instanceID string) {
+				mycli.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] 3 consecutive keepalive timeouts, restarting instance", instanceID)
+				if err := mycli.service.ReconnectClient(instanceID); err != nil {
+					mycli.loggerWrapper.GetLogger(instanceID).LogError("[%s] Failed to restart instance: %v", instanceID, err)
+				}
+			}(mycli.userID)
+		}
+	case *events.KeepAliveRestored:
+		doWebhook = true
+		postMap["event"] = "KeepAliveRestored"
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Keepalive pings restored", mycli.userID)
 	case *events.LabelEdit:
 		doWebhook = true
 		postMap["event"] = "LabelEdit"
@@ -2395,7 +2424,7 @@ func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueN
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
 		}
-	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected":
+	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored":
 		if contains(subscriptions, "CONNECTION") {
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
@@ -2669,7 +2698,7 @@ func globalEventTypeFor(eventType string) string {
 		return "CHAT_PRESENCE"
 	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency":
 		return "CALL"
-	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected":
+	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored":
 		return "CONNECTION"
 	case "LabelEdit", "LabelAssociationChat", "LabelAssociationMessage":
 		return "LABEL"

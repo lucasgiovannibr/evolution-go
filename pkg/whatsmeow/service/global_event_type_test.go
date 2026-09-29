@@ -17,6 +17,8 @@ func TestGlobalEventTypeFor(t *testing.T) {
 		"PasskeyError":        event_types.QRCODE,
 		"QRTimeout":           event_types.QRCODE,
 		"Archive":             event_types.CHAT_PRESENCE,
+		"KeepAliveTimeout":    event_types.CONNECTION,
+		"KeepAliveRestored":   event_types.CONNECTION,
 		"SomethingUnknown":    "",
 	}
 	for in, want := range cases {

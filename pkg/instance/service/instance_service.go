@@ -309,10 +309,13 @@ func (i instances) Disconnect(instance *instance_model.Instance) (*instance_mode
 			i.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Disconnection successful", instance.Id)
 			i.killChannel.Get(instance.Id) <- true
 
-			instance.Events = ""
-
-			err := i.instanceRepository.Update(instance)
-			if err != nil {
+			// Do not clear instance.Events on disconnect (PR #187). Wiping the
+			// subscriptions left the instance with an empty events string after the
+			// next connect, and CallWebhook then dropped every webhook
+			// (strings.Split("", ",") yields [""], which is not an event type).
+			instance.Connected = false
+			instance.DisconnectReason = "Disconnected by API"
+			if err := i.instanceRepository.UpdateConnected(instance.Id, false, instance.DisconnectReason); err != nil {
 				return instance, err
 			}
 
