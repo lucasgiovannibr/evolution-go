@@ -101,3 +101,61 @@ Quando há QR disponível, `qrcode`/`code` continuam vindo junto dos campos `pas
 ## Extensão `passkey-helper` 1.1.0
 
 A chamada WebAuthn passou para o mundo `MAIN` da página, o que faz gerenciadores de senha (1Password, Bitwarden) aparecerem em vez de "insira sua chave de segurança". Requer Chrome/Edge 111+. Detalhes em `passkey-helper/README.md`.
+
+## Saúde e diagnóstico
+
+### `GET /health` — prontidão (pública)
+
+Complementa `GET /server/ok`, que só diz que o processo está de pé (liveness) e continua sempre `200`.
+
+```json
+{ "status": "ok", "checks": { "usersDb": "ok", "authDb": "ok" } }
+```
+
+Cada verificação é `ok`, `slow` (o ping respondeu, mas em mais de 500 ms: é o que um pool esgotado ou sobrecarregado parece) ou `error` (falhou ou passou de 2 s). Qualquer `error` devolve **503** e `status: "unavailable"`; `slow` devolve 200 com `status: "degraded"`. As verificações rodam em paralelo (teto ~2 s). A rota é pública como `/server/ok` e só expõe estados, sem contagens nem identificadores.
+
+Use `/server/ok` como *liveness* e `/health` como *readiness* no orquestrador: reiniciar o container porque o banco está lento não ajuda.
+
+### `GET /instance/{instanceId}/runtime` — diagnóstico de uma instância
+
+Chave global **ou** token da própria instância. Compara o que o banco diz com o que **este processo está executando**:
+
+```json
+{
+  "instanceId": "…",
+  "database": { "connected": true, "jid": "5531…:82@s.whatsapp.net", "alwaysOnline": false },
+  "runtime": {
+    "clientRegistered": true, "websocketConnected": true, "loggedIn": true,
+    "deviceJid": "5531…:82@s.whatsapp.net",
+    "runtimeActive": true, "killChannel": true, "supervisorCurrent": true,
+    "reconnectInProgress": false,
+    "qrCount": 0, "qrMax": 5, "passkeyCeremonyActive": false,
+    "connectedSince": "…", "lastEventType": "Receipt", "lastEventAt": "…", "eventsSeen": 1234,
+    "proxy": { "runtimeEnabled": true, "fallbackWithoutProxy": false }
+  },
+  "warnings": []
+}
+```
+
+`warnings` lista cada inconsistência com um `code` estável:
+
+| code | significa |
+|---|---|
+| `runtime_without_client` | um runtime é dono da instância, mas não há cliente (normal por alguns segundos ao iniciar) |
+| `client_without_runtime` | cliente registrado sem supervisor: o kill/teardown de QR não o alcança |
+| `supervisor_mismatch` | o estado do supervisor não pertence ao cliente registrado |
+| `no_kill_channel` | Disconnect/teardown de QR não conseguem parar o runtime |
+| `paired_but_offline` | dispositivo pareado, websocket caído e nenhuma reconexão em andamento |
+| `qr_limit_near` | aguardando leitura do QR e perto do limite (o runtime vai reiniciar) |
+| `db_connected_runtime_offline` / `db_disconnected_runtime_online` | banco e runtime discordam |
+| `paired_in_db_unpaired_runtime` | o banco tem um JID pareado, mas o cliente em execução é um dispositivo novo (sessão perdida ou substituída) |
+| `paired_without_runtime` | instância pareada sem nada rodando (chame `/instance/connect`) |
+| `runtime_for_deleted_instance` | o processo ainda executa algo para uma instância que não existe mais |
+
+### `GET /instance/runtimes` — todas as instâncias (chave global)
+
+Devolve o mesmo diagnóstico de cada instância (inclusive de runtimes sem linha no banco), um `summary` (`instances`, `connected`, `withWarnings`) e estatísticas do processo (`uptimeSeconds`, `goroutines`, `heapAllocMb`, `sysMb`, `numGc`, `goVersion`). Um número de goroutines que só cresce é como um vazamento aparece.
+
+### `ENABLE_PPROF=true` — profiler (opcional)
+
+Expõe `/debug/pprof/*` (goroutine, heap, cpu…) **somente com a chave global**. Desligado por padrão. Ex.: `GET /debug/pprof/goroutine?debug=1` lista as pilhas agrupadas.

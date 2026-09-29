@@ -27,6 +27,8 @@ type InstanceHandler interface {
 	SetProxy(ctx *gin.Context)
 	DeleteProxy(ctx *gin.Context)
 	GetProxyStatus(ctx *gin.Context)
+	GetRuntime(ctx *gin.Context)
+	GetRuntimes(ctx *gin.Context)
 	ForceReconnect(ctx *gin.Context)
 	GetLogs(ctx *gin.Context)
 	GetAdvancedSettings(ctx *gin.Context)
@@ -513,6 +515,50 @@ func (i *instanceHandler) GetProxyStatus(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, status)
+}
+
+// Get the runtime diagnostics of one instance
+// @Summary Instance runtime diagnostics
+// @Description What this process is actually running for the instance (client, supervisor, websocket, QR, proxy) compared with what the database says, with warnings for every inconsistency found. Global key or the instance's own token.
+// @Tags Instance
+// @Produce json
+// @Param instanceId path string true "Instance id"
+// @Success 200 {object} instance_service.RuntimeDiagnostics "Runtime diagnostics"
+// @Failure 500 {object} gin.H "Internal server error"
+// @Router /instance/{instanceId}/runtime [get]
+func (i *instanceHandler) GetRuntime(ctx *gin.Context) {
+	instanceId := ctx.Param("instanceId")
+
+	if instanceId == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		return
+	}
+
+	diagnostics, err := i.instanceService.GetRuntime(instanceId)
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, diagnostics)
+}
+
+// Get the runtime diagnostics of every instance
+// @Summary Runtime diagnostics of all instances
+// @Description Process statistics (uptime, goroutines, memory) and the runtime diagnostics of every instance, including runtimes whose instance no longer exists. Global key.
+// @Tags Instance
+// @Produce json
+// @Success 200 {object} instance_service.RuntimesReport "Runtime report"
+// @Failure 500 {object} gin.H "Internal server error"
+// @Router /instance/runtimes [get]
+func (i *instanceHandler) GetRuntimes(ctx *gin.Context) {
+	report, err := i.instanceService.GetRuntimes()
+	if err != nil {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, report)
 }
 
 // Force reconnect

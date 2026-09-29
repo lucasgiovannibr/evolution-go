@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -240,11 +241,29 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		label_handler.NewLabelHandler(labelService),
 		newsletter_handler.NewNewsletterHandler(newsletterService),
 		pollHandler,
-		server_handler.NewServerHandler(),
+		server_handler.NewServerHandler(
+			server_handler.HealthCheck{Name: "usersDb", DB: usersSQLDB(db)},
+			server_handler.HealthCheck{Name: "authDb", DB: firstSQLDB(authDB, sqliteDB)},
+		),
 	).AssignRoutes(r)
 
 	if config.ConnectOnStartup {
 		go whatsmeowService.ConnectOnStartup(config.ClientName)
+	}
+
+	// Optional Go profiler (goroutine/heap/cpu), for hunting leaks. Off by default and
+	// only reachable with the GLOBAL API key.
+	if config.PprofEnabled {
+		logger.LogWarn("ENABLE_PPROF is set: /debug/pprof is exposed behind the global API key")
+		pp := r.Group("/debug/pprof", auth_middleware.NewMiddleware(config, instanceService).AuthAdmin)
+		pp.GET("/", gin.WrapF(pprof.Index))
+		pp.GET("/cmdline", gin.WrapF(pprof.Cmdline))
+		pp.GET("/profile", gin.WrapF(pprof.Profile))
+		pp.GET("/symbol", gin.WrapF(pprof.Symbol))
+		pp.GET("/trace", gin.WrapF(pprof.Trace))
+		for _, name := range []string{"goroutine", "heap", "allocs", "block", "mutex", "threadcreate"} {
+			pp.GET("/"+name, gin.WrapH(pprof.Handler(name)))
+		}
 	}
 
 	r.GET("/ws", func(c *gin.Context) {
@@ -263,6 +282,28 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	})
 
 	return r
+}
+
+// usersSQLDB returns the *sql.DB behind the users gorm handle (nil if unavailable).
+func usersSQLDB(db *gorm.DB) *sql.DB {
+	if db == nil {
+		return nil
+	}
+	sqlDB, err := db.DB()
+	if err != nil {
+		return nil
+	}
+	return sqlDB
+}
+
+// firstSQLDB returns the first non-nil database.
+func firstSQLDB(dbs ...*sql.DB) *sql.DB {
+	for _, d := range dbs {
+		if d != nil {
+			return d
+		}
+	}
+	return nil
 }
 
 func migrate(db *gorm.DB) {

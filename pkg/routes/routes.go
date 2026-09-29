@@ -76,6 +76,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 	})
 
 	eng.GET("/server/ok", r.serverHandler.ServerOk)
+	eng.GET("/health", r.serverHandler.Health) // readiness: databases + pool saturation
 
 	routes := eng.Group("/instance")
 	{
@@ -88,6 +89,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/proxy/:instanceId", r.instanceHandler.SetProxy)
 			routes.DELETE("/proxy/:instanceId", r.instanceHandler.DeleteProxy)
 			routes.GET("/proxy/:instanceId", r.instanceHandler.GetProxyStatus)
+			routes.GET("/runtimes", r.instanceHandler.GetRuntimes)
 			routes.POST("/forcereconnect/:instanceId", r.instanceHandler.ForceReconnect)
 			routes.GET("/logs/:instanceId", r.instanceHandler.GetLogs)
 		}
@@ -114,6 +116,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 		{
 			routes.GET("/:instanceId/advanced-settings", r.instanceHandler.GetAdvancedSettings)
 			routes.PUT("/:instanceId/advanced-settings", r.instanceHandler.UpdateAdvancedSettings)
+			routes.GET("/:instanceId/runtime", r.instanceHandler.GetRuntime)
 		}
 	}
 

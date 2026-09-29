@@ -41,6 +41,8 @@ type InstanceService interface {
 	SetProxyFromStruct(id string, data *SetProxyStruct) error
 	RemoveProxy(id string) error
 	GetProxyStatus(id string) (*ProxyStatus, error)
+	GetRuntime(id string) (*RuntimeDiagnostics, error)
+	GetRuntimes() (*RuntimesReport, error)
 	ForceReconnect(instanceId string, number string) error
 	GetInstanceByToken(token string) (*instance_model.Instance, error)
 	GetLogs(instanceId string, startDate, endDate time.Time, level string, limit int) ([]logger_wrapper.LogEntry, error)
@@ -617,6 +619,9 @@ func (i instances) Delete(id string) error {
 	if err != nil {
 		return err
 	}
+
+	// The instance is gone: free its log file descriptor and logger.
+	i.loggerWrapper.Release(id)
 
 	return nil
 }

@@ -23,6 +23,10 @@ Documentação dos endpoints: [`docs/wiki/guias-api/api-fork-additions.md`](docs
 | `quoted.text` | Issue #189 | Texto do card da citação (JSON e multipart) | ✅ card mostra o texto |
 | QR junto do passkey | Issue #148 | `/instance/qr` mantém `qrcode` ao lado dos campos `passkey*` | — |
 | Resultado por participante em `/group/participant` | Achado no teste real | `data` por participante e `failed` (antes "success" mesmo sem adicionar) | ✅ número inexistente → `Error: 404` |
+| **Diagnóstico do runtime** (`GET /instance/{id}/runtime`, `GET /instance/runtimes`) | Sugestão 23 | Estado real do processo vs banco, com avisos codificados (cliente órfão, runtime de instância apagada, "pareada no banco e dispositivo novo no runtime"...) e estatísticas do processo | ✅ 5 ciclos criar/apagar; detectou o resíduo de goroutines |
+| **Health check** (`GET /health`) | Sugestão 24, issue #175 | Prontidão: ping de cada banco (2 s, em paralelo), `slow`/`error`, 503 com banco fora. `/server/ok` segue como liveness | ✅ 503 com o Postgres parado, volta a 200 sozinho |
+| `ENABLE_PPROF` (`/debug/pprof`, chave global, desligado por padrão) | Necessidade do diagnóstico | Permite ver as pilhas; foi ele que mostrou o vazamento do logger | ✅ |
+| Liberar o logger de instância apagada | Achado com o pprof | 1 arquivo aberto por instância criada nunca era fechado. Limite: a goroutine do `lumberjack` não pode ser parada (1 por instância já criada) | ✅ descritores estáveis em 6 ciclos |
 
 ## 2. Propostas ainda em aberto
 
@@ -40,23 +44,30 @@ Documentação dos endpoints: [`docs/wiki/guias-api/api-fork-additions.md`](docs
 
 | # | Proposta | Origem | Tamanho | Comentário | Recomendação |
 |---|---|---|---|---|---|
-| 18 | **Encaminhar mensagens** (`forward`) | PRs [#132](https://github.com/evolution-foundation/evolution-go/pull/132) / [#150](https://github.com/evolution-foundation/evolution-go/pull/150) | ~4,9 mil linhas (base `develop`) | O PR cria os arquivos em `routes/` e `sendMessage/` **na raiz do repositório**, não em `pkg/`: é uma cópia duplicada do `send_service.go` e não integra. A ideia é boa; reimplementar enxuto em `pkg/` | ◐ |
+| 18 | **Encaminhar mensagens** (`forward`; a lib não guarda mensagens, então precisa de conteúdo enviado ou persistência própria) | PRs [#132](https://github.com/evolution-foundation/evolution-go/pull/132) / [#150](https://github.com/evolution-foundation/evolution-go/pull/150) | ~4,9 mil linhas (base `develop`) | O PR cria os arquivos em `routes/` e `sendMessage/` **na raiz do repositório**, não em `pkg/`: é uma cópia duplicada do `send_service.go` e não integra. A ideia é boa; reimplementar enxuto em `pkg/` | ◐ |
 | 19 | **Evento de agenda** `POST /send/event` | PR [#90](https://github.com/evolution-foundation/evolution-go/pull/90) | 702 linhas, base `develop` | Recurso de nicho | ✖ por ora |
-| 20 | **Chamadas**: atender/discar/controlar e stream de áudio/vídeo por WebSocket | PR [#141](https://github.com/evolution-foundation/evolution-go/pull/141) | 5,2 mil linhas / 19 arquivos | Muito valor para integrações de voz, mas é um subsistema novo com WebSocket, mídia e segurança próprias; exige projeto separado | ✖ por ora |
+| 20 | **Chamadas**: atender/discar/controlar e stream de áudio/vídeo por WebSocket | PR [#141](https://github.com/evolution-foundation/evolution-go/pull/141) | 5,2 mil linhas / 19 arquivos | O whatsmeow só oferece `RejectCall` e eventos: **não há sinalização VoIP nem mídia na lib** (conferido). O PR implementa isso por conta própria, ou seja, um subsistema novo com risco e manutenção próprios; exige projeto separado | ✖ por ora |
 | 21 | **UI de chat no "sender"** (enviar/receber em tela) | PR [#182](https://github.com/evolution-foundation/evolution-go/pull/182) | 1,6 mil linhas | Ferramenta de teste; não é núcleo da API | ✖ por ora |
 | 22 | **Manager: drawer mobile e ações visíveis em touch** | PR [#184](https://github.com/evolution-foundation/evolution-go/pull/184) | 5 arquivos de UI | Melhoria de usabilidade, baixo risco; não avaliei visualmente | ◐ (abrir o manager no celular antes de decidir) |
 
-## 3. Sugestões novas (surgiram no teste real; ainda não implementadas)
+## 3. Sugestões novas (ainda não implementadas)
+
+As duas primeiras (diagnóstico do runtime e health check) já foram feitas (§1). As de whatsmeow vêm do levantamento em [`docs/WHATSMEOW-CAPABILITIES.md`](docs/WHATSMEOW-CAPABILITIES.md).
 
 | # | Sugestão | Por quê | Esforço | Recomendação |
 |---|---|---|---|---|
-| 23 | **Endpoint de diagnóstico do runtime** (`GET /instance/{id}/runtime`: cliente registrado, conectado, logado, runtime ativo, contagem de QR, último evento) | O bug do runtime duplicado só foi achado lendo logs; hoje não há como ver o estado interno. Ajuda a reproduzir relatos como #85 e #185 | P/M | ▶ |
-| 24 | **Health check que enxergue o Postgres e os runtimes** (`/server/ok` responde 200 mesmo com o pool esgotado) | No #175 o health check ficou cego justo quando o pool esgotou | P | ▶ |
 | 25 | **Métricas Prometheus** (instâncias conectadas, reconexões, eventos entregues/falhos, conexões do pool) | Observar uso prolongado e alertar antes de a instância cair | M | ◐ |
 | 26 | **Resultado por item nas operações em lote** (participantes de grupo já foi feito; falta `subscribe` com lista de números, como pediu o #146) | Evita "success" que esconde falha parcial | P | ◐ |
 | 27 | **Reativar o agendador de presença quando `alwaysOnline` é ligado em tempo de execução** | Hoje ele só nasce no evento `Connected`; ligar depois não tem efeito até reconectar | P | ◐ |
-| 28 | **Remover contato via API** | Não existe: a lib só grava mutações de app state. Só seria possível se o whatsmeow ganhar a operação `REMOVE` | — | ✖ (depende da lib) |
+| 28 | **Remover contato via API** | Impossível hoje: o encoder de app state do whatsmeow só gera `SET` (conferido no código). Detalhes e outros limites duros em `docs/WHATSMEOW-CAPABILITIES.md` §2 | — | ✖ (depende da lib) |
 | 29 | **Regenerar o swagger sem regressão** (o `swag init` reescreve ~1.000 linhas e remove as rotas de licença) | Documentação da API desatualizada (`/group/description`, `/group/settings`, novos endpoints) | M | ◐ |
+| 30 | **Tratar `NotifyAccountReachoutTimelock`** (conta restrita para iniciar conversas): publicar como evento, gravar o estado e devolver mensagem clara no lugar de "463" | É a causa provável do 463 (#50, #124, #115); o evento traz `IsActive` e `TimeEnforcementEnds` | P/M | ▶ |
+| 31 | **Tratar `StreamError` e `ClientOutdated`**: registrar, publicar como evento de conexão e mostrar no diagnóstico | `StreamError` é o caso do #185; `ClientOutdated` é o 405 da versão | P | ▶ |
+| 32 | **Retorno de falha de pareamento** (`PairError`, `QRScannedWithoutMultidevice`, `ManualLoginReconnect`) | Hoje o usuário fica sem retorno quando o pareamento falha | P | ◐ |
+| 33 | **Publicar mudanças de estado de chat feitas em outro aparelho** (`Mute`, `Pin`, `Star`, `MarkChatAsRead`, `DeleteChat`, `ClearChat`, `DeleteForMe`) | Só `Archive` é publicado; CRMs perdem essas mudanças | M | ◐ |
+| 34 | **Timer de mensagens temporárias**: expor `SetDisappearingTimer`/`SetDefaultDisappearingTimer` e aprender o timer por chat (`ContextInfo.Expiration`, `GroupInfo.Ephemeral`) | Resolve o #79; a lib não permite *ler* o timer, só aprendê-lo | M | ◐ |
+| 35 | **Newsletters completas** (`FollowNewsletter`, `UnfollowNewsletter`, `NewsletterToggleMute`, `NewsletterMarkViewed`, `NewsletterSendReaction`) e **grupo por convite** (`GetGroupInfoFromInvite/Link`, `JoinGroupWithInvite`) | APIs hoje parciais | M | ◐ |
+| 36 | **`BuildUnavailableMessageRequest`**: pedir ao celular o reenvio de mensagem indisponível | Complementa `REREQUEST_FROM_PHONE` em "não chegou" | M | ◐ |
 
 ## 4. Documentação pendente
 
