@@ -2,13 +2,13 @@
 
 Fork: `lucasgiovannibr/evolution-go` · Upstream: `evolution-foundation/evolution-go`
 
-Atualizado em 29/09/2026, depois do teste com instância real.
+Atualizado em 29/09/2026, depois do teste com instância real e da implementação das propostas aprovadas (PRs #14 e #15).
 
-Foco do fork: **corrigir, melhorar e ajustar**. O que é funcionalidade nova está em [FEATURE-PROPOSALS.md](FEATURE-PROPOSALS.md) para avaliação, não foi implementado.
+Foco do fork: **corrigir, melhorar e ajustar**. O que é funcionalidade nova está em [FEATURE-PROPOSALS.md](FEATURE-PROPOSALS.md): a seção 1 lista o que **já foi implementado** (com sua aprovação) e as seções 2 e 3 o que segue **em aberto** para avaliação.
 
 ## 1. Estado do fork
 
-- Em 29/09 a `main` do fork estava **idêntica** ao `upstream/main` (commit `9337afc`, versão `0.7.2`), então não havia o que atualizar. Hoje ela está **67 commits à frente** (10 PRs mesclados dentro do próprio fork).
+- Em 29/09 a `main` do fork estava **idêntica** ao `upstream/main` (commit `9337afc`, versão `0.7.2`), então não havia o que atualizar. Hoje ela está **81 commits à frente** (15 PRs mesclados dentro do próprio fork).
 - O upstream tinha **61 issues + 61 PRs abertos** (todos analisados aqui).
 - A branch `upstream/develop` está *atrás* da `main` (VERSION `0.7.1`) — vários PRs abertos apontam para ela (#90, #132, #150, #159–#163, #177, #198) e por isso estão desalinhados com a `main`.
 - Os commits da `main` pública são `sync: 0.7.x from main`, feitos por um bot — ela é um **espelho** de um repositório interno. O GitHub não lista nenhum PR como *merged*; os PRs #33 e #91 (AlwaysOnline) foram apenas **fechados** em 03/07 e a correção chegou à `main` por outro caminho. **O fork é o lugar prático para integrar correções.**
@@ -20,7 +20,7 @@ Tudo foi enviado **somente ao fork** (`origin`). O remote `upstream` está com o
 
 | Onde | Situação |
 |---|---|
-| `main` do fork | Tudo mesclado por PRs **dentro do fork** (#1–#10): triagem, whatsmeow novo + Go 1.26, hardening, ciclo de vida, features, correções do teste real. CI verde; imagem em `ghcr.io/lucasgiovannibr/evolution-go` |
+| `main` do fork | Tudo mesclado por PRs **dentro do fork** (#1–#15): triagem, whatsmeow novo + Go 1.26, hardening, ciclo de vida, features, correções do teste real, diagnóstico, eventos do whatsmeow, mensagens temporárias, convites, canais e mensagem que não chegou. CI verde; imagem em `ghcr.io/lucasgiovannibr/evolution-go` |
 | Stack de teste local | `docker/fork-test/` (Postgres novo + imagem do fork, porta 8100), isolado dos seus outros containers |
 
 Build, `go vet` e `go test -race ./...` passam.
@@ -81,7 +81,7 @@ Build, `go vet` e `go test -race ./...` passam.
 | Goroutine de presença antiga enviando `available` | #55, #54, #70 | Encerra ao ser substituída ou com `alwaysOnline=false` |
 | `AppStateSyncError` (LTHash) | #72 | Recovery controlado (PR #144) |
 | NATS conectava sem URL | — | PR #143 |
-| Mensagens não descriptografáveis | — | `REREQUEST_FROM_PHONE` (opt-in, padrão desligado — PR #156) |
+| Mensagens não descriptografáveis | — | `REREQUEST_FROM_PHONE` (opt-in, padrão desligado — PR #156). Além disso, o evento `UndecryptableMessage` é publicado e `POST /message/rerequest` pede o reenvio (ver "Mensagem que não chegou") |
 | Sem CI | — | `.github/workflows/ci.yml`: build, vet, `test -race` |
 
 ### Correções e melhorias das features e do teste real (PRs #7–#10)
@@ -108,15 +108,35 @@ Features aprovadas (PR #7), documentadas em `docs/wiki/guias-api/api-fork-additi
 | `GET /instance/{id}/runtime`, `GET /instance/runtimes` | Estado real do processo vs banco, com avisos codificados e estatísticas (goroutines, memória). Detecta o estado do bug do runtime duplicado ("pareada no banco, dispositivo novo no runtime") e runtimes de instâncias apagadas |
 | `ENABLE_PPROF` (opcional) | `/debug/pprof` atrás da chave global. Mostrou que cada instância criada deixava um logger com arquivo aberto e uma goroutine do `lumberjack` |
 | Logger de instância apagada liberado | Descritores de arquivo estáveis em 6 ciclos criar/apagar. A goroutine do `lumberjack` não pode ser parada (limite da biblioteca): 1 por instância já criada até o processo reiniciar |
-| `docs/WHATSMEOW-CAPABILITIES.md` | Do `Client` do whatsmeow (136 métodos) o projeto usa 65; dos 75 tipos de evento trata 42. Lista os **limites duros** (remover contato, atender/discar chamadas, encaminhar por ID, ler o timer de temporárias) e os eventos não tratados que explicam issues abertas: `NotifyAccountReachoutTimelock` (o 463), `StreamError` (#185), `ClientOutdated` (405) |
+| `docs/WHATSMEOW-CAPABILITIES.md` | Do `Client` do whatsmeow (136 métodos) o projeto usava 65; dos 75 tipos de evento tratava 42 (números da época do levantamento; desde então foram tratados os eventos operacionais, de pareamento e de estado de chat). Lista os **limites duros** (remover contato, atender/discar chamadas, encaminhar por ID, ler o timer de temporárias) e os eventos não tratados que explicam issues abertas: `NotifyAccountReachoutTimelock` (o 463), `StreamError` (#185), `ClientOutdated` (405) |
 
 ### Eventos operacionais do whatsmeow (PR #13)
 
 `NotifyAccountReachoutTimelock`, `StreamError` e `ClientOutdated` deixaram de cair no "Unhandled event": são publicados sob `CONNECTION`, aparecem no diagnóstico do runtime, e o erro 463 do envio agora explica a restrição e até quando. O 405 descarta o cache da versão (1 h) para a reconexão seguinte buscar a atual. **Não foi possível provocar os eventos reais**: dependem de o WhatsApp restringir a conta ou recusar a versão. O que foi verificado são testes de ponta a ponta com eventos sintéticos (evento → estado → webhook → assinante `CONNECTION`), mais o `go test -race` completo.
 
+### Eventos de pareamento e de estado de chat (PR #14)
+
+- `PairError`, `QRScannedWithoutMultidevice` (assinatura `QRCODE`) e `CATRefreshError` (`CONNECTION`) deixaram de cair no "Unhandled event": quem pareia passa a ter retorno quando o pareamento falha.
+- `Mute`, `Pin`, `Star`, `MarkChatAsRead`, `ClearChat`, `DeleteChat`, `DeleteForMe`, `UnarchiveChatsSetting` e `UserStatusMute` (mudanças feitas em **outro aparelho**) são publicados sob `CHAT_PRESENCE`, onde o `Archive` já estava. Os eventos do **full sync** que segue um pareamento não são publicados (seriam milhares de "mudanças" que não são mudanças).
+- **Verificado**: testes de ponta a ponta com eventos sintéticos. **Não observado**: eventos reais de fixar/silenciar/estrela (dependem de ação no celular).
+
+### Mensagens temporárias, convites de grupo e canais (PR #14)
+
+| Entrega | Detalhe |
+|---|---|
+| **#79 — timer de mensagens temporárias** | O timer de cada chat é aprendido (`ContextInfo.Expiration` recebido, `EPHEMERAL_SETTING`, `GroupInfo`, o próprio endpoint) e aplicado no envio. Grupos o releem após reiniciar. Novas rotas `POST /chat/disappearing` e `POST /user/defaultDisappearing`. `DISAPPEARING_AUTO_APPLY=false` desliga. Limite: num chat individual o timer só é conhecido depois de chegar uma mensagem dele ou de ser definido por aqui |
+| Grupo por convite | `POST /group/inviteinfo` (link/código ou cartão de convite, **sem entrar**) e `POST /group/joininvite` (a partir do cartão) |
+| Canais | `POST /newsletter/follow`, `/unfollow`, `/mute`, `/markviewed`, `/react`, com prazo de 20 s |
+
+**Validado ao vivo** (grupo de teste só com você e o seu próprio chat): timer 24h aplicado, "off" não aplicado, timer relido após reiniciar o container, chat individual e padrão; `inviteinfo` por link; validações (400). **Não testado ao vivo**: as ações de canal (sem canal de teste) e `joininvite` (precisa de um cartão de convite real).
+
+### Mensagem que não chegou (PR #15)
+
+O evento `UndecryptableMessage` (antes só uma linha de log) é publicado sob `MESSAGE` com `id`, `chat` e `sender`, e `POST /message/rerequest` pede ao celular uma nova cópia (`BuildUnavailableMessageRequest`); a resposta chega como `Message` com `UnavailableRequestID`. **Validado ao vivo**: o pedido é aceito pelo servidor. **Não observado**: a resposta do celular e um evento real (dependem de o WhatsApp entregar algo que não dá para decifrar).
+
 ### Validação ao vivo (instância real, 29/09/2026)
 
-Instância pareada e conectada por você; mensagens só para o seu próprio número; grupo de teste só com você (removido no fim).
+Instância pareada e conectada por você; mensagens só para o seu próprio número; grupo de teste só com você (o primeiro foi removido no fim; o "ZZ Teste Timer Fork", criado depois para as mensagens temporárias, ainda existe e deve ser apagado à mão).
 
 | Verificado | Resultado |
 |---|---|
@@ -134,7 +154,7 @@ Instância pareada e conectada por você; mensagens só para o seu próprio núm
 
 **Contatos de teste que ficaram na lista do WhatsApp** (remover à mão, a API não remove): "ZZ Teste Fork" (553100000001) e "ZZ Teste Fork 2" (553196596774).
 
-**Não testado**: proxy (por decisão sua), passkey (a conta não exigiu), botões/lista, cenários de horas/dias de uso e redes instáveis.
+**Não testado**: proxy (por decisão sua), passkey (a conta não exigiu), botões/lista, ações de canal, `joininvite`, eventos reais de estado de chat e de mensagem indecifrável, cenários de horas/dias de uso e redes instáveis.
 
 ## 3. Botões e listas (#59 #71 #110 #170 #204) — não corrigido
 
@@ -153,13 +173,13 @@ Verificado: build, `go vet`, `go test -race`, boot com Postgres, imagem Docker (
 
 ## 4. Limites da validação
 
-- **Testado ao vivo** com uma única instância (conta pessoal, chat consigo mesmo e um grupo só com você). Não foram exercitados: proxy, passkey, botões/lista, conta Business, número de terceiros, tráfego intenso, quedas de rede e uso prolongado.
+- **Testado ao vivo** com uma única instância (conta pessoal, chat consigo mesmo e um grupo só com você). Não foram exercitados: proxy, passkey, botões/lista, ações de canal, conta Business, número de terceiros, tráfego intenso, quedas de rede e uso prolongado.
 - Cada rodada passa por `go build`, `go vet`, `go test -race ./...` (inclui testes novos e um teste de integração do pool Postgres, opt-in) e boot com Postgres.
 - O Go não está instalado na máquina; a compilação roda em containers `golang:1.26`.
 
 ## 5. Situação atual, o que ainda falta e sugestões
 
-**Feito e mesclado no fork**: triagem completa; correções (§2); whatsmeow novo (Go 1.26); CI; publicação da imagem no GHCR; hardening; ciclo de vida; features aprovadas; correções do teste real. CHANGELOG e wiki atualizados.
+**Feito e mesclado no fork**: triagem completa; correções (§2); whatsmeow novo (Go 1.26); CI; publicação da imagem no GHCR; hardening; ciclo de vida; features aprovadas; correções do teste real; diagnóstico e health check; eventos operacionais, de pareamento e de estado de chat; mensagens temporárias (#79); convites de grupo; canais; mensagem que não chegou. CHANGELOG e wiki atualizados.
 
 **Ainda falta (e por quê)**
 
@@ -174,9 +194,9 @@ Verificado: build, `go vet`, `go test -race`, boot com Postgres, imagem Docker (
 | Swagger | O `swag init` reescreve ~1.000 linhas e remove as rotas de licença |
 | Proxy real e passkey | Não testados |
 
-**Sugestões novas** (não implementadas; detalhes em FEATURE-PROPOSALS.md §3): o diagnóstico do runtime e o health check **já foram feitos**. Do levantamento do whatsmeow, as de melhor custo-benefício são tratar `NotifyAccountReachoutTimelock` (explica o 463), `StreamError` e `ClientOutdated`. Também: métricas Prometheus, resultado por item em lotes, reativar a presença quando `alwaysOnline` é ligado em tempo de execução.
+**Sugestões**: tudo o que veio do levantamento do whatsmeow e foi aprovado **já foi feito** (diagnóstico, health check, eventos operacionais, pareamento, estado de chat, timer, convites, canais e `rerequest`). Em aberto, em FEATURE-PROPOSALS.md §2 e §3: métricas Prometheus, resultado por item em lotes, reativar a presença quando `alwaysOnline` é ligado em tempo de execução, regenerar o swagger, thumbnail HQ em `/send/link` (#103), encaminhar mensagens e os itens que dependem de decisão de produto.
 
-**Para você**: deixar a instância de teste rodando e me dizer se aparecer algo estranho nos logs; decidir sobre proxy/passkey quando quiser testá-los; escolher o que sobrou em FEATURE-PROPOSALS.md.
+**Para você**: deixar a instância de teste rodando e me dizer se aparecer algo estranho nos logs; decidir sobre proxy/passkey quando quiser testá-los; escolher o que sobrou em FEATURE-PROPOSALS.md; remover à mão o grupo "ZZ Teste Timer Fork" e os contatos de teste.
 
 ## 6. Resumo numérico
 
