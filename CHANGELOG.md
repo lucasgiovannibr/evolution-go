@@ -53,6 +53,17 @@ and pull requests in `FORK-TRIAGE.md`.
 - `POST /user/contacts`: optional `saveOnPrimaryAddressbook` (contacts cannot be
   removed through the API).
 
+### Diagnostics
+- `GET /health` (readiness: databases with a 2s bound, `slow`/`error` states, 503 when a
+  database is down) next to the unchanged `GET /server/ok` (liveness).
+- `GET /instance/{id}/runtime` and `GET /instance/runtimes`: what the process actually
+  runs per instance vs the database, with coded warnings, plus process stats
+  (goroutines, memory). `ENABLE_PPROF=true` exposes `/debug/pprof` behind the global key.
+- The logger of a deleted instance is released (its log file descriptor was kept open
+  for the life of the process); `qrcodeCount` is atomic.
+- `docs/WHATSMEOW-CAPABILITIES.md`: what whatsmeow delivers, what the project uses
+  (65 of 136 client methods, 42 of 75 event types) and the hard limits of the library.
+
 ### Additions (small)
 - Endpoints (details in `docs/wiki/guias-api/api-fork-additions.md`): `viewOnce` in
   `/send/media`; `POST /send/pollVote`; `POST /message/subscribe` (contact

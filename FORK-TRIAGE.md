@@ -100,6 +100,16 @@ Features aprovadas (PR #7), documentadas em `docs/wiki/guias-api/api-fork-additi
 | `viewOnce` e `quoted.text` só existiam no envio JSON | Também no multipart de `/send/media` |
 | Não há como remover um contato salvo (app state só grava) | `saveOnPrimaryAddressbook` opcional em `POST /user/contacts` para testar sem tocar na agenda do celular |
 
+### Diagnóstico e saúde (PR #12) e levantamento do whatsmeow
+
+| Entrega | Detalhe |
+|---|---|
+| `GET /health` (readiness) | Ping de cada banco (2 s, em paralelo): `ok` / `slow` / `error`; 503 quando um banco cai. `/server/ok` continua liveness. A rota já era isentada pela barreira de licença, mas não existia (404). Validado ao vivo: 503 com o Postgres parado e retorno a 200 sozinho |
+| `GET /instance/{id}/runtime`, `GET /instance/runtimes` | Estado real do processo vs banco, com avisos codificados e estatísticas (goroutines, memória). Detecta o estado do bug do runtime duplicado ("pareada no banco, dispositivo novo no runtime") e runtimes de instâncias apagadas |
+| `ENABLE_PPROF` (opcional) | `/debug/pprof` atrás da chave global. Mostrou que cada instância criada deixava um logger com arquivo aberto e uma goroutine do `lumberjack` |
+| Logger de instância apagada liberado | Descritores de arquivo estáveis em 6 ciclos criar/apagar. A goroutine do `lumberjack` não pode ser parada (limite da biblioteca): 1 por instância já criada até o processo reiniciar |
+| `docs/WHATSMEOW-CAPABILITIES.md` | Do `Client` do whatsmeow (136 métodos) o projeto usa 65; dos 75 tipos de evento trata 42. Lista os **limites duros** (remover contato, atender/discar chamadas, encaminhar por ID, ler o timer de temporárias) e os eventos não tratados que explicam issues abertas: `NotifyAccountReachoutTimelock` (o 463), `StreamError` (#185), `ClientOutdated` (405) |
+
 ### Validação ao vivo (instância real, 29/09/2026)
 
 Instância pareada e conectada por você; mensagens só para o seu próprio número; grupo de teste só com você (removido no fim).
@@ -160,7 +170,7 @@ Verificado: build, `go vet`, `go test -race`, boot com Postgres, imagem Docker (
 | Swagger | O `swag init` reescreve ~1.000 linhas e remove as rotas de licença |
 | Proxy real e passkey | Não testados |
 
-**Sugestões novas** (não implementadas; detalhes em FEATURE-PROPOSALS.md): endpoint de diagnóstico do runtime por instância; health check que enxergue o pool do Postgres e os runtimes (hoje um pool esgotado deixa o próprio health check cego, como relatado no #175); métricas Prometheus; resultado por item em operações em lote; reativar a presença quando `alwaysOnline` é ligado em tempo de execução.
+**Sugestões novas** (não implementadas; detalhes em FEATURE-PROPOSALS.md §3): o diagnóstico do runtime e o health check **já foram feitos**. Do levantamento do whatsmeow, as de melhor custo-benefício são tratar `NotifyAccountReachoutTimelock` (explica o 463), `StreamError` e `ClientOutdated`. Também: métricas Prometheus, resultado por item em lotes, reativar a presença quando `alwaysOnline` é ligado em tempo de execução.
 
 **Para você**: deixar a instância de teste rodando e me dizer se aparecer algo estranho nos logs; decidir sobre proxy/passkey quando quiser testá-los; escolher o que sobrou em FEATURE-PROPOSALS.md.
 

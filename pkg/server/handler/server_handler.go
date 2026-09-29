@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -56,11 +57,24 @@ func (s *serverHandler) ServerOk(ctx *gin.Context) {
 // from the license gate, like /server/ok). Per-instance details are in
 // GET /instance/runtimes (global key).
 func (s *serverHandler) Health(ctx *gin.Context) {
+	// Checks run in parallel so the whole probe stays within one ping timeout even
+	// when several databases are down.
+	states := make([]string, len(s.checks))
+	var wg sync.WaitGroup
+	for idx, c := range s.checks {
+		wg.Add(1)
+		go func(idx int, c HealthCheck) {
+			defer wg.Done()
+			states[idx] = checkDB(ctx.Request.Context(), c.DB)
+		}(idx, c)
+	}
+	wg.Wait()
+
 	results := gin.H{}
 	status := "ok"
 
-	for _, c := range s.checks {
-		state := checkDB(ctx.Request.Context(), c.DB)
+	for idx, c := range s.checks {
+		state := states[idx]
 		results[c.Name] = state
 		switch state {
 		case "error":
