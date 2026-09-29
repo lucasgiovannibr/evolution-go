@@ -1,5 +1,51 @@
 # Evolution GO - Changelog
 
+## Unreleased (fork lucasgiovannibr/evolution-go)
+
+Fixes and hardening on top of upstream v0.7.2. Full triage of the upstream issues
+and pull requests in `FORK-TRIAGE.md`.
+
+### Upgrade notes
+- **whatsmeow updated** (30/06 → 29/09/2026, 72 commits) and **Go 1.26** is now
+  required (Dockerfile updated). The whatsmeow schema moves from **v14 to v16**;
+  the migrations are forward-only, so **back up `evogo_auth` before deploying** —
+  the previous image cannot run on the upgraded database.
+- Docker images are published to `ghcr.io/<owner>/<repo>` by the fork's workflow.
+
+### Fixes
+- **Process crashes**: shared instance maps are now synchronized (`fatal error:
+  concurrent map writes`); WebSocket writes are serialized per connection;
+  `events.Archive` no longer panics; duplicate concurrent reconnects are ignored;
+  panics in service-owned goroutines are recovered and logged.
+- **Postgres connection leak** (`too many clients already`): one shared whatsmeow
+  store container on top of the bounded auth pool instead of a new pool per
+  reconnect.
+- **Lifecycle**: supervisor goroutines end when their client is replaced (one was
+  leaked per reconnect); KeepAlive timeouts trigger a reconnect; instances caught
+  mid-reconnect are restored on `CONNECT_ON_STARTUP`; the resolved WhatsApp version
+  is applied to the handshake.
+- **Security**: `/instance/{id}/advanced-settings` is scoped to the global key or
+  the instance's own token; `ForceUpdateJid` uses a bound SQL parameter; global key
+  comparison is constant-time and rejected WebSocket tokens are no longer logged.
+- **Config**: `/instance/connect` and advanced-settings updates are partial (no
+  more silent reset of events/RabbitMQ/flags); `Disconnect` keeps the event
+  subscriptions.
+- **Messages**: incoming edits and poll votes are decrypted before the LID/PN
+  swap; `/group/participant` validation; mentionAll with documents; carousel
+  button parameters; image `Width/Height`; animated stickers; avatar, edit and
+  revoke with canonical JIDs; `/user/profileName`; history-sync request sent as a
+  peer message; unpaired instances fail fast on send.
+- **Events**: `Passkey*` follow the `QRCODE` subscription; `PICTURE`, `USER_ABOUT`
+  and `BUTTON_CLICK` are published to NATS/AMQP; `KeepAliveTimeout/Restored`
+  events under `CONNECTION`.
+
+### Additions (small)
+- `quoted.text` (optional) fills the quote card of replies.
+- `/instance/qr` keeps returning the QR alongside the passkey fields.
+- `REREQUEST_FROM_PHONE` (opt-in) re-requests undecryptable messages.
+- CI (build, vet, `test -race`) and a Postgres integration test for the pool fix
+  (`EVOGO_TEST_POSTGRES_DSN`).
+
 ## v0.7.2
 
 **Docker:** `evoapicloud/evolution-go:0.7.2`
