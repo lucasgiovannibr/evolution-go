@@ -128,9 +128,21 @@ func (i *instanceRepository) UpdateConnectSettings(instanceId string, updates ma
 	return err
 }
 
+// ReconnectingReason is the disconnect_reason written while an instance is being
+// restarted by ReconnectClient.
+const ReconnectingReason = "Reconnecting"
+
+// startupRestoreCondition selects the instances CONNECT_ON_STARTUP must bring back:
+// the ones marked connected, plus the ones caught mid-reconnect. ReconnectClient
+// writes connected=false before restarting, so a process restart inside that
+// window (or a crash, e.g. from a fatal error) used to lose the instance for good,
+// leaving it offline until someone called /instance/connect. Instances that were
+// deliberately disconnected or logged out carry a different reason and stay off.
+const startupRestoreCondition = "connected = ? OR disconnect_reason = ?"
+
 func (i *instanceRepository) GetAllConnectedInstances() ([]*instance_model.Instance, error) {
 	var instances []*instance_model.Instance
-	err := i.db.Where("connected = ?", true).Find(&instances).Error
+	err := i.db.Where(startupRestoreCondition, true, ReconnectingReason).Find(&instances).Error
 	if err != nil {
 		return nil, err
 	}
@@ -140,7 +152,7 @@ func (i *instanceRepository) GetAllConnectedInstances() ([]*instance_model.Insta
 
 func (i *instanceRepository) GetAllConnectedInstancesByClientName(clientName string) ([]*instance_model.Instance, error) {
 	var instances []*instance_model.Instance
-	err := i.db.Where("connected = ? AND client_name = ?", true, clientName).Find(&instances).Error
+	err := i.db.Where("("+startupRestoreCondition+") AND client_name = ?", true, ReconnectingReason, clientName).Find(&instances).Error
 	if err != nil {
 		return nil, err
 	}

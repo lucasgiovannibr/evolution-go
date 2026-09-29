@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"regexp"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -264,6 +265,17 @@ type ProxyConfig struct {
 	Username string `json:"username"`
 }
 
+// recoverAndLog must be used as `defer recoverAndLog(...)` at the top of code that
+// runs in its own goroutine. whatsmeow recovers panics in its event dispatch, but
+// goroutines started by this service (webhook fan-out, reconnects, client
+// supervisors) are outside that safety net: a panic in any of them killed the
+// whole process, and with it every instance.
+func recoverAndLog(lw *logger_wrapper.LoggerManager, instanceID, where string) {
+	if r := recover(); r != nil {
+		lw.GetLogger(instanceID).LogError("[%s] panic recovered in %s: %v\n%s", instanceID, where, r, debug.Stack())
+	}
+}
+
 // reconnecting holds the instances that currently have a ReconnectClient in
 // flight. whatsmeow can deliver two Disconnected events for the same drop within
 // the same second; each one used to start its own reconnect, and the two raced
@@ -272,6 +284,7 @@ type ProxyConfig struct {
 var reconnecting sync.Map
 
 func (w whatsmeowService) ReconnectClient(instanceId string) error {
+	defer recoverAndLog(w.loggerWrapper, instanceId, "ReconnectClient")
 	if _, busy := reconnecting.LoadOrStore(instanceId, struct{}{}); busy {
 		w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Reconnection already in progress, ignoring duplicate request", instanceId)
 		return nil
@@ -330,8 +343,8 @@ func (w whatsmeowService) ReconnectClient(instanceId string) error {
 	}
 
 	instance.Connected = false
-	instance.DisconnectReason = "Reconnecting"
-	err = w.instanceRepository.UpdateConnected(instanceId, false, "Reconnecting")
+	instance.DisconnectReason = instance_repository.ReconnectingReason
+	err = w.instanceRepository.UpdateConnected(instanceId, false, instance_repository.ReconnectingReason)
 	if err != nil {
 		w.loggerWrapper.GetLogger(instanceId).LogWarn("[%s] Failed to update disconnect status: %v", instanceId, err)
 	}
@@ -474,6 +487,7 @@ func (w whatsmeowService) getAuthContainer() (*sqlstore.Container, error) {
 }
 
 func (w whatsmeowService) StartClient(cd *ClientData) {
+	defer recoverAndLog(w.loggerWrapper, cd.Instance.Id, "StartClient")
 
 	w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("Starting websocket connection to Whatsapp for user '%s'", cd.Instance.Id)
 
@@ -736,9 +750,16 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 
 	// Removed auto-reconnect logic to prevent infinite loops
 
+	// Bind this loop to the channel that existed when it started. It used to
+	// re-read the shared map on every iteration, so after a reconnect (which puts
+	// a NEW channel in the map) every old loop kept polling the new channel: they
+	// never ended (one leaked goroutine per reconnect) and a later kill could be
+	// consumed by a stale loop that then tore down the NEW client's state.
+	kill := w.killChannel.Get(cd.Instance.Id)
+
 	for {
 		select {
-		case <-w.killChannel.Get(cd.Instance.Id):
+		case <-kill:
 			w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("Received kill signal for user '%s'", cd.Instance.Id)
 			client.Disconnect()
 
@@ -796,6 +817,13 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 			go w.StartClient(cd)
 			return
 		default:
+			// This client was replaced (ReconnectClient removed it and started a new
+			// one): nothing left to supervise, end quietly without touching the
+			// state that now belongs to the new client.
+			if w.clientPointer.Get(cd.Instance.Id) != client {
+				w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Client was replaced, ending its supervisor loop", cd.Instance.Id)
+				return
+			}
 			time.Sleep(1000 * time.Millisecond)
 		}
 	}
@@ -804,6 +832,9 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 func schedulePresenceUpdates(mycli *MyClient) {
 	ticker := time.NewTicker(1 * time.Minute)
 	defer ticker.Stop()
+
+	// Bound to the channel of the run that started it (see StartClient).
+	kill := mycli.killChannel.Get(mycli.userID)
 
 	for {
 		select {
@@ -833,7 +864,7 @@ func schedulePresenceUpdates(mycli *MyClient) {
 			randomInterval := time.Duration(1+rand.Intn(3)) * time.Hour
 			ticker = time.NewTicker(randomInterval)
 
-		case <-mycli.killChannel.Get(mycli.userID):
+		case <-kill:
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Received kill signal, stopping presence updates", mycli.userID)
 			return // Encerra a goroutine quando receber sinal de kill
 		}
@@ -1028,7 +1059,13 @@ func (mycli *MyClient) teardownQR(reason string, forceLogout bool) {
 	// the original timeout branch so the signal is never dropped.
 	mycli.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] QR timeout — signaling kill channel", instanceID)
 	if killChan, exists := mycli.killChannel.Lookup(instanceID); exists {
-		killChan <- true
+		// Bounded: if the supervisor loop already ended (client replaced) nobody is
+		// receiving and an unbounded send would block this goroutine forever.
+		select {
+		case killChan <- true:
+		case <-time.After(10 * time.Second):
+			mycli.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Kill signal not received (client already replaced?), giving up", instanceID)
+		}
 	}
 }
 
@@ -2336,6 +2373,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 }
 
 func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueName string, jsonData []byte) {
+	defer recoverAndLog(w.loggerWrapper, instance.Id, "CallWebhook")
 	var data map[string]interface{}
 	if err := json.Unmarshal(jsonData, &data); err != nil {
 		return
@@ -2749,6 +2787,7 @@ func globalEventTypeFor(eventType string) string {
 }
 
 func (w *whatsmeowService) SendToGlobalQueues(eventType string, payload []byte, userId string) {
+	defer recoverAndLog(w.loggerWrapper, userId, "SendToGlobalQueues")
 	w.loggerWrapper.GetLogger(userId).LogInfo("[%s] Starting sendToGlobalQueues for event: %s", userId, eventType)
 
 	// AMQP: AMQP_SPECIFIC_EVENTS tem prioridade sobre AMQP_GLOBAL_EVENTS
