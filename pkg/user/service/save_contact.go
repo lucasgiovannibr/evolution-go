@@ -33,6 +33,10 @@ type SaveContactStruct struct {
 	Number    string `json:"phone"`
 	FullName  string `json:"fullName"`
 	FirstName string `json:"firstName"`
+	// SaveOnPrimaryAddressbook asks the phone to also store the contact in its system
+	// address book. Optional, defaults to true. There is no API to remove a contact
+	// afterwards (app state mutations are set-only), so use false for tests.
+	SaveOnPrimaryAddressbook *bool `json:"saveOnPrimaryAddressbook,omitempty"`
 }
 
 // contactMutationVersion is the static version of the "contact" index
@@ -64,6 +68,11 @@ func (u *userService) SaveContact(data *SaveContactStruct, instance *instance_mo
 	}
 	jid := utils.CanonicalJID(parsed).ToNonAD()
 
+	saveOnPhone := true
+	if data.SaveOnPrimaryAddressbook != nil {
+		saveOnPhone = *data.SaveOnPrimaryAddressbook
+	}
+
 	patch := appstate.PatchInfo{
 		Type: appstate.WAPatchCriticalUnblockLow, // the patch that carries the contact list
 		Mutations: []appstate.MutationInfo{{
@@ -73,7 +82,7 @@ func (u *userService) SaveContact(data *SaveContactStruct, instance *instance_mo
 				ContactAction: &waSyncAction.ContactAction{
 					FullName:                 proto.String(fullName),
 					FirstName:                proto.String(firstName),
-					SaveOnPrimaryAddressbook: proto.Bool(true),
+					SaveOnPrimaryAddressbook: proto.Bool(saveOnPhone),
 				},
 			},
 		}},

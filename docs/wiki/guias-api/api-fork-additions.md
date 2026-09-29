@@ -58,10 +58,10 @@ Consulta o mapeamento local do whatsmeow (o WhatsApp não tem consulta de servid
 ### Salvar contato — `POST /user/contacts`
 
 ```json
-{ "phone": "5511999999999", "fullName": "Maria Silva", "firstName": "Maria" }
+{ "phone": "5511999999999", "fullName": "Maria Silva", "firstName": "Maria", "saveOnPrimaryAddressbook": true }
 ```
 
-Cria/atualiza o contato na lista do WhatsApp (app state) e pede ao aparelho principal que o grave também na agenda. Depois da sincronização ele aparece em `GET /user/contacts`.
+Cria/atualiza o contato na lista do WhatsApp (app state) e, por padrão, pede ao aparelho principal que o grave também na agenda (`saveOnPrimaryAddressbook`, opcional; use `false` para manter só na lista interna). **Não existe remoção via API**: mutações de app state só gravam. Depois da sincronização ele aparece em `GET /user/contacts`.
 
 ### `PictureURL` em `POST /user/info`
 
