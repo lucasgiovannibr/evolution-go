@@ -11,7 +11,6 @@ import (
 	"image/png"
 	"io"
 	"math/rand"
-	"net/http"
 	"os"
 	"regexp"
 	"runtime/debug"
@@ -641,8 +640,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 	w.clientPointer.Set(cd.Instance.Id, client)
 
 	if cd.IsProxy {
-		var proxyConfig ProxyConfig
-		err := json.Unmarshal([]byte(cd.Instance.Proxy), &proxyConfig)
+		proxyConfig, err := parseProxyConfig(cd.Instance.Proxy)
 		if err != nil {
 			w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] error unmarshalling proxy config", cd.Instance.Id)
 			return
@@ -2463,12 +2461,21 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		postMap["event"] = "LabelEdit"
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Got label edit %+v", mycli.userID, evt.Action)
 
+		// A label deleted on the phone used to stay in the local table (and in
+		// GET /label/list) forever, because only the upsert existed.
+		if evt.Action.GetDeleted() {
+			if err := mycli.labelRepository.DeleteLabelByLabelID(mycli.userID, evt.LabelID); err != nil {
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to delete label: %v", mycli.userID, err)
+			}
+			break
+		}
+
 		label := label_model.Label{
 			InstanceID:   mycli.userID,
 			LabelID:      evt.LabelID,
-			LabelName:    utils.GetStringValue(evt.Action.Name),
-			LabelColor:   fmt.Sprintf("%d", evt.Action.Color),
-			PredefinedId: fmt.Sprintf("%d", evt.Action.PredefinedID),
+			LabelName:    evt.Action.GetName(),
+			LabelColor:   fmt.Sprintf("%d", evt.Action.GetColor()),
+			PredefinedId: fmt.Sprintf("%d", evt.Action.GetPredefinedID()),
 		}
 
 		err := mycli.labelRepository.UpsertLabel(label)
@@ -3089,7 +3096,7 @@ func fetchWhatsAppWebVersion() (*clientVersion, error) {
 		return cachedWebVersion, nil
 	}
 
-	resp, err := http.Get("https://web.whatsapp.com/sw.js")
+	resp, err := utils.QuickClient.Get("https://web.whatsapp.com/sw.js")
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch WhatsApp Web version: %v", err)
 	}
@@ -3373,4 +3380,19 @@ func cleanSenderID(senderID string) string {
 		}
 	}
 	return senderID
+}
+
+// parseProxyConfig reads the proxy JSON stored on an instance. An instance without a
+// proxy holds "" (or "null"); that is an empty config, not an error. With a proxy
+// configured through the environment (PROXY_HOST...), an instance created before it
+// was set has no proxy JSON of its own, and treating "" as malformed made
+// connecting it fail with "unexpected end of JSON input".
+func parseProxyConfig(raw string) (ProxyConfig, error) {
+	var cfg ProxyConfig
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "null" {
+		return cfg, nil
+	}
+	err := json.Unmarshal([]byte(raw), &cfg)
+	return cfg, err
 }

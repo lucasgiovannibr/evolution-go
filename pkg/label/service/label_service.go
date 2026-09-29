@@ -97,9 +97,12 @@ func (l *labelService) ChatLabel(data *ChatLabelStruct, instance *instance_model
 
 	jid, ok := utils.ParseJID(data.JID)
 	if !ok {
-		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error parse community jid", instance.Id)
-		return errors.New("error parse community jid")
+		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error parse chat jid", instance.Id)
+		return errors.New("invalid jid")
 	}
+	// The label patch is matched to the chat by its JID in the app-state index: no "+",
+	// and the LID the phone knows the chat by (see utils.AppStateChatJID).
+	jid = utils.AppStateChatJID(client, utils.CanonicalJID(jid))
 
 	err = client.SendAppState(context.Background(), appstate.BuildLabelChat(
 		jid,
@@ -122,9 +125,12 @@ func (l *labelService) MessageLabel(data *MessageLabelStruct, instance *instance
 
 	jid, ok := utils.ParseJID(data.JID)
 	if !ok {
-		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error parse community jid", instance.Id)
-		return errors.New("error parse community jid")
+		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error parse chat jid", instance.Id)
+		return errors.New("invalid jid")
 	}
+	// The label patch is matched to the chat by its JID in the app-state index: no "+",
+	// and the LID the phone knows the chat by (see utils.AppStateChatJID).
+	jid = utils.AppStateChatJID(client, utils.CanonicalJID(jid))
 
 	err = client.SendAppState(context.Background(), appstate.BuildLabelMessage(
 		jid,
@@ -168,9 +174,12 @@ func (l *labelService) ChatUnlabel(data *ChatLabelStruct, instance *instance_mod
 
 	jid, ok := utils.ParseJID(data.JID)
 	if !ok {
-		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error parse community jid", instance.Id)
-		return errors.New("error parse community jid")
+		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error parse chat jid", instance.Id)
+		return errors.New("invalid jid")
 	}
+	// The label patch is matched to the chat by its JID in the app-state index: no "+",
+	// and the LID the phone knows the chat by (see utils.AppStateChatJID).
+	jid = utils.AppStateChatJID(client, utils.CanonicalJID(jid))
 
 	err = client.SendAppState(context.Background(), appstate.BuildLabelChat(
 		jid,
@@ -193,9 +202,12 @@ func (l *labelService) MessageUnlabel(data *MessageLabelStruct, instance *instan
 
 	jid, ok := utils.ParseJID(data.JID)
 	if !ok {
-		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error parse community jid", instance.Id)
-		return errors.New("error parse community jid")
+		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error parse chat jid", instance.Id)
+		return errors.New("invalid jid")
 	}
+	// The label patch is matched to the chat by its JID in the app-state index: no "+",
+	// and the LID the phone knows the chat by (see utils.AppStateChatJID).
+	jid = utils.AppStateChatJID(client, utils.CanonicalJID(jid))
 
 	err = client.SendAppState(context.Background(), appstate.BuildLabelMessage(
 		jid,

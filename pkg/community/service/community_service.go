@@ -107,18 +107,13 @@ func (c *communityService) CommunityAdd(data *AddParticipantStruct, instance *in
 		return nil, errors.New("error parse community jid")
 	}
 
-	var successList []string
-	var failedList []string
-
-	for _, participant := range data.GroupJID {
-		groupJID, _ := utils.ParseJID(participant)
+	successList, failedList := applyToGroups(data.GroupJID, func(groupJID types.JID) error {
 		err := client.LinkGroup(context.Background(), communityJID, groupJID)
 		if err != nil {
 			c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error link group: %v", instance.Id, err)
-			failedList = append(failedList, groupJID.String())
 		}
-		successList = append(failedList, groupJID.String())
-	}
+		return err
+	})
 
 	return gin.H{
 		"success": successList,
@@ -138,18 +133,13 @@ func (c *communityService) CommunityRemove(data *AddParticipantStruct, instance 
 		return nil, errors.New("error parse community jid")
 	}
 
-	var successList []string
-	var failedList []string
-
-	for _, participant := range data.GroupJID {
-		groupJID, _ := utils.ParseJID(participant)
+	successList, failedList := applyToGroups(data.GroupJID, func(groupJID types.JID) error {
 		err := client.UnlinkGroup(context.Background(), communityJID, groupJID)
 		if err != nil {
-			c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error link group: %v", instance.Id, err)
-			failedList = append(failedList, groupJID.String())
+			c.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error unlink group: %v", instance.Id, err)
 		}
-		successList = append(failedList, groupJID.String())
-	}
+		return err
+	})
 
 	return gin.H{
 		"success": successList,
@@ -167,4 +157,24 @@ func NewCommunityService(
 		whatsmeowService: whatsmeowService,
 		loggerWrapper:    loggerWrapper,
 	}
+}
+
+// applyToGroups runs op on each group and reports which ones worked and which did not.
+// A group that cannot be parsed is reported as failed instead of being sent as a
+// zero JID. (The lists used to be built wrongly: every group, failed or not, ended up
+// in "success", made of the failed list plus the current group.)
+func applyToGroups(groups []string, op func(groupJID types.JID) error) (success, failed []string) {
+	for _, g := range groups {
+		groupJID, ok := utils.ParseJID(g)
+		if !ok {
+			failed = append(failed, g)
+			continue
+		}
+		if err := op(groupJID); err != nil {
+			failed = append(failed, groupJID.String())
+			continue
+		}
+		success = append(success, groupJID.String())
+	}
+	return success, failed
 }

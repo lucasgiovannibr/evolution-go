@@ -13,9 +13,20 @@ import (
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 )
 
+// webhookRequestTimeout bounds one delivery attempt. The client used to have no
+// timeout at all: a receiver that accepts the connection and never answers held its
+// goroutine (and the event payload it carries) forever, and the retries never got to
+// run. Receivers that are slow but alive (n8n, Make) answer well inside this.
+const webhookRequestTimeout = 30 * time.Second
+
+// maxLoggedResponse is how much of a receiver's answer goes to the log and is read at
+// all: a large or endless body must not be pulled into memory just to be logged.
+const maxLoggedResponse = 4 << 10
+
 type webhookProducer struct {
 	url           string
 	loggerWrapper *logger_wrapper.LoggerManager
+	httpClient    *http.Client
 }
 
 func NewWebhookProducer(
@@ -25,6 +36,7 @@ func NewWebhookProducer(
 	return &webhookProducer{
 		url:           url,
 		loggerWrapper: loggerWrapper,
+		httpClient:    &http.Client{Timeout: webhookRequestTimeout},
 	}
 }
 
@@ -59,7 +71,10 @@ func (p *webhookProducer) sendWebhookWithRetry(url string, body []byte, maxRetri
 		}
 		p.loggerWrapper.GetLogger(userID).LogWarn("[%s] webhook failed - url: %s, attempt: %d, error: %v", userID, url, i+1, err)
 
-		time.Sleep(retryInterval)
+		// No point waiting after the last attempt.
+		if i < maxRetries-1 {
+			time.Sleep(retryInterval)
+		}
 	}
 	p.loggerWrapper.GetLogger(userID).LogError("[%s] webhook failed after maximum retries - url: %s", userID, url)
 }
@@ -72,14 +87,13 @@ func (p *webhookProducer) sendWebhook(url string, body []byte, userID string) (e
 
 	req.Header.Set("Content-Type", "application/json")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := p.httpClient.Do(req)
 	if err != nil {
 		return err, nil, 0
 	}
 	defer resp.Body.Close()
 
-	responseBody, err := io.ReadAll(resp.Body)
+	responseBody, err := io.ReadAll(io.LimitReader(resp.Body, maxLoggedResponse))
 	if err != nil {
 		return fmt.Errorf("erro ao ler resposta: %v", err), nil, 0
 	}

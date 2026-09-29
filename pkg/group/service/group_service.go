@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"strings"
 	"time"
 
@@ -239,7 +238,7 @@ func (g *groupService) SetGroupPhoto(data *SetGroupPhotoStruct, instance *instan
 	var fileData []byte
 
 	if strings.HasPrefix(data.Image, "http://") || strings.HasPrefix(data.Image, "https://") {
-		resp, err := http.Get(data.Image)
+		resp, err := utils.DownloadClient.Get(data.Image)
 		if err != nil {
 			g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Could not download image from URL", instance.Id)
 			return "", fmt.Errorf("failed to fetch image from URL: %v", err)
@@ -425,18 +424,10 @@ func (g *groupService) GetMyGroups(instance *instance_model.Instance) ([]types.G
 		return nil, err
 	}
 
-	var jid string = client.Store.ID.String()
-	var jidClear = strings.Split(jid, ".")[0]
-	jidOfAdmin, ok := utils.ParseJID(jidClear)
-	if !ok {
-		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return nil, errors.New("invalid phone number")
-	}
 	var adminGroups []types.GroupInfo
 	for _, group := range resp {
-		if group.OwnerJID == jidOfAdmin {
+		if isGroupOwner(client, group) {
 			adminGroups = append(adminGroups, *group)
-			_ = adminGroups
 		}
 	}
 
@@ -657,4 +648,23 @@ func NewGroupService(
 		whatsmeowService: whatsmeowService,
 		loggerWrapper:    loggerWrapper,
 	}
+}
+
+// isGroupOwner tells whether the logged-in account owns the group. The owner comes as
+// a LID (and, when known, a phone number), while the account's own JID carries a device
+// suffix ("5511...:82@s.whatsapp.net"), so the users have to be compared, not the JIDs.
+func isGroupOwner(client *whatsmeow.Client, group *types.GroupInfo) bool {
+	if group == nil || client == nil || client.Store == nil {
+		return false
+	}
+	ownsUser := func(owner types.JID) bool {
+		if owner.IsEmpty() {
+			return false
+		}
+		if id := client.Store.ID; id != nil && owner.Server == types.DefaultUserServer && owner.User == id.User {
+			return true
+		}
+		return !client.Store.LID.IsEmpty() && owner.Server == types.HiddenUserServer && owner.User == client.Store.LID.User
+	}
+	return ownsUser(group.OwnerJID) || ownsUser(group.OwnerPN)
 }
