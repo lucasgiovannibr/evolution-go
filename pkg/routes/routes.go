@@ -103,6 +103,14 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/disconnect", r.instanceHandler.Disconnect)
 			routes.POST("/reconnect", r.instanceHandler.Reconnect)
 			routes.DELETE("/logout", r.instanceHandler.Logout)
+		}
+	}
+
+	// Advanced settings: global API key, or the token of that same instance (#81).
+	routes = eng.Group("/instance")
+	{
+		routes.Use(r.authMiddleware.AuthInstanceScoped)
+		{
 			routes.GET("/:instanceId/advanced-settings", r.instanceHandler.GetAdvancedSettings)
 			routes.PUT("/:instanceId/advanced-settings", r.instanceHandler.UpdateAdvancedSettings)
 		}
