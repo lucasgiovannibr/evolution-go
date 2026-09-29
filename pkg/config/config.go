@@ -51,6 +51,7 @@ type Config struct {
 	ProxyProtocol        string
 	ProxyHost            string
 	ProxyFailClosed      bool
+	PprofEnabled         bool
 	ProxyPort            string
 	ProxyUsername        string
 	ProxyPassword        string
@@ -373,6 +374,7 @@ func Load() *Config {
 		ProxyProtocol:        proxyProtocol,
 		ProxyHost:            proxyHost,
 		ProxyFailClosed:      os.Getenv(config_env.PROXY_FAIL_CLOSED) == "true",
+		PprofEnabled:         os.Getenv(config_env.ENABLE_PPROF) == "true",
 		ProxyPort:            proxyPort,
 		ProxyUsername:        proxyUsername,
 		ProxyPassword:        proxyPassword,

@@ -38,6 +38,7 @@ services:
       LOGTYPE: console
       OS_NAME: Fork Test
       PASSKEY_PUBLIC_URL: http://localhost:8100
+      ENABLE_PPROF: "true"
       # media storage is not used in this test (values are only required to boot)
       MINIO_ENDPOINT: unused:9000
       MINIO_ACCESS_KEY: unused

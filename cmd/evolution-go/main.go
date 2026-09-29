@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net/http/pprof"
 	"os"
 	"os/signal"
 	"path/filepath"
@@ -248,6 +249,21 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 
 	if config.ConnectOnStartup {
 		go whatsmeowService.ConnectOnStartup(config.ClientName)
+	}
+
+	// Optional Go profiler (goroutine/heap/cpu), for hunting leaks. Off by default and
+	// only reachable with the GLOBAL API key.
+	if config.PprofEnabled {
+		logger.LogWarn("ENABLE_PPROF is set: /debug/pprof is exposed behind the global API key")
+		pp := r.Group("/debug/pprof", auth_middleware.NewMiddleware(config, instanceService).AuthAdmin)
+		pp.GET("/", gin.WrapF(pprof.Index))
+		pp.GET("/cmdline", gin.WrapF(pprof.Cmdline))
+		pp.GET("/profile", gin.WrapF(pprof.Profile))
+		pp.GET("/symbol", gin.WrapF(pprof.Symbol))
+		pp.GET("/trace", gin.WrapF(pprof.Trace))
+		for _, name := range []string{"goroutine", "heap", "allocs", "block", "mutex", "threadcreate"} {
+			pp.GET("/"+name, gin.WrapH(pprof.Handler(name)))
+		}
 	}
 
 	r.GET("/ws", func(c *gin.Context) {
