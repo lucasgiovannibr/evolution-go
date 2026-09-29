@@ -57,7 +57,7 @@ Documentação dos endpoints: [`docs/wiki/guias-api/api-fork-additions.md`](docs
 
 ## 3. Sugestões novas (ainda não implementadas)
 
-As sugestões 23 e 24 (diagnóstico do runtime e health check) e as 30 e 31 (eventos operacionais do whatsmeow) já foram feitas (§1). As de whatsmeow vêm do levantamento em [`docs/WHATSMEOW-CAPABILITIES.md`](docs/WHATSMEOW-CAPABILITIES.md).
+As sugestões 23 e 24 (diagnóstico do runtime e health check) e as 30 a 36 (eventos operacionais, de pareamento e de estado de chat, timer de mensagens temporárias, convites, canais e mensagem que não chegou) já foram feitas (§1). As de whatsmeow vêm do levantamento em [`docs/WHATSMEOW-CAPABILITIES.md`](docs/WHATSMEOW-CAPABILITIES.md).
 
 | # | Sugestão | Por quê | Esforço | Recomendação |
 |---|---|---|---|---|
@@ -69,7 +69,7 @@ As sugestões 23 e 24 (diagnóstico do runtime e health check) e as 30 e 31 (eve
 
 ## 4. Documentação pendente
 
-- Os endpoints novos, `POST /group/settings` e `quoted.text` estão no wiki; falta o swagger (item 29).
+- Os endpoints novos (incluindo `/chat/disappearing`, `/group/inviteinfo`, `/newsletter/*` e `/message/rerequest`), `POST /group/settings` e `quoted.text` estão no wiki; falta o swagger (item 29), que ainda não descreve nada disso.
 - Documentar o comportamento de `/chat/archive` (usa `chat`, não `number`) e o status "TODO: not working" das rotas de archive.
 - Botões e listas em conta pessoal: já registrado em `api-interactive.md`; revisar quando houver validação em aparelho.
 - README: instruções de Windows (PRs #201/#202 são um começo, mas duplicam o bloco "Setup").
