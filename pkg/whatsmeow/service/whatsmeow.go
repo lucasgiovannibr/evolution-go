@@ -1352,6 +1352,16 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		// decrypt fail with "message authentication failed" for @lid contacts.
 		mycli.unwrapSecretEncryptedEdit(evt)
 
+		// Poll votes have the same constraint: the vote key is derived from the voter
+		// and chat JIDs as received, so decrypting after the swap always failed for
+		// @lid contacts, no vote was ever stored and /polls/{id}/results answered 404
+		// "No votes found" (#60).
+		var decryptedPollVote *waE2E.PollVoteMessage
+		var pollVoteDecryptErr error
+		if evt.Message.GetPollUpdateMessage() != nil {
+			decryptedPollVote, pollVoteDecryptErr = mycli.decryptPollVote(evt)
+		}
+
 		// Trata o caso especial onde Sender é @lid e SenderAlt é @s.whatsapp.net
 		// Neste caso, devemos inverter: Sender e Chat devem ser @s.whatsapp.net, SenderAlt deve ser @lid
 		senderStr := evt.Info.Sender.String()
@@ -1439,15 +1449,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		referral := extractReferralFromMessage(evt.Message)
 
 		if evt.Message.GetPollUpdateMessage() != nil {
-			fmt.Printf("[POLL DEBUG] 🎯 PollUpdateMessage detected!\n")
-			fmt.Printf("[POLL DEBUG] � BEFORE accessing evt.Info - Sender: %s, Server: %s\n", evt.Info.Sender.String(), evt.Info.Sender.Server)
-			fmt.Printf("[POLL DEBUG] 📍 BEFORE accessing evt.Info - SenderAlt: %s\n", evt.Info.SenderAlt.String())
-			fmt.Printf("[POLL DEBUG] �� mycli.WAClient is nil: %v\n", mycli.WAClient == nil)
-			if mycli.WAClient != nil {
-				fmt.Printf("[POLL DEBUG] ✅ mycli.WAClient is initialized: %s\n", mycli.WAClient.Store.ID)
-			}
-
-			decrypted, err := mycli.clientPointer.Get(mycli.userID).DecryptPollVote(context.Background(), evt)
+			decrypted, err := decryptedPollVote, pollVoteDecryptErr
 			if err != nil {
 				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to decrypt vote: %v", mycli.userID, err)
 			} else {

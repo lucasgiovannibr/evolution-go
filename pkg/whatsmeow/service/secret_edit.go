@@ -2,6 +2,7 @@ package whatsmeow_service
 
 import (
 	"context"
+	"errors"
 
 	"go.mau.fi/whatsmeow/proto/waCommon"
 	"go.mau.fi/whatsmeow/proto/waE2E"
@@ -90,4 +91,18 @@ func (mycli *MyClient) unwrapSecretEncryptedEdit(evt *events.Message) {
 	evt.Message = rebuilt
 	evt.IsEdit = true
 	mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Decrypted edited message %s targeting %s", mycli.userID, evt.Info.ID, targetKey.GetID())
+}
+
+// decryptPollVote decrypts an incoming poll vote. It must be called with the
+// event exactly as received (before any LID/PN sender swap): the key is derived
+// from evt.Info.Sender and evt.Info.Chat in their wire form.
+func (mycli *MyClient) decryptPollVote(evt *events.Message) (*waE2E.PollVoteMessage, error) {
+	client := mycli.clientPointer.Get(mycli.userID)
+	if client == nil {
+		client = mycli.WAClient
+	}
+	if client == nil {
+		return nil, errors.New("no client available to decrypt poll vote")
+	}
+	return client.DecryptPollVote(context.Background(), evt)
 }
