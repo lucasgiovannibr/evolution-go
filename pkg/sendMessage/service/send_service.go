@@ -1,6 +1,7 @@
 package send_service
 
 import (
+	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"bytes"
 	"context"
 	crypto_rand "crypto/rand"
@@ -53,7 +54,7 @@ type SendService interface {
 }
 
 type sendService struct {
-	clientPointer    map[string]*whatsmeow.Client
+	clientPointer    *safemap.Map[*whatsmeow.Client]
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	config           *config.Config
 	loggerWrapper    *logger_wrapper.LoggerManager
@@ -298,14 +299,18 @@ type ListStruct struct {
 // avoid mixing REPLY with CTA buttons (URL/CALL/COPY) in the same card —
 // mixed sets do not render on WhatsApp Web. Prefer only-REPLY or only-CTAs per card.
 type CarouselButtonStruct struct {
-	// Button kind (case-insensitive). One of: REPLY (default), URL, CALL, COPY.
+	// Button kind (case-insensitive). One of: REPLY (default), URL, CALL, COPY (COPY_CODE is accepted as an alias).
 	Type string `json:"type" enums:"REPLY,URL,CALL,COPY,reply,url,call,copy" example:"REPLY"`
 	// Label rendered inside the button.
 	DisplayText string `json:"displayText" example:"Quero saber mais"`
 	// Context-dependent: REPLY payload, URL target (type=URL) or phone number (type=CALL).
 	Id string `json:"id" example:"card1_info"`
-	// Code placed in the clipboard when type=COPY.
+	// Code placed in the clipboard when type=COPY (alias: COPY_CODE).
 	CopyCode string `json:"copyCode,omitempty" example:"PROMO2026"`
+	// Explicit URL target for type=URL. Optional: `id` is used when empty.
+	URL string `json:"url,omitempty" example:"https://example.com"`
+	// Explicit phone number for type=CALL. Optional: `id` is used when empty.
+	PhoneNumber string `json:"phoneNumber,omitempty" example:"5511999999999"`
 }
 
 // CarouselCardHeaderStruct is the top area of a carousel card.
@@ -380,7 +385,7 @@ type MessageSendStruct struct {
 }
 
 func (s *sendService) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {
-	client := s.clientPointer[instanceId]
+	client := s.clientPointer.Get(instanceId)
 	s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
 
 	if client == nil {
@@ -394,7 +399,7 @@ func (s *sendService) ensureClientConnected(instanceId string) (*whatsmeow.Clien
 		s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting 2 seconds...", instanceId)
 		time.Sleep(2 * time.Second)
 
-		client = s.clientPointer[instanceId]
+		client = s.clientPointer.Get(instanceId)
 		s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
 			instanceId,
 			client != nil,
@@ -412,6 +417,14 @@ func (s *sendService) ensureClientConnected(instanceId string) (*whatsmeow.Clien
 			instanceId,
 			client.IsConnected())
 		return nil, errors.New("client disconnected")
+	}
+
+	// A socket without a paired device can never send. Failing here, with an error
+	// the retry wrappers do not treat as a disconnection, avoids the ~80s of nested
+	// reconnect/backoff cycles before "the store doesn't contain a device JID" (#77).
+	if client.Store == nil || client.Store.ID == nil {
+		s.loggerWrapper.GetLogger(instanceId).LogWarn("[%s] Client is connected but has no paired device", instanceId)
+		return nil, errors.New("instance is not logged in: pair the device (QR code or pairing code) first")
 	}
 
 	s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Client successfully validated - Connected: %v", instanceId, client.IsConnected())
@@ -1043,6 +1056,8 @@ func (s *sendService) sendMediaFileWithRetry(data *MediaStruct, fileData []byte,
 			// particular). On failure jpegThumb is nil and the message is sent
 			// without a preview rather than failing the request.
 			jpegThumb := makeJPEGThumbnail(fileData, 72)
+			// Width/Height let the client size the bubble before the media downloads (#104).
+			imgW, imgH := imageDimensions(fileData)
 			if isNewsletter {
 				// Newsletter: SEM MediaKey e FileEncSHA256
 				media = &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
@@ -1053,6 +1068,8 @@ func (s *sendService) sendMediaFileWithRetry(data *MediaStruct, fileData []byte,
 					FileSHA256:    uploaded.FileSHA256,
 					FileLength:    &uploaded.FileLength,
 					JPEGThumbnail: jpegThumb,
+					Width:         imgW,
+					Height:        imgH,
 				}}
 			} else {
 				// Normal: COM MediaKey e FileEncSHA256
@@ -1066,6 +1083,8 @@ func (s *sendService) sendMediaFileWithRetry(data *MediaStruct, fileData []byte,
 					FileSHA256:    uploaded.FileSHA256,
 					FileLength:    proto.Uint64(uint64(len(fileData))),
 					JPEGThumbnail: jpegThumb,
+					Width:         imgW,
+					Height:        imgH,
 				}}
 			}
 			mediaType = "ImageMessage"
@@ -1343,6 +1362,8 @@ func (s *sendService) sendMediaUrlWithRetry(data *MediaStruct, instance *instanc
 			// particular). On failure jpegThumb is nil and the message is sent
 			// without a preview rather than failing the request.
 			jpegThumb := makeJPEGThumbnail(fileData, 72)
+			// Width/Height let the client size the bubble before the media downloads (#104).
+			imgW, imgH := imageDimensions(fileData)
 			if isNewsletter {
 				// Newsletter: sem criptografia (sem MediaKey e FileEncSHA256)
 				media = &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
@@ -1353,6 +1374,8 @@ func (s *sendService) sendMediaUrlWithRetry(data *MediaStruct, instance *instanc
 					FileSHA256:    uploaded.FileSHA256,
 					FileLength:    &uploaded.FileLength,
 					JPEGThumbnail: jpegThumb,
+					Width:         imgW,
+					Height:        imgH,
 				}}
 			} else {
 				// Normal: com criptografia
@@ -1366,6 +1389,8 @@ func (s *sendService) sendMediaUrlWithRetry(data *MediaStruct, instance *instanc
 					FileSHA256:    uploaded.FileSHA256,
 					FileLength:    proto.Uint64(uint64(len(fileData))),
 					JPEGThumbnail: jpegThumb,
+					Width:         imgW,
+					Height:        imgH,
 				}}
 			}
 			mediaType = "ImageMessage"
@@ -1611,9 +1636,9 @@ func (s *sendService) SendSticker(data *StickerStruct, instance *instance_model.
 	var filedata []byte
 
 	if strings.HasPrefix(data.Sticker, "http") {
-		webpData, err := convertToWebP(data.Sticker)
+		webpData, err := stickerWebP(context.Background(), data.Sticker)
 		if err != nil {
-			return nil, fmt.Errorf("failed to convert image to WebP: %v", err)
+			return nil, fmt.Errorf("failed to prepare sticker payload: %v", err)
 		}
 
 		filedata = webpData
@@ -1634,6 +1659,7 @@ func (s *sendService) SendSticker(data *StickerStruct, instance *instance_model.
 		FileEncSHA256: uploaded.FileEncSHA256,
 		FileSHA256:    uploaded.FileSHA256,
 		FileLength:    proto.Uint64(uint64(len(filedata))),
+		IsAnimated:    proto.Bool(webpIsAnimated(filedata)),
 	}}
 
 	message, err := s.SendMessage(instance, msg, "StickerMessage", &SendDataStruct{
@@ -2082,6 +2108,55 @@ func stringPointer(s string) *string {
 	return &s
 }
 
+// buildCarouselButton maps a carousel button to its native-flow name and
+// buttonParamsJSON. The params are built with json.Marshal: they used to be
+// assembled with fmt.Sprintf, so any quote or backslash in a label produced
+// invalid JSON. URL/CALL values come from the explicit `url` / `phoneNumber`
+// fields and fall back to `id`; COPY_CODE is accepted as an alias of COPY (#51).
+func buildCarouselButton(btn CarouselButtonStruct) (name string, paramsJSON string) {
+	firstNonEmpty := func(values ...string) string {
+		for _, v := range values {
+			if v != "" {
+				return v
+			}
+		}
+		return ""
+	}
+
+	var params map[string]string
+	switch strings.ToUpper(btn.Type) {
+	case "URL":
+		name = "cta_url"
+		params = map[string]string{"display_text": btn.DisplayText, "url": firstNonEmpty(btn.URL, btn.Id)}
+	case "CALL":
+		name = "cta_call"
+		params = map[string]string{"display_text": btn.DisplayText, "phone_number": firstNonEmpty(btn.PhoneNumber, btn.Id)}
+	case "COPY", "COPY_CODE":
+		name = "cta_copy"
+		params = map[string]string{"display_text": btn.DisplayText, "copy_code": firstNonEmpty(btn.CopyCode, btn.Id)}
+	default: // REPLY or empty
+		name = "quick_reply"
+		params = map[string]string{"display_text": btn.DisplayText, "id": btn.Id}
+	}
+
+	encoded, err := json.Marshal(params)
+	if err != nil { // a map[string]string cannot fail to marshal
+		return name, "{}"
+	}
+	return name, string(encoded)
+}
+
+// imageDimensions returns the pixel width and height of an encoded image as
+// proto pointers, or (nil, nil) when it cannot be decoded so the fields stay
+// unset instead of advertising a 0x0 image. Cheap: it only reads the header.
+func imageDimensions(fileData []byte) (*uint32, *uint32) {
+	cfg, _, err := image.DecodeConfig(bytes.NewReader(fileData))
+	if err != nil || cfg.Width < 1 || cfg.Height < 1 {
+		return nil, nil
+	}
+	return proto.Uint32(uint32(cfg.Width)), proto.Uint32(uint32(cfg.Height))
+}
+
 // makeJPEGThumbnail decodes raw image bytes and produces a small JPEG
 // thumbnail suitable for the JPEGThumbnail field of WhatsApp media messages.
 // The thumbnail keeps the original aspect ratio and is capped at maxWidth
@@ -2360,7 +2435,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 
 	var message string
 	if data.Id == "" {
-		message = s.clientPointer[instance.Id].GenerateMessageID()
+		message = s.clientPointer.Get(instance.Id).GenerateMessageID()
 	} else {
 		message = data.Id
 	}
@@ -2371,14 +2446,14 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 			media = "audio"
 		}
 
-		err := s.clientPointer[instance.Id].SendChatPresence(context.Background(), recipient, types.ChatPresence("composing"), types.ChatPresenceMedia(media))
+		err := s.clientPointer.Get(instance.Id).SendChatPresence(context.Background(), recipient, types.ChatPresence("composing"), types.ChatPresenceMedia(media))
 		if err != nil {
 			return nil, err
 		}
 
 		time.Sleep(time.Duration(data.Delay) * time.Millisecond)
 
-		err = s.clientPointer[instance.Id].SendChatPresence(context.Background(), recipient, types.ChatPresence("paused"), types.ChatPresenceMedia(media))
+		err = s.clientPointer.Get(instance.Id).SendChatPresence(context.Background(), recipient, types.ChatPresence("paused"), types.ChatPresenceMedia(media))
 		if err != nil {
 			return nil, err
 		}
@@ -2631,124 +2706,20 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	// Only try to get participants for actual groups, not newsletters
 	if isGroup && !isNewsletter {
 		if data.MentionAll {
-			groupInfo, err := s.clientPointer[instance.Id].GetGroupInfo(context.Background(), recipient)
+			groupInfo, err := s.clientPointer.Get(instance.Id).GetGroupInfo(context.Background(), recipient)
 			if err != nil {
 				return nil, err
 			}
 
 			var mentionedJIDs []string
 			for _, participant := range groupInfo.Participants {
-				mentionedJIDs = append(mentionedJIDs, participant.JID.String())
+				mentionedJIDs = append(mentionedJIDs, participantMentionJID(participant))
 			}
-
-			switch messageType {
-			case "ExtendedTextMessage":
-				if msg.ExtendedTextMessage.ContextInfo == nil {
-					msg.ExtendedTextMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.ExtendedTextMessage.ContextInfo.MentionedJID = mentionedJIDs
-			case "ImageMessage":
-				if msg.ImageMessage.ContextInfo == nil {
-					msg.ImageMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.ImageMessage.ContextInfo.MentionedJID = mentionedJIDs
-			case "VideoMessage":
-				if msg.VideoMessage.ContextInfo == nil {
-					msg.VideoMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.VideoMessage.ContextInfo.MentionedJID = mentionedJIDs
-			case "PtvMessage":
-				if msg.PtvMessage.ContextInfo == nil {
-					msg.PtvMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.PtvMessage.ContextInfo.MentionedJID = mentionedJIDs
-			case "AudioMessage":
-				if msg.AudioMessage.ContextInfo == nil {
-					msg.AudioMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.AudioMessage.ContextInfo.MentionedJID = mentionedJIDs
-			case "DocumentMessage":
-				if msg.DocumentMessage.ContextInfo == nil {
-					msg.DocumentMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.DocumentMessage.ContextInfo.MentionedJID = mentionedJIDs
-			case "PollCreationMessage":
-				if msg.PollCreationMessage.ContextInfo == nil {
-					msg.PollCreationMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.PollCreationMessage.ContextInfo.MentionedJID = mentionedJIDs
-			case "StickerMessage":
-				if msg.StickerMessage.ContextInfo == nil {
-					msg.StickerMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.StickerMessage.ContextInfo.MentionedJID = mentionedJIDs
-			case "LocationMessage":
-				if msg.LocationMessage.ContextInfo == nil {
-					msg.LocationMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.LocationMessage.ContextInfo.MentionedJID = mentionedJIDs
-			case "ContactMessage":
-				if msg.ContactMessage.ContextInfo == nil {
-					msg.ContactMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.ContactMessage.ContextInfo.MentionedJID = mentionedJIDs
-			}
-
+			setMessageMentionedJIDs(msg, messageType, mentionedJIDs)
 		}
 
 		if len(data.MentionedJID) > 0 {
-			switch messageType {
-			case "ExtendedTextMessage":
-				if msg.ExtendedTextMessage.ContextInfo == nil {
-					msg.ExtendedTextMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.ExtendedTextMessage.ContextInfo.MentionedJID = data.MentionedJID
-			case "ImageMessage":
-				if msg.ImageMessage.ContextInfo == nil {
-					msg.ImageMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.ImageMessage.ContextInfo.MentionedJID = data.MentionedJID
-			case "VideoMessage":
-				if msg.VideoMessage.ContextInfo == nil {
-					msg.VideoMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.VideoMessage.ContextInfo.MentionedJID = data.MentionedJID
-			case "PtvMessage":
-				if msg.PtvMessage.ContextInfo == nil {
-					msg.PtvMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.PtvMessage.ContextInfo.MentionedJID = data.MentionedJID
-			case "AudioMessage":
-				if msg.AudioMessage.ContextInfo == nil {
-					msg.AudioMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.AudioMessage.ContextInfo.MentionedJID = data.MentionedJID
-			case "DocumentMessage":
-				if msg.DocumentMessage.ContextInfo == nil {
-					msg.DocumentMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.DocumentMessage.ContextInfo.MentionedJID = data.MentionedJID
-			case "PollCreationMessage":
-				if msg.PollCreationMessage.ContextInfo == nil {
-					msg.PollCreationMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.PollCreationMessage.ContextInfo.MentionedJID = data.MentionedJID
-			case "StickerMessage":
-				if msg.StickerMessage.ContextInfo == nil {
-					msg.StickerMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.StickerMessage.ContextInfo.MentionedJID = data.MentionedJID
-			case "LocationMessage":
-				if msg.LocationMessage.ContextInfo == nil {
-					msg.LocationMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.LocationMessage.ContextInfo.MentionedJID = data.MentionedJID
-			case "ContactMessage":
-				if msg.ContactMessage.ContextInfo == nil {
-					msg.ContactMessage.ContextInfo = &waE2E.ContextInfo{}
-				}
-				msg.ContactMessage.ContextInfo.MentionedJID = data.MentionedJID
-			}
+			setMessageMentionedJIDs(msg, messageType, data.MentionedJID)
 		}
 	}
 
@@ -2770,7 +2741,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 		sendExtra.AdditionalNodes = data.AdditionalNodes
 	}
 
-	response, err := s.clientPointer[instance.Id].SendMessage(context.Background(), recipient, msg, sendExtra)
+	response, err := s.clientPointer.Get(instance.Id).SendMessage(context.Background(), recipient, msg, sendExtra)
 	if err != nil {
 		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error sending message: %v", instance.Id, err)
 		return nil, err
@@ -2781,7 +2752,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	messageInfo := types.MessageInfo{
 		MessageSource: types.MessageSource{
 			Chat:     recipient,
-			Sender:   *s.clientPointer[instance.Id].Store.ID,
+			Sender:   *s.clientPointer.Get(instance.Id).Store.ID,
 			IsFromMe: true,
 			IsGroup:  isGroup,
 		},
@@ -2835,15 +2806,15 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 		sticker := msg.GetStickerMessage()
 
 		if img != nil {
-			data, err = s.clientPointer[instance.Id].Download(context.Background(), img)
+			data, err = s.clientPointer.Get(instance.Id).Download(context.Background(), img)
 		} else if audio != nil {
-			data, err = s.clientPointer[instance.Id].Download(context.Background(), audio)
+			data, err = s.clientPointer.Get(instance.Id).Download(context.Background(), audio)
 		} else if document != nil {
-			data, err = s.clientPointer[instance.Id].Download(context.Background(), document)
+			data, err = s.clientPointer.Get(instance.Id).Download(context.Background(), document)
 		} else if video != nil {
-			data, err = s.clientPointer[instance.Id].Download(context.Background(), video)
+			data, err = s.clientPointer.Get(instance.Id).Download(context.Background(), video)
 		} else if sticker != nil {
-			data, err = s.clientPointer[instance.Id].Download(context.Background(), sticker)
+			data, err = s.clientPointer.Get(instance.Id).Download(context.Background(), sticker)
 
 			webpReader := bytes.NewReader(data)
 			img, err := webp.Decode(webpReader)
@@ -2954,6 +2925,8 @@ func (s *sendService) SendCarousel(data *CarouselStruct, instance *instance_mode
 						if err == nil {
 							// Generate JPEG thumbnail for iOS compatibility
 							jpegThumb := makeJPEGThumbnail(fileData, 72)
+							// Width/Height let the client size the bubble before the media downloads (#104).
+							imgW, imgH := imageDimensions(fileData)
 
 							header.HasMediaAttachment = proto.Bool(true)
 							header.Media = &waE2E.InteractiveMessage_Header_ImageMessage{
@@ -2966,6 +2939,8 @@ func (s *sendService) SendCarousel(data *CarouselStruct, instance *instance_mode
 									FileSHA256:    uploaded.FileSHA256,
 									FileLength:    proto.Uint64(uint64(len(fileData))),
 									JPEGThumbnail: jpegThumb,
+									Width:         imgW,
+									Height:        imgH,
 								},
 							}
 						}
@@ -3009,34 +2984,7 @@ func (s *sendService) SendCarousel(data *CarouselStruct, instance *instance_mode
 		if len(card.Buttons) > 0 {
 			buttons := make([]*waE2E.InteractiveMessage_NativeFlowMessage_NativeFlowButton, len(card.Buttons))
 			for j, btn := range card.Buttons {
-				buttonType := strings.ToUpper(btn.Type)
-				if buttonType == "" {
-					buttonType = "REPLY" // Default type
-				}
-
-				var buttonName string
-				var buttonParams string
-
-				switch buttonType {
-				case "URL":
-					// URL button - opens a link
-					buttonName = "cta_url"
-					buttonParams = fmt.Sprintf(`{"display_text":"%s","url":"%s"}`, btn.DisplayText, btn.Id)
-				case "CALL":
-					// Call button - initiates a phone call
-					buttonName = "cta_call"
-					buttonParams = fmt.Sprintf(`{"display_text":"%s","phone_number":"%s"}`, btn.DisplayText, btn.Id)
-				case "COPY":
-					// Copy button - copies text to clipboard
-					buttonName = "cta_copy"
-					buttonParams = fmt.Sprintf(`{"display_text":"%s","copy_code":"%s"}`, btn.DisplayText, btn.CopyCode)
-				case "REPLY":
-					fallthrough
-				default:
-					// Quick reply button (default)
-					buttonName = "quick_reply"
-					buttonParams = fmt.Sprintf(`{"display_text":"%s","id":"%s"}`, btn.DisplayText, btn.Id)
-				}
+				buttonName, buttonParams := buildCarouselButton(btn)
 
 				buttons[j] = &waE2E.InteractiveMessage_NativeFlowMessage_NativeFlowButton{
 					Name:             proto.String(buttonName),
@@ -3266,6 +3214,8 @@ func (s *sendService) sendStatusMedia(client *whatsmeow.Client, data *StatusMedi
 		// inline preview instead of the gray camera placeholder. On failure
 		// jpegThumb is nil and the status is posted without a preview.
 		jpegThumb := makeJPEGThumbnail(fileData, 72)
+		// Width/Height let the client size the bubble before the media downloads (#104).
+		imgW, imgH := imageDimensions(fileData)
 		media = &waE2E.Message{ImageMessage: &waE2E.ImageMessage{
 			Caption:       proto.String(data.Caption),
 			URL:           proto.String(uploaded.URL),
@@ -3276,6 +3226,8 @@ func (s *sendService) sendStatusMedia(client *whatsmeow.Client, data *StatusMedi
 			FileSHA256:    uploaded.FileSHA256,
 			FileLength:    proto.Uint64(uint64(len(fileData))),
 			JPEGThumbnail: jpegThumb,
+			Width:         imgW,
+			Height:        imgH,
 		}}
 		mediaType = "ImageMessage"
 	case "video":
@@ -3366,7 +3318,7 @@ func (s *sendService) sendStatusWebhook(messageSent *MessageSendStruct, instance
 }
 
 func NewSendService(
-	clientPointer map[string]*whatsmeow.Client,
+	clientPointer *safemap.Map[*whatsmeow.Client],
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	config *config.Config,
 	loggerWrapper *logger_wrapper.LoggerManager,

@@ -140,3 +140,14 @@ func minimalPDF(t *testing.T) []byte {
 
 // ensure the jpeg encoder import stays referenced even if the helper changes.
 var _ = jpeg.DefaultQuality
+
+func TestImageDimensions(t *testing.T) {
+	w, h := imageDimensions(encodePNG(t, 160, 72))
+	if w == nil || h == nil || *w != 160 || *h != 72 {
+		t.Fatalf("got %v x %v, want 160 x 72", w, h)
+	}
+
+	if w, h := imageDimensions([]byte("not an image")); w != nil || h != nil {
+		t.Fatalf("expected nil dimensions for undecodable data, got %v x %v", w, h)
+	}
+}

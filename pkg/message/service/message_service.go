@@ -1,6 +1,7 @@
 package message_service
 
 import (
+	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"context"
 	"errors"
 	"fmt"
@@ -35,7 +36,7 @@ type MessageService interface {
 }
 
 type messageService struct {
-	clientPointer     map[string]*whatsmeow.Client
+	clientPointer     *safemap.Map[*whatsmeow.Client]
 	messageRepository message_repository.MessageRepository
 	whatsmeowService  whatsmeow_service.WhatsmeowService
 	loggerWrapper     *logger_wrapper.LoggerManager
@@ -95,7 +96,7 @@ type MessageSendStruct struct {
 }
 
 func (m *messageService) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {
-	client := m.clientPointer[instanceId]
+	client := m.clientPointer.Get(instanceId)
 	m.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
 
 	if client == nil {
@@ -109,7 +110,7 @@ func (m *messageService) ensureClientConnected(instanceId string) (*whatsmeow.Cl
 		m.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting 2 seconds...", instanceId)
 		time.Sleep(2 * time.Second)
 
-		client = m.clientPointer[instanceId]
+		client = m.clientPointer.Get(instanceId)
 		m.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
 			instanceId,
 			client != nil,
@@ -477,6 +478,10 @@ func (m *messageService) DeleteMessageEveryone(data *MessageStruct, instance *in
 		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
 		return "", "", errors.New("invalid phone number")
 	}
+	// The chat JID lands inside the revoke's protocolMessage Key: with the "+"
+	// prefix CreateJID adds, receiving devices look up a chat that doesn't
+	// exist and silently ignore the revoke. See utils.CanonicalJID.
+	recipient = utils.CanonicalJID(recipient)
 
 	m.loggerWrapper.GetLogger(instance.Id).LogInfo("Revoking message %s from %s", data.MessageID, recipient)
 
@@ -505,6 +510,9 @@ func (m *messageService) EditMessage(data *EditMessageStruct, instance *instance
 		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
 		return "", "", errors.New("invalid phone number")
 	}
+	// Same as DeleteMessageEveryone: the JID lands inside the edit's
+	// protocolMessage Key, so the "+" prefix makes recipients ignore it.
+	recipient = utils.CanonicalJID(recipient)
 
 	resp, err := client.SendMessage(
 		context.Background(),
@@ -526,7 +534,7 @@ func (m *messageService) EditMessage(data *EditMessageStruct, instance *instance
 }
 
 func NewMessageService(
-	clientPointer map[string]*whatsmeow.Client,
+	clientPointer *safemap.Map[*whatsmeow.Client],
 	messageRepository message_repository.MessageRepository,
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	loggerWrapper *logger_wrapper.LoggerManager,
