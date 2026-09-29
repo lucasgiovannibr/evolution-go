@@ -2,14 +2,17 @@
 
 Fork: `lucasgiovannibr/evolution-go` · Upstream: `evolution-foundation/evolution-go`
 
+Atualizado em 29/09/2026, depois do teste com instância real.
+
 Foco do fork: **corrigir, melhorar e ajustar**. O que é funcionalidade nova está em [FEATURE-PROPOSALS.md](FEATURE-PROPOSALS.md) para avaliação, não foi implementado.
 
 ## 1. Estado do fork
 
-- `main` do fork **idêntica** ao `upstream/main` (commit `9337afc`, versão `0.7.2`). Nada a atualizar.
+- Em 29/09 a `main` do fork estava **idêntica** ao `upstream/main` (commit `9337afc`, versão `0.7.2`), então não havia o que atualizar. Hoje ela está **67 commits à frente** (10 PRs mesclados dentro do próprio fork).
 - O upstream tinha **61 issues + 61 PRs abertos** (todos analisados aqui).
 - A branch `upstream/develop` está *atrás* da `main` (VERSION `0.7.1`) — vários PRs abertos apontam para ela (#90, #132, #150, #159–#163, #177, #198) e por isso estão desalinhados com a `main`.
-- Observação importante sobre o fluxo do upstream: os commits da `main` pública são `sync: 0.7.x from main`, feitos por um bot — ela é um **espelho** de um repositório interno. Isso explica PRs parados há meses (o PR #33, citado em várias issues, nunca entrou). **O fork é o lugar prático para integrar correções.**
+- Os commits da `main` pública são `sync: 0.7.x from main`, feitos por um bot — ela é um **espelho** de um repositório interno. O GitHub não lista nenhum PR como *merged*; os PRs #33 e #91 (AlwaysOnline) foram apenas **fechados** em 03/07 e a correção chegou à `main` por outro caminho. **O fork é o lugar prático para integrar correções.**
+- A `main` exige **ativação de licença** (o servidor responde 503 `LICENSE_REQUIRED` até registrar). É um mecanismo do upstream e o fork depende dele.
 
 ## 2. O que foi entregue
 
@@ -17,12 +20,12 @@ Tudo foi enviado **somente ao fork** (`origin`). O remote `upstream` está com o
 
 | Onde | Situação |
 |---|---|
-| `main` do fork | Tudo mesclado por PRs **dentro do fork** (#1–#5): correções, whatsmeow novo + Go 1.26, hardening de autenticação, ciclo de vida. CI verde; imagem em `ghcr.io/lucasgiovannibr/evolution-go` |
-| `docs/changelog` | CHANGELOG com as notas de upgrade (PR a mesclar) |
+| `main` do fork | Tudo mesclado por PRs **dentro do fork** (#1–#10): triagem, whatsmeow novo + Go 1.26, hardening, ciclo de vida, features, correções do teste real. CI verde; imagem em `ghcr.io/lucasgiovannibr/evolution-go` |
+| Stack de teste local | `docker/fork-test/` (Postgres novo + imagem do fork, porta 8100), isolado dos seus outros containers |
 
-Build, `go vet` e `go test -race ./...` passam em todos.
+Build, `go vet` e `go test -race ./...` passam.
 
-### Correções em `triage/fixes`
+### Correções da triagem (PRs #1–#6)
 
 **Quedas do processo (as mais graves)**
 
@@ -81,6 +84,44 @@ Build, `go vet` e `go test -race ./...` passam em todos.
 | Mensagens não descriptografáveis | — | `REREQUEST_FROM_PHONE` (opt-in, padrão desligado — PR #156) |
 | Sem CI | — | `.github/workflows/ci.yml`: build, vet, `test -race` |
 
+### Correções e melhorias das features e do teste real (PRs #7–#10)
+
+Features aprovadas (PR #7), documentadas em `docs/wiki/guias-api/api-fork-additions.md`: `viewOnce`, `POST /send/pollVote`, `POST /message/subscribe`, `POST /user/lid`, `POST /user/contacts`, `PictureURL` em `/user/info`, `POST /group/requests[/update]`, `GET /instance/proxy/{id}` + `PROXY_FAIL_CLOSED`, `passkey-helper` 1.1.0.
+
+**Bugs que só apareceram ao testar com uma instância real** (não estavam nas issues do upstream ou eram a causa raiz delas):
+
+| Descoberta | Correção |
+|---|---|
+| O manager chama `POST /instance/connect` e ~2 s depois `GET /instance/qr`; o `GetQr` **iniciava a instância de novo**. Dois runtimes: o duplicado não pareado girava QR até o máximo, forçava logout e reiniciava a instância como dispositivo novo **logo depois do pareamento bem-sucedido** (explica boa parte de #85/#148/#186 e do PR #145) | Um runtime por instância (`runtime_slot.go`): um segundo start é ignorado; o canal de kill pertence ao runtime; `ReconnectClient` espera o anterior terminar |
+| Instância **apagada** pela API continuava reiniciando em loop de QR, conectando ao WhatsApp: o `Delete` fecha o canal de kill e o supervisor tratava "fechado" como "reiniciar" | Canal fechado = parar de vez; restart só com `true` e só se a instância ainda existir; a rotação de QR para quando o cliente não é mais o vigente |
+| `POST /user/info` dava timeout de 10 s: JID com `+` (mesma classe do avatar, e o #76 já citava `/user/info`) | JID canônico; agora 0,34 s, com `PictureURL` e `LID` |
+| `POST /group/participant` respondia "success" mesmo quando o número **não** foi adicionado (resultado por participante descartado) | Devolve `data` por participante e `failed` |
+| Voto de enquete de quem só tem `@lid` gravava os dígitos do LID como telefone | Telefone real resolvido pelo store de LID |
+| `viewOnce` e `quoted.text` só existiam no envio JSON | Também no multipart de `/send/media` |
+| Não há como remover um contato salvo (app state só grava) | `saveOnPrimaryAddressbook` opcional em `POST /user/contacts` para testar sem tocar na agenda do celular |
+
+### Validação ao vivo (instância real, 29/09/2026)
+
+Instância pareada e conectada por você; mensagens só para o seu próprio número; grupo de teste só com você (removido no fim).
+
+| Verificado | Resultado |
+|---|---|
+| Pareamento por QR, restauração no restart, presença com `alwaysOnline=false` | OK |
+| Texto, citação com `quoted.text`, enquete, `pollVote` | OK (confirmado no celular) |
+| Voto recebido do celular (#60) e edição recebida (#62) | OK: decifrados e gravados; `/polls/{id}/results` retorna o voto |
+| `viewOnce` (aparece "abrir uma vez") e `width`/`height` | OK |
+| `/user/info`, `/user/lid`, avatar, `/message/subscribe` | OK (0,3 s; avatar antes 75 s) |
+| `profileName` (alterado e restaurado), `POST /user/contacts` | OK; contatos de teste criados (ver abaixo) |
+| Grupo: criar, listar, info, nome, descrição, link, 8 ações de `/group/settings`, `requests`, `participant`, `mentionAll` com texto/imagem/documento, sair | OK; cada ação de `settings` foi conferida em `/group/info` |
+| `advanced-settings` com token de outra instância / próprio / chave global | 403 / 200 / 200 |
+| Criar instância nova: `connect`+`qr` em sequência e simultâneos | um único runtime |
+| Apagar instância que estava girando QR | sem nenhuma atividade depois |
+| Postgres | 3 conexões estáveis; **zero** panics em toda a sessão |
+
+**Contatos de teste que ficaram na lista do WhatsApp** (remover à mão, a API não remove): "ZZ Teste Fork" (553100000001) e "ZZ Teste Fork 2" (553196596774).
+
+**Não testado**: proxy (por decisão sua), passkey (a conta não exigiu), botões/lista, cenários de horas/dias de uso e redes instáveis.
+
 ## 3. Botões e listas (#59 #71 #110 #170 #204) — não corrigido
 
 É o grupo mais reportado (5 issues). Não alterei o código porque não há como validar sem um aparelho — e, ao ler o código do whatsmeow, a hipótese "o bump resolve" **não se sustenta**:
@@ -96,35 +137,32 @@ O projeto estava fixo no whatsmeow de 30/06; o novo (29/09) são **72 commits**.
 
 Verificado: build, `go vet`, `go test -race`, boot com Postgres, imagem Docker (Go 1.26) e teste de integração do pool. **Atenção**: o schema do whatsmeow passa de v14 para **v16** (duas migrações só de ida). Depois de subir, **não dá para voltar à imagem antiga** no mesmo banco — faça backup do `evogo_auth` antes.
 
-## 4. O que **não** foi possível verificar
+## 4. Limites da validação
 
-- **Nada foi testado contra sessões reais do WhatsApp.** Verificado: compila, `go vet`, `go test -race ./...` (inclui os testes novos), o binário sobe com Postgres sem panic (101 rotas registradas, ~2 conexões no `evogo_auth`) e um teste de integração prova que 50 reconexões simuladas não abrem conexões novas. As rotas HTTP não puderam ser exercitadas: a `main` exige ativação de licença e devolve 503 (`LICENSE_REQUIRED`).
-- Os itens 🟡 abaixo dependem de reprodução ao vivo.
-- O Go não está instalado nesta máquina; compilei em containers `golang:1.25` e `golang:1.26` (imagens baixadas com a sua autorização); hoje a `main` exige Go 1.26.
+- **Testado ao vivo** com uma única instância (conta pessoal, chat consigo mesmo e um grupo só com você). Não foram exercitados: proxy, passkey, botões/lista, conta Business, número de terceiros, tráfego intenso, quedas de rede e uso prolongado.
+- Cada rodada passa por `go build`, `go vet`, `go test -race ./...` (inclui testes novos e um teste de integração do pool Postgres, opt-in) e boot com Postgres.
+- O Go não está instalado na máquina; a compilação roda em containers `golang:1.26`.
 
-## 5. Situação atual e o que ainda falta
+## 5. Situação atual, o que ainda falta e sugestões
 
-**Já feito e mesclado no fork**
-- Correções da triagem, whatsmeow novo (Go 1.26), CI, publicação da imagem no GHCR do fork (`main` → `latest`; qualquer branch manualmente, sem tocar em `latest`).
-- Hardening: comparação de chave em tempo constante (`AuthAdmin`, `AuthInstanceScoped`, `/ws`) e `/ws` não registra mais o token recebido.
-- Ciclo de vida: cada reconexão deixava uma goroutine `StartClient` antiga que passava a escutar o *novo* `killChannel` (vazava e um kill podia derrubar o cliente novo) — agora cada loop usa o próprio canal e encerra quando é substituído; `recover` com stack em `ReconnectClient`, `StartClient`, `CallWebhook` e `SendToGlobalQueues`; `CONNECT_ON_STARTUP` também restaura instâncias que estavam em `Reconnecting` no momento do restart/crash (antes ficavam offline até alguém chamar `/instance/connect`).
-- `quoted.text`, QR junto do passkey, docs do wiki, CHANGELOG.
-- Features aprovadas (PR #7): `viewOnce`, `POST /send/pollVote`, `POST /message/subscribe`, `POST /user/lid`, `POST /user/contacts`, `PictureURL`, `POST /group/requests[/update]`, `GET /instance/proxy/{id}` + `PROXY_FAIL_CLOSED`, `passkey-helper` 1.1.0. Documentadas em `docs/wiki/guias-api/api-fork-additions.md`.
+**Feito e mesclado no fork**: triagem completa; correções (§2); whatsmeow novo (Go 1.26); CI; publicação da imagem no GHCR; hardening; ciclo de vida; features aprovadas; correções do teste real. CHANGELOG e wiki atualizados.
 
 **Ainda falta (e por quê)**
 
-| Item | Motivo de não ter sido feito |
+| Item | Motivo |
 |---|---|
 | Botões e lista (#59 #71 #110 #170 #204) | Só valida em aparelho; o whatsmeow novo **não** muda isso (§3). Limitação documentada no wiki |
-| Erro 463 em contatos frios (#50 #124) | Depende de observação em produção com o whatsmeow novo (já incluído) |
-| Redesenho do ciclo de vida (PRs #145/#154), backoff (#197), #191, #192 | Grandes ou dependentes de comportamento ao vivo. Os pontos mais críticos deles (goroutines órfãs, restauração no startup) foram tratados de forma cirúrgica acima |
-| #32 (número fixo "not registered") | O whatsmeow novo corrige a query/parse do `IsOnWhatsApp`; reavaliar com a nova imagem. Workaround: `"formatJid": false` |
-| #69 (carrossel em 2 balões) | O código já envia body/footer dentro do `InteractiveMessage`; parece comportamento do cliente |
-| #107 (passkey preso em conta Business) | Comportamento do servidor WhatsApp |
+| Erro 463 em contatos frios (#50 #124) | Depende de observação prolongada com o whatsmeow novo |
+| Uso prolongado (horas/dias) | Falta observar reconexões, memória e conexões do Postgres com a instância ativa |
+| PRs #145/#154/#197/#191/#192 | O ponto central (um runtime por instância, restauração no startup, goroutines órfãs) foi tratado de forma cirúrgica; o restante depende de decisão/teste ao vivo |
+| #32 (número fixo "not registered") | O whatsmeow novo corrige o parse do `IsOnWhatsApp`; reavaliar com um número fixo |
+| #69, #107 | Parecem comportamento do WhatsApp; sem causa no código |
 | Swagger | O `swag init` reescreve ~1.000 linhas e remove as rotas de licença |
-| Features (FEATURE-PROPOSALS.md) | Aguardam decisão |
+| Proxy real e passkey | Não testados |
 
-**Para você:** subir a imagem do GHCR (fazendo backup do `evogo_auth`), acompanhar 1–2 instâncias reais e me dizer o que aparecer nos logs; e escolher as propostas de FEATURE-PROPOSALS.md que valem a pena.
+**Sugestões novas** (não implementadas; detalhes em FEATURE-PROPOSALS.md): endpoint de diagnóstico do runtime por instância; health check que enxergue o pool do Postgres e os runtimes (hoje um pool esgotado deixa o próprio health check cego, como relatado no #175); métricas Prometheus; resultado por item em operações em lote; reativar a presença quando `alwaysOnline` é ligado em tempo de execução.
+
+**Para você**: deixar a instância de teste rodando e me dizer se aparecer algo estranho nos logs; decidir sobre proxy/passkey quando quiser testá-los; escolher o que sobrou em FEATURE-PROPOSALS.md.
 
 ## 6. Resumo numérico
 
@@ -132,8 +170,8 @@ Verificado: build, `go vet`, `go test -race`, boot com Postgres, imagem Docker (
 
 | Status | Qtde |
 |---|---|
-| ✅ Corrigido | 31 |
-| 🟡 Parcial / validar | 7 |
+| ✅ Corrigido | 32 |
+| 🟡 Parcial / validar | 6 |
 | 🟣 Depende do whatsmeow | 6 |
 | 📝 Proposta | 2 |
 | 🔵 Já na main | 6 |
@@ -159,62 +197,62 @@ Legenda de PRs: **Aplicado** = mesclado (com adaptações ao `safemap`); **Reimp
 |---|---|---|---|
 | [#20](https://github.com/evolution-foundation/evolution-go/issues/20) | Erro 400 ao consultar /instance/status após desconectar instância manualmente | 🔵 Já na main | Corrigida no 0.7.2 (mantenedor confirmou); só está aberta até a release. Pode fechar. |
 | [#21](https://github.com/evolution-foundation/evolution-go/issues/21) | /instance/pair returns empty PairingCode despite success message | 🔵 Já na main | Corrigida no 0.7.2 (Pair engolia o erro do `PairPhone`). Pode fechar. |
-| [#25](https://github.com/evolution-foundation/evolution-go/issues/25) | The uploaded image will only appear after clicking to download it. | ✅ Corrigido | Thumbnail JPEG já existia na main; agora `Width`/`Height` também vão no `ImageMessage` (mesma causa do #104). |
-| [#26](https://github.com/evolution-foundation/evolution-go/issues/26) | feat: add /send/pollVote endpoint to programmatically vote on polls | ✅ Corrigido | `POST /send/pollVote` implementado. |
+| [#25](https://github.com/evolution-foundation/evolution-go/issues/25) | The uploaded image will only appear after clicking to download it. | ✅ Corrigido | Thumbnail JPEG já existia na main; agora `Width`/`Height` também vão no `ImageMessage` (mesma causa do #104). **Validado ao vivo** (instância real, 29/09). `width`/`height` presentes no payload. |
+| [#26](https://github.com/evolution-foundation/evolution-go/issues/26) | feat: add /send/pollVote endpoint to programmatically vote on polls | ✅ Corrigido | `POST /send/pollVote` implementado. **Validado ao vivo** (instância real, 29/09). Voto enviado do fork e aparece no celular; erro claro para enquete desconhecida; em grupo exige `participant`. |
 | [#32](https://github.com/evolution-foundation/evolution-go/issues/32) | erro ao enviar mensagem para numero fixo que tem whatsapp | 🔍 Investigar | Erro "not registered" com número fixo. Workaround: `"formatJid": false`. Causa exata (normalização do 9º dígito / `+` no `IsOnWhatsApp`) não reproduzida. |
-| [#42](https://github.com/evolution-foundation/evolution-go/issues/42) | UpdateGroupSettings function exists but no route is registered | 🔵 Já na main | `POST /group/settings` **já existe** na main (ações `announcement`, `not_announcement`, `locked`, `unlocked`, `approval_on/off`, `admin_add`, `all_member_add`). Documentada no wiki (`api-groups.md`). O swagger não foi regenerado (o `swag init` gera diff enorme e remove as rotas de licença). Rotas de *request participants* seguem sem rota (ver propostas). |
+| [#42](https://github.com/evolution-foundation/evolution-go/issues/42) | UpdateGroupSettings function exists but no route is registered | 🔵 Já na main | `POST /group/settings` **já existe** na main (ações `announcement`, `not_announcement`, `locked`, `unlocked`, `approval_on/off`, `admin_add`, `all_member_add`). Documentada no wiki (`api-groups.md`). O swagger não foi regenerado (o `swag init` gera diff enorme e remove as rotas de licença). Rotas de *request participants* seguem sem rota (ver propostas). **Validado ao vivo** (instância real, 29/09). As 8 ações mudam o estado (conferido em `/group/info`); `/group/description` e nome também. |
 | [#45](https://github.com/evolution-foundation/evolution-go/issues/45) | [Feature] Novo endpoint POST /message/markplayed (microfone azul em áudios) | 🔵 Já na main | `POST /message/markplayed` **já existia** na main (issue desatualizada). |
 | [#50](https://github.com/evolution-foundation/evolution-go/issues/50) | Error 463 (NackCallerReachoutTimelocked) — tctoken/cstoken not persisted afte… | 🟣 Depende do whatsmeow | tctoken/cstoken. Depende do bump do whatsmeow (branch `deps/whatsmeow-bump`). Relato de produção em comentário indica que **463 não vai a zero** só com o bump. |
 | [#51](https://github.com/evolution-foundation/evolution-go/issues/51) | [BUG] Carousel message buttons (URL, CALL, COPY_CODE) lose their parameters d… | ✅ Corrigido | Carrossel: params dos botões agora são JSON válido; aceita `url`, `phoneNumber` e `COPY_CODE` (o payload do relato usava esses nomes e era ignorado). |
 | [#52](https://github.com/evolution-foundation/evolution-go/issues/52) | /group/participant - "participants is required and cannot be empty" bug | 🔁 Duplicada | Duplicada de #97 (corrigida). |
 | [#54](https://github.com/evolution-foundation/evolution-go/issues/54) | [Bug] Notifications on APP was gone after connected to EvoGo | 🔁 Duplicada | Duplicada de #55. |
-| [#55](https://github.com/evolution-foundation/evolution-go/issues/55) | AlwaysOnline=false não é respeitado — instância fica online permanentemente | 🟡 Parcial / validar | A main já respeita `alwaysOnline` no `Connected`. Corrigido: goroutine de presença antiga (uma por reconexão) continuava enviando `available`; agora encerra ao ser substituída ou com `alwaysOnline=false`. Validar no caminho de reconexão relatado. |
+| [#55](https://github.com/evolution-foundation/evolution-go/issues/55) | AlwaysOnline=false não é respeitado — instância fica online permanentemente | 🟡 Parcial / validar | A main já respeita `alwaysOnline` no `Connected`. Corrigido: goroutine de presença antiga (uma por reconexão) continuava enviando `available`; agora encerra ao ser substituída ou com `alwaysOnline=false`. Validar no caminho de reconexão relatado. **Validado ao vivo** (instância real, 29/09). Após reiniciar: "Marked self as unavailable (alwaysOnline=false)". Falta observar por horas/dias. |
 | [#59](https://github.com/evolution-foundation/evolution-go/issues/59) | Button and List messages do not render on consumer WhatsApp — only Carousel w… | 🟣 Depende do whatsmeow | Botões/listas não renderizam em conta pessoal. Ver seção "Botões e listas". Depende de whatsmeow + validação em aparelho. |
-| [#60](https://github.com/evolution-foundation/evolution-go/issues/60) | GET /polls/{pollMessageId}/results always returns 404 "No votes found" even a… | ✅ Corrigido | Voto de enquete era descriptografado **depois** da troca LID→PN, então sempre falhava e nada era gravado (404). Agora descriptografa antes. |
-| [#62](https://github.com/evolution-foundation/evolution-go/issues/62) | Eventos de edição de mensagem não estão sendo entregues corretamente | 🔁 Duplicada | Duplicada de #92 (corrigida). |
+| [#60](https://github.com/evolution-foundation/evolution-go/issues/60) | GET /polls/{pollMessageId}/results always returns 404 "No votes found" even a… | ✅ Corrigido | Voto de enquete era descriptografado **depois** da troca LID→PN, então sempre falhava e nada era gravado (404). Agora descriptografa antes. **Validado ao vivo** (instância real, 29/09). Voto feito no celular foi descriptografado e gravado; `/polls/{id}/results` retorna o voto. `voterPhone` agora traz o telefone real, não os dígitos do LID. |
+| [#62](https://github.com/evolution-foundation/evolution-go/issues/62) | Eventos de edição de mensagem não estão sendo entregues corretamente | 🔁 Duplicada | Duplicada de #92 (corrigida). **Validado ao vivo** (instância real, 29/09). Log: "Decrypted edited message ... targeting ...". |
 | [#69](https://github.com/evolution-foundation/evolution-go/issues/69) | /send/carousel splits message into two bubbles (Text + Cards) instead of send… | 🔍 Investigar | O código já coloca `body`/`footer` dentro do `InteractiveMessage` (não há envio de texto separado). Se ainda aparecem 2 balões, é comportamento do cliente WhatsApp — precisa de teste em aparelho. |
 | [#70](https://github.com/evolution-foundation/evolution-go/issues/70) | Não chega notificações no celular depois de conectado | 🟡 Parcial / validar | Mesmo grupo do #55 (presença). Caso extra: WhatsApp Business no iPhone. Validar após o fix de presença. |
 | [#71](https://github.com/evolution-foundation/evolution-go/issues/71) | Testei todos os botões/listas, retorna 200 mas nenhum chega (exceto carrossel) | 🔁 Duplicada | Duplicada de #59. |
 | [#72](https://github.com/evolution-foundation/evolution-go/issues/72) | Erro 500 ao arquivar conversa em sessões WhatsApp Android (LTHash mismatch) -… | 🟡 Parcial / validar | `AppStateSyncError` (LTHash mismatch): aplicado o recovery controlado do PR #144. Problema de fundo é do whatsmeow/estado do app; validar. |
 | [#75](https://github.com/evolution-foundation/evolution-go/issues/75) | Quando rodo dois worflows juntos quebra uma das instancias e retorna erro 500 | 🟡 Parcial / validar | Duas instâncias em paralelo quebrando com 500: provável race nos maps compartilhados / leak de pool (ambos corrigidos). Sem log para confirmar. |
-| [#76](https://github.com/evolution-foundation/evolution-go/issues/76) | /user/avatar | ✅ Corrigido | `/user/avatar` com timeout de 75s: JID com `+` + IQ sem limite. Corrigido (PR #120). |
+| [#76](https://github.com/evolution-foundation/evolution-go/issues/76) | /user/avatar | ✅ Corrigido | `/user/avatar` com timeout de 75s: JID com `+` + IQ sem limite. Corrigido (PR #120). **Validado ao vivo** (instância real, 29/09). Avatar em 0,35 s (antes 75 s). |
 | [#77](https://github.com/evolution-foundation/evolution-go/issues/77) | O endpoint /send/text demora muito tempo para retornar o erro de dispositivo/… | ✅ Corrigido | Instância não pareada agora falha na hora (antes ~80s de reconexão/retry aninhados). |
-| [#79](https://github.com/evolution-foundation/evolution-go/issues/79) | Outgoing messages not respecting chat's disappearing-messages timer → recipie… | 📝 Proposta | Timer de mensagens temporárias nas mensagens enviadas. Segue como proposta. |
-| [#81](https://github.com/evolution-foundation/evolution-go/issues/81) | instance/advanced-settings não funciona | ✅ Corrigido | Além do "acesso negado" (a rota só aceitava token de instância, não a chave global), havia falha de segurança: qualquer token de instância lia/alterava as configs de outra. Corrigido com `AuthInstanceScoped`. |
-| [#85](https://github.com/evolution-foundation/evolution-go/issues/85) | QRCode is not beign generated | 🟡 Parcial / validar | QR não gera após desconectar: leak de conexões Postgres (corrigido) + `GetQr` reiniciando sessão logada (corrigido). Validar. |
-| [#92](https://github.com/evolution-foundation/evolution-go/issues/92) | Missing information on message webhook when editing/deleting a message | ✅ Corrigido | Edição de mensagem recebida agora é descriptografada e entregue como `protocolMessage` de edição, com `IsEdit=true`. |
+| [#79](https://github.com/evolution-foundation/evolution-go/issues/79) | Outgoing messages not respecting chat's disappearing-messages timer → recipie… | 📝 Proposta | Timer de mensagens temporárias nas mensagens enviadas. Ver propostas. |
+| [#81](https://github.com/evolution-foundation/evolution-go/issues/81) | instance/advanced-settings não funciona | ✅ Corrigido | Além do "acesso negado" (a rota só aceitava token de instância, não a chave global), havia falha de segurança: qualquer token de instância lia/alterava as configs de outra. Corrigido com `AuthInstanceScoped`. **Validado ao vivo** (instância real, 29/09). Token de outra instância = 403; próprio token e chave global = 200. |
+| [#85](https://github.com/evolution-foundation/evolution-go/issues/85) | QRCode is not beign generated | ✅ Corrigido | QR não gera após desconectar: leak de conexões Postgres (corrigido) + `GetQr` reiniciando sessão logada (corrigido). Validar. **Causa raiz achada no teste real**: `connect` seguido de `qr` iniciava dois runtimes; o duplicado forçava logout e reiniciava como dispositivo novo logo após parear. Corrigido (um runtime por instância) e validado com chamadas em sequência e simultâneas. |
+| [#92](https://github.com/evolution-foundation/evolution-go/issues/92) | Missing information on message webhook when editing/deleting a message | ✅ Corrigido | Edição de mensagem recebida agora é descriptografada e entregue como `protocolMessage` de edição, com `IsEdit=true`. **Validado ao vivo** (instância real, 29/09). |
 | [#95](https://github.com/evolution-foundation/evolution-go/issues/95) | panic: "interface conversion: interface {} is *events.Archive, not map[string… | ✅ Corrigido | Panic `*events.Archive` corrigido (payload montado explicitamente). |
-| [#97](https://github.com/evolution-foundation/evolution-go/issues/97) | POST /group/participant always returns 400 "participants is required and cann… | ✅ Corrigido | `/group/participant` usava o validador de string única para o array `participants`. Corrigido. |
+| [#97](https://github.com/evolution-foundation/evolution-go/issues/97) | POST /group/participant always returns 400 "participants is required and cann… | ✅ Corrigido | `/group/participant` usava o validador de string única para o array `participants`. Corrigido. **Validado ao vivo** (instância real, 29/09). A rota responde; além disso `/group/participant` agora devolve o resultado por participante (antes dizia "success" mesmo sem adicionar). |
 | [#98](https://github.com/evolution-foundation/evolution-go/issues/98) | Feature Request: Group Settings Update Endpoint | 🔵 Já na main | Duplicada de #42 — `POST /group/settings` já existe. |
 | [#99](https://github.com/evolution-foundation/evolution-go/issues/99) | Panic: concurrent write to websocket connection when sending WebSocket events… | ✅ Corrigido | Panic "concurrent write to websocket connection": escrita agora serializada por conexão, com deadline. |
 | [#101](https://github.com/evolution-foundation/evolution-go/issues/101) | Bug: API /chat/archive - interface conversion: interface {} is *events.Archiv… | ✅ Corrigido | Mesmo panic do #95. Observação: `/chat/archive` usa o campo `chat` (não `number`); a rota está marcada "TODO: not working" no código. |
 | [#103](https://github.com/evolution-foundation/evolution-go/issues/103) | /send/link only produces a small link preview — high-res thumbnail (MediaLink… | 📝 Proposta | Card grande de link preview. PR #207 propõe; ver propostas. |
-| [#104](https://github.com/evolution-foundation/evolution-go/issues/104) | [GOWS/send] /send/media omits imageMessage width/height → square placeholder … | ✅ Corrigido | `Width`/`Height` agora enviados no `ImageMessage`. |
+| [#104](https://github.com/evolution-foundation/evolution-go/issues/104) | [GOWS/send] /send/media omits imageMessage width/height → square placeholder … | ✅ Corrigido | `Width`/`Height` agora enviados no `ImageMessage`. **Validado ao vivo** (instância real, 29/09). |
 | [#105](https://github.com/evolution-foundation/evolution-go/issues/105) | Passkey* events never reach the webhook: missing cases in subscription filter… | ✅ Corrigido | Eventos `Passkey*` agora seguem a assinatura `QRCODE` no webhook e nas filas globais. |
-| [#106](https://github.com/evolution-foundation/evolution-go/issues/106) | Postgres connection leak: each (re)connect on a logged-out instance leaks an … | ✅ Corrigido | Leak de pool Postgres: um único container/pool reaproveitado (usa o `authDB` já limitado). |
+| [#106](https://github.com/evolution-foundation/evolution-go/issues/106) | Postgres connection leak: each (re)connect on a logged-out instance leaks an … | ✅ Corrigido | Leak de pool Postgres: um único container/pool reaproveitado (usa o `authDB` já limitado). **Validado ao vivo** (instância real, 29/09). 3 conexões no Postgres com a instância ativa, estável após reinícios e criação/exclusão de instâncias. |
 | [#107](https://github.com/evolution-foundation/evolution-go/issues/107) | Passkey ceremony stuck at awaiting_confirmation — server never sends PairPass… | 🔍 Investigar | Passkey preso em `awaiting_confirmation` em conta Business. Comportamento do servidor WhatsApp; sem causa no código identificada. |
 | [#109](https://github.com/evolution-foundation/evolution-go/issues/109) | PostgreSQL connection leak: idle connections accumulate and exhaust max_conne… | ✅ Corrigido | Leak de pool Postgres (mesma correção do #106). |
 | [#110](https://github.com/evolution-foundation/evolution-go/issues/110) | Bug: Error 473 when using /send/button with type: "copy" | 🟣 Depende do whatsmeow | Erro 473 no botão `copy`: hipótese do relator (wrapper `DocumentWithCaptionMessage` aplicado aos ramos `pix`/CTA) plausível. Ver "Botões e listas". |
 | [#111](https://github.com/evolution-foundation/evolution-go/issues/111) | Instance settings silently reset to defaults (rabbitmqEnable, events, flags) … | ✅ Corrigido | `/instance/connect` zerava eventos/RabbitMQ/flags. Agora é atualização parcial (PR #136). |
 | [#112](https://github.com/evolution-foundation/evolution-go/issues/112) | PostgreSQL connections are not released after QR/reconnect failures | ✅ Corrigido | Leak de pool Postgres (mesma correção do #106). |
 | [#113](https://github.com/evolution-foundation/evolution-go/issues/113) | Missing endpoint/support for group announcement mode (open/close group settin… | 🔵 Já na main | Duplicada de #42 — `POST /group/settings` já existe. |
-| [#114](https://github.com/evolution-foundation/evolution-go/issues/114) | mentionAll + media: Sending media with mentionAll causes failure / requires s… | ✅ Corrigido | mentionAll + mídia: documento com legenda vive em `DocumentWithCaptionMessage` (nil pointer). Corrigido (PR #137). |
+| [#114](https://github.com/evolution-foundation/evolution-go/issues/114) | mentionAll + media: Sending media with mentionAll causes failure / requires s… | ✅ Corrigido | mentionAll + mídia: documento com legenda vive em `DocumentWithCaptionMessage` (nil pointer). Corrigido (PR #137). **Validado ao vivo** (instância real, 29/09). Texto, imagem e documento com legenda + `mentionAll` em grupo. |
 | [#115](https://github.com/evolution-foundation/evolution-go/issues/115) | /send/text is not working the message isn't being sent. | ⚪ Sem ação de código | Comentário indica que o contato precisa mandar mensagem primeiro (erro 463, ver #50). |
 | [#118](https://github.com/evolution-foundation/evolution-go/issues/118) | PostgreSQL connection leak: a new sqlstore pool is created on instance reconn… | ✅ Corrigido | Leak de pool Postgres (mesma correção do #106). |
-| [#123](https://github.com/evolution-foundation/evolution-go/issues/123) | feat(instance): expose safe proxy configuration and runtime status | ✅ Corrigido | `GET /instance/proxy/{id}` (status em tempo de execução, sem credenciais) e `PROXY_FAIL_CLOSED`. |
+| [#123](https://github.com/evolution-foundation/evolution-go/issues/123) | feat(instance): expose safe proxy configuration and runtime status | ✅ Corrigido | `GET /instance/proxy/{id}` (status em tempo de execução, sem credenciais) e `PROXY_FAIL_CLOSED`. Não testado com proxy real (fora do escopo por decisão sua): só o status "sem proxy" foi verificado. |
 | [#124](https://github.com/evolution-foundation/evolution-go/issues/124) | Error 463 permanent on cold sends for instances paired before v0.7.2 — NCT sa… | 🟣 Depende do whatsmeow | NCT salt não preenchido em instâncias pareadas antes da 0.7.2. Comentário de outro usuário discorda da causa. Depende do bump do whatsmeow; validar. |
-| [#146](https://github.com/evolution-foundation/evolution-go/issues/146) | Expose SubscribePresence (contact online) + decrypt edited messages (new text… | ✅ Corrigido | Edição descriptografada + `POST /message/subscribe` (presença) implementados. |
+| [#146](https://github.com/evolution-foundation/evolution-go/issues/146) | Expose SubscribePresence (contact online) + decrypt edited messages (new text… | ✅ Corrigido | Edição descriptografada + `POST /message/subscribe` (presença) implementados. **Validado ao vivo** (instância real, 29/09). Edição validada; `subscribe` responde sucesso (entrega de eventos `Presence` não observada). |
 | [#148](https://github.com/evolution-foundation/evolution-go/issues/148) | QR Code Genetration not working ( version 0.7.2) | ✅ Corrigido | `/instance/qr` agora devolve também `qrcode`/`code` junto dos campos de passkey quando existir QR. Que a conta exija passkey é comportamento do WhatsApp. |
 | [#165](https://github.com/evolution-foundation/evolution-go/issues/165) | Postgres connection leak: StartClient creates a new sqlstore.Container per (r… | ✅ Corrigido | Leak de pool Postgres (mesma correção do #106). |
 | [#170](https://github.com/evolution-foundation/evolution-go/issues/170) | '[Bug] /send/list and /send/button fail with "server returned error 405" — le… | 🟣 Depende do whatsmeow | 405 em `/send/list` e `/send/button`. Ver "Botões e listas". |
 | [#172](https://github.com/evolution-foundation/evolution-go/issues/172) | Problem with passcode(webauthn) | ⚪ Sem ação de código | Pedido de uso do passkey helper; ver #173 (melhoria da extensão) e docs de passkey. |
-| [#173](https://github.com/evolution-foundation/evolution-go/issues/173) | Passkey Helper: 1Password/WebAuthn fails from content script — working soluti… | ✅ Corrigido | Extensão `passkey-helper` 1.1.0: WebAuthn no mundo MAIN (gerenciadores de senha funcionam). |
+| [#173](https://github.com/evolution-foundation/evolution-go/issues/173) | Passkey Helper: 1Password/WebAuthn fails from content script — working soluti… | ✅ Corrigido | Extensão `passkey-helper` 1.1.0: WebAuthn no mundo MAIN (gerenciadores de senha funcionam). Não validado ao vivo (a conta de teste não exigiu passkey). |
 | [#175](https://github.com/evolution-foundation/evolution-go/issues/175) | Postgres connection pool leak on every StartClient/reconnect cycle | ✅ Corrigido | Leak de pool Postgres (mesma correção do #106). |
-| [#176](https://github.com/evolution-foundation/evolution-go/issues/176) | POST /user/profileName hangs indefinitely (no response) on latest image | ✅ Corrigido | `POST /user/profileName` chamava `SetGroupName` com JID vazio (IQ que ninguém responde). Agora usa o patch de app-state de push name. |
+| [#176](https://github.com/evolution-foundation/evolution-go/issues/176) | POST /user/profileName hangs indefinitely (no response) on latest image | ✅ Corrigido | `POST /user/profileName` chamava `SetGroupName` com JID vazio (IQ que ninguém responde). Agora usa o patch de app-state de push name. **Validado ao vivo** (instância real, 29/09). `profileName` em 0,8 s; nome alterado e restaurado. |
 | [#185](https://github.com/evolution-foundation/evolution-go/issues/185) | Cliente morre após stream:error <ack class="status" type="media"/> e nunca re… | 🟡 Parcial / validar | Cliente morto após `stream:error` desconhecido. Coberto por: KeepAlive recovery (PR #126) + whatsmeow novo no branch `deps/whatsmeow-bump`. |
 | [#186](https://github.com/evolution-foundation/evolution-go/issues/186) | QR Code stop generating untill I restart the docker container, Postgres error | ✅ Corrigido | Consequência do leak de pool (`too many clients`). Corrigido. |
 | [#188](https://github.com/evolution-foundation/evolution-go/issues/188) | Panic (nil pointer) in ReconnectClient kills the whole process - one instance… | ✅ Corrigido | Panic nil pointer em `ReconnectClient`: maps agora seguros + reconexão duplicada da mesma instância é ignorada. |
-| [#189](https://github.com/evolution-foundation/evolution-go/issues/189) | 'quoted' reply renders an empty, non-tappable quote card ('QuotedMessage' har… | 🟡 Parcial / validar | Novo campo opcional `quoted.text` preenche o card da citação. Sem ele continua vazio (o conteúdo original não é guardado). Preencher automaticamente exigiria persistir mensagens. |
+| [#189](https://github.com/evolution-foundation/evolution-go/issues/189) | 'quoted' reply renders an empty, non-tappable quote card ('QuotedMessage' har… | 🟡 Parcial / validar | Novo campo opcional `quoted.text` preenche o card da citação. Sem ele continua vazio (o conteúdo original não é guardado). Preencher automaticamente exigiria persistir mensagens. **Validado ao vivo** (instância real, 29/09). Card da citação mostra o texto quando `quoted.text` é enviado. |
 | [#193](https://github.com/evolution-foundation/evolution-go/issues/193) | PICTURE / USER_ABOUT / BUTTON_CLICK are accepted in NATS_GLOBAL_EVENTS but ne… | ✅ Corrigido | `PICTURE`, `USER_ABOUT` e `BUTTON_CLICK` agora publicados no NATS/AMQP (mapeamento único). |
 | [#203](https://github.com/evolution-foundation/evolution-go/issues/203) | 0.7.2: fatal error: concurrent map writes in whatsmeowService.StartClient (ki… | ✅ Corrigido | `fatal error: concurrent map writes`: maps compartilhados agora protegidos (`safemap`) + fim da recursão do `StartClient`. |
 | [#204](https://github.com/evolution-foundation/evolution-go/issues/204) | Correção de botões e Lista Resolvido | 🟣 Depende do whatsmeow | Relator diz ter resolvido botões/lista com whatsmeow mais novo e deixando a lib gerar o nó `<biz>`; ofereceu o diff. Ver "Botões e listas". |
@@ -227,13 +265,13 @@ Legenda de PRs: **Aplicado** = mesclado (com adaptações ao `safemap`); **Reimp
 | [#102](https://github.com/evolution-foundation/evolution-go/pull/102) | fix(whatsmeow): reuse a single capped sqlstore container (fix connection leak) | Ay0rus | ⏩ Superado | Leak de pool. Coberto pela implementação própria do container compartilhado. |
 | [#117](https://github.com/evolution-foundation/evolution-go/pull/117) | fix(whatsmeow): reuse a single capped sqlstore container (fixes Postgres conn… | guilhermeCassettari | ⏩ Superado | Leak de pool. Boa ideia (pool limitado), mas o teste importa o módulo antigo `EvolutionAPI/...` e não compilaria. Substituído. |
 | [#120](https://github.com/evolution-foundation/evolution-go/pull/120) | fix(user): resolve /user/avatar info query timeout via canonical JID | cesar-carlos | ✅ Aplicado | Mesclado: avatar com JID canônico, IQ de 8s, mapeia 504/429, espera cliente pronto. |
-| [#121](https://github.com/evolution-foundation/evolution-go/pull/121) | feat(user): return PictureURL on POST /user/info | cesar-carlos | ✅ Reimplementado | `PictureURL` em `/user/info` com orçamento de tempo compartilhado (o restante já vinha do #120). |
+| [#121](https://github.com/evolution-foundation/evolution-go/pull/121) | feat(user): return PictureURL on POST /user/info | cesar-carlos | ✅ Reimplementado | `PictureURL` em `/user/info`. **Validado ao vivo** (0,34 s; o JID canônico faltava e foi corrigido no teste). |
 | [#122](https://github.com/evolution-foundation/evolution-go/pull/122) | fix: decrypt inbound message edits and clarify revoke webhooks | cesar-carlos | ⏩ Superado | Decrypt de edição. Sua observação (decrypt **antes** da troca LID→PN) foi incorporada. |
 | [#125](https://github.com/evolution-foundation/evolution-go/pull/125) | fix: panic on Archive event due to unchecked type assertion | FlavioPulli | ⏩ Superado | Panic Archive — coberto. |
 | [#126](https://github.com/evolution-foundation/evolution-go/pull/126) | fix: recover zombie connections on KeepAliveTimeout | FlavioPulli | ✅ Aplicado | Mesclado (adaptado): reinicia após 3 `KeepAliveTimeout`; eventos publicados em `CONNECTION`. |
 | [#127](https://github.com/evolution-foundation/evolution-go/pull/127) | fix: guard shared instance maps with a RWMutex | FlavioPulli | ⏩ Superado | Maps + mutex — coberto pelo #196. |
 | [#128](https://github.com/evolution-foundation/evolution-go/pull/128) | feat: decrypt secret-encrypted message edits | FlavioPulli | ⏩ Superado | Decrypt de edição — coberto (base no #153). |
-| [#129](https://github.com/evolution-foundation/evolution-go/pull/129) | feat: POST /user/contacts — save a contact to the device addressbook | FlavioPulli | ✅ Reimplementado | `POST /user/contacts`, com normalização do número. |
+| [#129](https://github.com/evolution-foundation/evolution-go/pull/129) | feat: POST /user/contacts — save a contact to the device addressbook | FlavioPulli | ✅ Reimplementado | `POST /user/contacts`, com normalização do número e `saveOnPrimaryAddressbook` opcional. **Validado ao vivo**; a API não remove contatos (app state só grava). |
 | [#130](https://github.com/evolution-foundation/evolution-go/pull/130) | fix: canonicalize JIDs in GetAvatar, DeleteMessageEveryone and EditMessage | FlavioPulli | 🟡 Parcial | Aplicada a parte de `EditMessage`/`DeleteMessageEveryone` (JID canônico); avatar veio do #120. |
 | [#131](https://github.com/evolution-foundation/evolution-go/pull/131) | fix(whatsmeow): reuse shared sqlstore.Container instead of recreating it on e… | wellpelomundo | ⏩ Superado | Leak de pool — coberto. |
 | [#132](https://github.com/evolution-foundation/evolution-go/pull/132) | Feat: Inclusão endpoint Encaminhamento de mensagens (forward) | iagocotta | 📝 Proposta | Encaminhar mensagens (4,9 mil linhas, base `develop`). Os arquivos foram criados em `routes/` e `sendMessage/` na **raiz** (não em `pkg/`): é uma cópia duplicada e não integra como está. Ver propostas. |
@@ -246,11 +284,11 @@ Legenda de PRs: **Aplicado** = mesclado (com adaptações ao `safemap`); **Reimp
 | [#143](https://github.com/evolution-foundation/evolution-go/pull/143) | fix: skip NATS connection when URL is empty | joldmarfilho | ✅ Aplicado | Mesclado: não conecta ao NATS sem `NATS_URL`. |
 | [#144](https://github.com/evolution-foundation/evolution-go/pull/144) | fix: recover app-state sync errors safely | joldmarfilho | ✅ Aplicado | Mesclado: recovery de `AppStateSyncError` (validar ao vivo). |
 | [#145](https://github.com/evolution-foundation/evolution-go/pull/145) | fix(instance): prevent duplicate runtimes and harden QR lifecycle  | joldmarfilho | ⏸ Não aplicado | Redesenho do ciclo de vida (1 runtime por instância, backoff, testes). Grande e sobrepõe #196/#154; requer teste ao vivo. Ver "Próximos passos". |
-| [#147](https://github.com/evolution-foundation/evolution-go/pull/147) | feat(send): support view-once media on /send/media | nicolasnovis | ✅ Reimplementado | `viewOnce` em `/send/media` (helper único + teste). |
+| [#147](https://github.com/evolution-foundation/evolution-go/pull/147) | feat(send): support view-once media on /send/media | nicolasnovis | ✅ Reimplementado | `viewOnce` em `/send/media` (JSON e multipart). **Validado ao vivo**: aparece "abrir uma vez" no celular. |
 | [#149](https://github.com/evolution-foundation/evolution-go/pull/149) | fix(instance): prevent GetQr from disconnecting active logged-in session | iagocotta | ✅ Reimplementado | `GetQr` não reinicia sessão já logada. |
 | [#150](https://github.com/evolution-foundation/evolution-go/pull/150) | Fix(chat)  enviar history sync request como peer para o próprio jid, não para… | iagocotta | ⏩ Superado | Contém o mesmo código do #132 + fix de history-sync (aplicado via #133). |
 | [#151](https://github.com/evolution-foundation/evolution-go/pull/151) | fix(sticker): send animated WebP stickers as-is (skip static re-encode) | nicolasnovis | ⏩ Superado | Sticker animado — substituído pelo #166 (mais completo). |
-| [#152](https://github.com/evolution-foundation/evolution-go/pull/152) | feat(presence): expose POST /message/subscribe to receive contact presence | nicolasnovis | ✅ Reimplementado | `POST /message/subscribe`; devolve a presença ao celular após 2 min se `alwaysOnline` estiver desligado. |
+| [#152](https://github.com/evolution-foundation/evolution-go/pull/152) | feat(presence): expose POST /message/subscribe to receive contact presence | nicolasnovis | ✅ Reimplementado | `POST /message/subscribe`; devolve a presença ao celular após 2 min se `alwaysOnline` estiver desligado. Responde sucesso ao vivo. |
 | [#153](https://github.com/evolution-foundation/evolution-go/pull/153) | fix(message): decrypt secretEncryptedMessage MESSAGE_EDIT envelopes | Caio-HD | ✅ Aplicado | Mesclado (base do decrypt de edição), chamada movida para antes do swap LID→PN. |
 | [#154](https://github.com/evolution-foundation/evolution-go/pull/154) | fix: stabilize WhatsApp connections and restore paired sessions on startup | member3541 | ⏸ Não aplicado | Estabilidade de conexão + restaurar sessões no startup + 409 no `GetQr`. Grande (678/306), sobrepõe outros; requer teste ao vivo. |
 | [#156](https://github.com/evolution-foundation/evolution-go/pull/156) | Re-request undecryptable messages from the phone instead of dropping them | 6justgotme | ✅ Aplicado | Mesclado: `REREQUEST_FROM_PHONE` (opt-in, padrão desligado). |
@@ -264,7 +302,7 @@ Legenda de PRs: **Aplicado** = mesclado (com adaptações ao `safemap`); **Reimp
 | [#174](https://github.com/evolution-foundation/evolution-go/pull/174) | fix(whatsmeow): reuse pooled authDB connection in StartClient instead of leak… | fmedeiros95 | ⏩ Superado | Leak de pool — coberto. |
 | [#177](https://github.com/evolution-foundation/evolution-go/pull/177) | fix(whatsmeow): prevent panic when handling *events.Archive | dev-guidolin | ⏩ Superado | Panic Archive — coberto. |
 | [#178](https://github.com/evolution-foundation/evolution-go/pull/178) | fix(whatsmeow): reuse pooled authDB connection in StartClient (fixes #175) | wilsonborba | ⏩ Superado | Leak de pool — coberto. |
-| [#179](https://github.com/evolution-foundation/evolution-go/pull/179) | feat(user): add endpoint to resolve phone number from LID | fmedeiros95 | ✅ Reimplementado | `POST /user/lid`. |
+| [#179](https://github.com/evolution-foundation/evolution-go/pull/179) | feat(user): add endpoint to resolve phone number from LID | fmedeiros95 | ✅ Reimplementado | `POST /user/lid`. **Validado ao vivo** (LID → telefone). |
 | [#180](https://github.com/evolution-foundation/evolution-go/pull/180) | fix(group): use array-aware validation for participants | netoduwe | ✅ Aplicado | Aplicado: fix de uma linha em `/group/participant`. |
 | [#181](https://github.com/evolution-foundation/evolution-go/pull/181) | fix(websocket): deliver events to every subscriber of an instance | prakash-dev-code | ✅ Reimplementado | Websocket com vários assinantes por instância — incluído na reescrita do produtor. |
 | [#182](https://github.com/evolution-foundation/evolution-go/pull/182) | feat(sender): add chat-style UI for sending and receiving messages | prakash-dev-code | 📝 Proposta | UI de chat no "sender" (1,6 mil linhas). Ver propostas. |
