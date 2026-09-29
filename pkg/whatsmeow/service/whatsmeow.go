@@ -343,8 +343,8 @@ func (w whatsmeowService) ReconnectClient(instanceId string) error {
 	}
 
 	instance.Connected = false
-	instance.DisconnectReason = "Reconnecting"
-	err = w.instanceRepository.UpdateConnected(instanceId, false, "Reconnecting")
+	instance.DisconnectReason = instance_repository.ReconnectingReason
+	err = w.instanceRepository.UpdateConnected(instanceId, false, instance_repository.ReconnectingReason)
 	if err != nil {
 		w.loggerWrapper.GetLogger(instanceId).LogWarn("[%s] Failed to update disconnect status: %v", instanceId, err)
 	}
