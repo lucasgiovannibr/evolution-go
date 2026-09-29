@@ -84,11 +84,18 @@ Build, `go vet` e `go test -race ./...` passam em todos.
 
 ## 3. Botões e listas (#59 #71 #110 #170 #204) — não corrigido
 
-É o grupo mais reportado (5 issues). Não alterei o código porque não há como validar sem um aparelho:
+É o grupo mais reportado (5 issues). Não alterei o código porque não há como validar sem um aparelho — e, ao ler o código do whatsmeow, a hipótese "o bump resolve" **não se sustenta**:
 
-- O envio retorna 200, mas o WhatsApp não renderiza (ou devolve 405/473). O relator do #204 diz ter resolvido **atualizando o whatsmeow** e deixando a lib gerar o nó `<biz>`, **removendo** os wrappers manuais (`ViewOnce`, bot, `DocumentWithCaptionMessage`): botão = `InteractiveMessage → NativeFlowMessage → quick_reply`; lista = `ListMessage SINGLE_SELECT` legado.
-- O #110 aponta que o wrapper `DocumentWithCaptionMessage` (criado só para `ButtonsMessage`/quick_reply) também é aplicado aos ramos `pix` e CTA (copy/url/call), que usam `InteractiveMessage`.
-- **Caminho sugerido**: testar `deps/whatsmeow-bump` com um aparelho e, se o whatsmeow novo gerar o `<biz>`, remover os wrappers manuais em `send_service.go` (`SendButton`/`SendList`). O relator do #204 ofereceu o diff.
+- O envio retorna 200, mas o WhatsApp não renderiza (ou devolve 405/473). O mantenedor concluiu no #59 que botões/listas nativos parecem restritos a sessões oficiais (Business/WABA) e são descartados para destinatários comuns; só o carrossel sobrevive.
+- Conferi `getButtonTypeFromMessage`/`getButtonAttributes` no whatsmeow antigo (jun/2026) e no novo (29/09): a lógica é **idêntica** — a lib só gera `<biz>` para `ButtonsMessage`, `ListMessage` e as respostas; `InteractiveMessage` (o que o projeto usa em CTA/pix) **não** é coberto. O relato do #204 cita PRs do whatsmeow (#1235, #1221) que não estão nas versões avaliadas.
+- Hoje o projeto injeta `<biz>`/`<bot biz_bot="1">` manualmente e embrulha em `DocumentWithCaptionMessage` (workaround estilo Baileys). O #110 aponta que esse wrapper, criado só para `quick_reply`, também vai nos ramos `pix` e CTA.
+- **Conclusão**: sem aparelho de teste (conta pessoal e Business) qualquer mudança seria chute. Registrei a limitação no wiki (`api-interactive.md`). Se quiser atacar, o experimento é: enviar `ListMessage` cru (sem os nós manuais) e `quick_reply` sem o wrapper, comparando o que chega.
+
+## 3.1 Atualização do whatsmeow (branch `deps/whatsmeow-bump`)
+
+O projeto estava fixo no whatsmeow de 30/06; o novo (29/09) são **72 commits**. Os que importam para as issues abertas: `client: ensure stream error is handled before reconnecting` e `don't reuse handler queue between connections` (#185, #190), `user: update IsOnWhatsApp query` + `fix parsing not on whatsapp responses` (#32), `send: always use LID for DMs`, `message: handle stateless pkmsgs correctly`, tokens de privacidade em LID (#50/#124) e vários updates de protobuf.
+
+Verificado: build, `go vet`, `go test -race`, boot com Postgres, imagem Docker (Go 1.26) e teste de integração do pool. **Atenção**: o schema do whatsmeow passa de v14 para **v16** (duas migrações só de ida). Depois de subir, **não dá para voltar à imagem antiga** no mesmo banco — faça backup do `evogo_auth` antes.
 
 ## 4. O que **não** foi possível verificar
 
