@@ -69,6 +69,8 @@ type WhatsmeowService interface {
 	ReachoutTimelock(instanceId string) *ReachoutTimelockStatus
 	RuntimeInfo(instanceId string) RuntimeInfo
 	RuntimeInfos() []RuntimeInfo
+	ChatDisappearingSeconds(instanceId string, chat types.JID) (uint32, bool)
+	RememberChatDisappearing(instanceId string, chat types.JID, seconds uint32)
 	GetPollService() poll_service.PollService // NOVO: Acesso ao serviço de polls
 
 	// Passkey (WebAuthn) pairing bridge — read by the public ceremony endpoint,
@@ -1455,6 +1457,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	case *events.Message:
 		doWebhook = true
 		postMap["event"] = "Message"
+		learnChatTimerFromMessage(mycli.userID, evt, time.Now())
 		// Message received
 
 		// Log message arrival with detailed info
@@ -2464,9 +2467,11 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	case *events.GroupInfo:
 		doWebhook = true
 		postMap["event"] = "GroupInfo"
+		learnChatTimerFromGroup(mycli.userID, evt.JID, evt.Ephemeral, time.Now())
 	case *events.JoinedGroup:
 		doWebhook = true
 		postMap["event"] = "JoinedGroup"
+		learnChatTimerFromGroup(mycli.userID, evt.JID, &evt.GroupEphemeral, time.Now())
 	case *events.NewsletterJoin:
 		doWebhook = true
 		postMap["event"] = "NewsletterJoin"
@@ -3178,6 +3183,7 @@ func (w whatsmeowService) ClearInstanceCache(instanceId string, token string) er
 
 	// Limpar userInfoCache
 	w.userInfoCache.Delete(token)
+	forgetInstanceChatTimers(instanceId)
 
 	// Limpar myClientPointer se existir
 	if _, exists := w.myClientPointer.Lookup(instanceId); exists {

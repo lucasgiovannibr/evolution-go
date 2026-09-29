@@ -184,10 +184,10 @@ Verificado: build, `go vet`, `go test -race`, boot com Postgres, imagem Docker (
 
 | Status | Qtde |
 |---|---|
-| ✅ Corrigido | 32 |
+| ✅ Corrigido | 33 |
 | 🟡 Parcial / validar | 6 |
 | 🟣 Depende do whatsmeow | 6 |
-| 📝 Proposta | 2 |
+| 📝 Proposta | 1 |
 | 🔵 Já na main | 6 |
 | 🔍 Investigar | 3 |
 | 🔁 Duplicada | 4 |
@@ -231,7 +231,7 @@ Legenda de PRs: **Aplicado** = mesclado (com adaptações ao `safemap`); **Reimp
 | [#75](https://github.com/evolution-foundation/evolution-go/issues/75) | Quando rodo dois worflows juntos quebra uma das instancias e retorna erro 500 | 🟡 Parcial / validar | Duas instâncias em paralelo quebrando com 500: provável race nos maps compartilhados / leak de pool (ambos corrigidos). Sem log para confirmar. |
 | [#76](https://github.com/evolution-foundation/evolution-go/issues/76) | /user/avatar | ✅ Corrigido | `/user/avatar` com timeout de 75s: JID com `+` + IQ sem limite. Corrigido (PR #120). **Validado ao vivo** (instância real, 29/09). Avatar em 0,35 s (antes 75 s). |
 | [#77](https://github.com/evolution-foundation/evolution-go/issues/77) | O endpoint /send/text demora muito tempo para retornar o erro de dispositivo/… | ✅ Corrigido | Instância não pareada agora falha na hora (antes ~80s de reconexão/retry aninhados). |
-| [#79](https://github.com/evolution-foundation/evolution-go/issues/79) | Outgoing messages not respecting chat's disappearing-messages timer → recipie… | 📝 Proposta | Timer de mensagens temporárias nas mensagens enviadas. Ver propostas. |
+| [#79](https://github.com/evolution-foundation/evolution-go/issues/79) | Outgoing messages not respecting chat's disappearing-messages timer → recipie… | ✅ Corrigido | Timer de mensagens temporárias aprendido por chat e aplicado no envio; `POST /chat/disappearing` e `POST /user/defaultDisappearing`. **Validado ao vivo** (grupo de teste e chat individual). |
 | [#81](https://github.com/evolution-foundation/evolution-go/issues/81) | instance/advanced-settings não funciona | ✅ Corrigido | Além do "acesso negado" (a rota só aceitava token de instância, não a chave global), havia falha de segurança: qualquer token de instância lia/alterava as configs de outra. Corrigido com `AuthInstanceScoped`. **Validado ao vivo** (instância real, 29/09). Token de outra instância = 403; próprio token e chave global = 200. |
 | [#85](https://github.com/evolution-foundation/evolution-go/issues/85) | QRCode is not beign generated | ✅ Corrigido | QR não gera após desconectar: leak de conexões Postgres (corrigido) + `GetQr` reiniciando sessão logada (corrigido). Validar. **Causa raiz achada no teste real**: `connect` seguido de `qr` iniciava dois runtimes; o duplicado forçava logout e reiniciava como dispositivo novo logo após parear. Corrigido (um runtime por instância) e validado com chamadas em sequência e simultâneas. |
 | [#92](https://github.com/evolution-foundation/evolution-go/issues/92) | Missing information on message webhook when editing/deleting a message | ✅ Corrigido | Edição de mensagem recebida agora é descriptografada e entregue como `protocolMessage` de edição, com `IsEdit=true`. **Validado ao vivo** (instância real, 29/09). |

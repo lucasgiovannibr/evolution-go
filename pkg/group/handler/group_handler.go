@@ -19,6 +19,8 @@ type GroupHandler interface {
 	UpdateParticipant(ctx *gin.Context)
 	GetMyGroups(ctx *gin.Context)
 	JoinGroupLink(ctx *gin.Context)
+	GetInviteInfo(ctx *gin.Context)
+	JoinGroupInvite(ctx *gin.Context)
 	LeaveGroup(ctx *gin.Context)
 	UpdateGroupSettings(ctx *gin.Context)
 	GetGroupRequests(ctx *gin.Context)

@@ -15,6 +15,11 @@ type NewsletterHandler interface {
 	GetNewsletterInvite(ctx *gin.Context)
 	SubscribeNewsletter(ctx *gin.Context)
 	GetNewsletterMessages(ctx *gin.Context)
+	FollowNewsletter(ctx *gin.Context)
+	UnfollowNewsletter(ctx *gin.Context)
+	MuteNewsletter(ctx *gin.Context)
+	MarkNewsletterViewed(ctx *gin.Context)
+	ReactNewsletter(ctx *gin.Context)
 }
 
 type newsletterHandler struct {

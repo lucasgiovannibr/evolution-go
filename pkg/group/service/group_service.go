@@ -34,6 +34,8 @@ type GroupService interface {
 	UpdateGroupRequestParticipants(data *UpdateGroupRequestParticipantsStruct, instance *instance_model.Instance) ([]types.GroupParticipant, error)
 	GetMyGroups(instance *instance_model.Instance) ([]types.GroupInfo, error)
 	JoinGroupLink(data *JoinGroupStruct, instance *instance_model.Instance) error
+	GetInviteInfo(data *GroupInviteStruct, instance *instance_model.Instance) (*types.GroupInfo, error)
+	JoinGroupInvite(data *GroupInviteStruct, instance *instance_model.Instance) error
 	LeaveGroup(data *LeaveGroupStruct, instance *instance_model.Instance) error
 }
 

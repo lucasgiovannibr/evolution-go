@@ -20,6 +20,11 @@ type NewsletterService interface {
 	GetNewsletterInvite(data *GetNewsletterInviteStruct, instance *instance_model.Instance) (*types.NewsletterMetadata, error)
 	SubscribeNewsletter(data *GetNewsletterStruct, instance *instance_model.Instance) error
 	GetNewsletterMessages(data *GetNewsletterMessagesStruct, instance *instance_model.Instance) ([]*types.NewsletterMessage, error)
+	FollowNewsletter(data *GetNewsletterStruct, instance *instance_model.Instance) error
+	UnfollowNewsletter(data *GetNewsletterStruct, instance *instance_model.Instance) error
+	MuteNewsletter(data *NewsletterMuteStruct, instance *instance_model.Instance) error
+	MarkNewsletterViewed(data *NewsletterMarkViewedStruct, instance *instance_model.Instance) error
+	ReactNewsletter(data *NewsletterReactStruct, instance *instance_model.Instance) error
 }
 
 type newsletterService struct {

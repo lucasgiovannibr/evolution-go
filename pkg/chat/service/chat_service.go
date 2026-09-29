@@ -23,6 +23,8 @@ type ChatService interface {
 	ChatMute(data *BodyStruct, instance *instance_model.Instance) (string, error)
 	ChatUnmute(data *BodyStruct, instance *instance_model.Instance) (string, error)
 	HistorySyncRequest(ctx context.Context, data *HistorySyncRequestStruct, instance *instance_model.Instance) (*whatsmeow.SendResponse, error)
+	SetDisappearing(data *DisappearingStruct, instance *instance_model.Instance) error
+	SetDefaultDisappearing(data *DefaultDisappearingStruct, instance *instance_model.Instance) error
 }
 
 type chatService struct {
