@@ -40,9 +40,9 @@ Vários pedidos esbarram na lib, não no projeto. Convém não prometê-los.
 
 | Categoria | Métodos | Utilidade / o que se pode fazer |
 |---|---|---|
-| **Mensagens temporárias** | `SetDisappearingTimer`, `SetDefaultDisappearingTimer` | Expor `POST /chat/disappearing` e `POST /user/defaultDisappearing`. Base para resolver o #79 (junto do aprendizado do timer por chat, §2) |
-| **Newsletters** | `FollowNewsletter`, `UnfollowNewsletter`, `NewsletterMarkViewed`, `NewsletterSendReaction`, `NewsletterToggleMute`, `GetNewsletterMessageUpdates` | Hoje só cria/lista/lê; faltam seguir, deixar de seguir, marcar como visto, reagir e silenciar |
-| **Grupos** | `GetGroupInfoFromInvite`, `GetGroupInfoFromLink`, `JoinGroupWithInvite`, `GetSubGroups`, `GetLinkedGroupsParticipants` | Ver o grupo **antes** de entrar pelo link/convite; comunidades (sub-grupos) |
+| **Mensagens temporárias** | `SetDisappearingTimer`, `SetDefaultDisappearingTimer` | **Feito**: `POST /chat/disappearing`, `POST /user/defaultDisappearing` e aprendizado do timer por chat (#79) |
+| **Newsletters** | `FollowNewsletter`, `UnfollowNewsletter`, `NewsletterMarkViewed`, `NewsletterSendReaction`, `NewsletterToggleMute`, `GetNewsletterMessageUpdates` | **Feito**: seguir, deixar de seguir, marcar como visto, reagir e silenciar (sem teste ao vivo). Falta `GetNewsletterMessageUpdates` |
+| **Grupos** | `GetGroupInfoFromInvite`, `GetGroupInfoFromLink`, `JoinGroupWithInvite`, `GetSubGroups`, `GetLinkedGroupsParticipants` | **Feito** para link e convite (`/group/inviteinfo`, `/group/joininvite`); falta comunidades (sub-grupos) |
 | **Contatos / negócios** | `GetContactQRLink`, `ResolveContactQRLink`, `GetBusinessProfile`, `ResolveBusinessMessageLink`, `GetOrderDetails`, `GetStatusPrivacy`, `GetUserDevices` | Perfil comercial, link/QR de contato, pedidos, privacidade do status, lista de dispositivos de um usuário |
 | **Bots / IA** | `GetBotListV2`, `GetBotProfiles` | Listar bots do WhatsApp; nicho |
 | **Mensagens (baixo nível)** | `BuildReaction`, `EncryptReaction`, `DecryptReaction`, `EncryptComment`, `DecryptComment`, `EncryptPollVote`, `RevokeMessage`, `BuildMessageKey`, `BuildUnavailableMessageRequest`, `ParseWebMessage` | Reação e revogação são montadas à mão / com `BuildRevoke`. `BuildUnavailableMessageRequest` (pedir ao celular reenvio de mensagem indisponível) é relevante para "não chegou / não descriptografou". Reação e comentário em **comunidade** exigem `Decrypt*` |
@@ -76,10 +76,10 @@ Todos chegam ao handler e caem no ramo de "evento não tratado" (só log). Os qu
 
 **Feito em 29/09/2026** (item 1): `NotifyAccountReachoutTimelock`, `StreamError` e `ClientOutdated` agora são publicados como eventos de conexão, aparecem no diagnóstico do runtime e têm efeito prático: o erro 463 do envio passa a explicar a restrição (e até quando), e o 405 descarta o cache da versão para a próxima reconexão buscar a atual. Detalhes em `docs/wiki/guias-api/api-fork-additions.md`.
 
-Em ordem de custo-benefício, o que resta:
+**Feito depois disso**: eventos de pareamento (`PairError`...) e de estado de chat (`Mute`, `Pin`, `Star`...); mensagens temporárias (`POST /chat/disappearing`, `POST /user/defaultDisappearing`, timer aprendido e aplicado no envio, resolve o #79); grupo por convite (`/group/inviteinfo`, `/group/joininvite`); canais (seguir, deixar de seguir, silenciar, marcar como visto, reagir). Detalhes em `docs/wiki/guias-api/api-fork-additions.md`.
 
-1. **`PairError` e companhia**: dar retorno ao usuário quando o pareamento falha.
-2. **Eventos de estado de chat** (`Mute`, `Pin`, `Star`, `DeleteChat`...): publicar sob a assinatura `CHAT_PRESENCE` ou uma nova; útil para CRMs.
-3. **Mensagens temporárias**: expor `SetDisappearingTimer` e aprender o timer por chat a partir de `ContextInfo.Expiration`, para resolver o #79.
-4. **Newsletters** (seguir/silenciar/reagir) e **informações de grupo por convite**: completam APIs que hoje são parciais.
-5. Não prometer: remoção de contato, atender/discar chamadas e encaminhar por ID sem persistência (§2).
+O que resta:
+
+1. **`BuildUnavailableMessageRequest`**: pedir ao celular o reenvio de uma mensagem que não chegou.
+2. Os demais eventos não tratados de §5, só quando houver quem precise (canais ao vivo, bots, comunidades).
+3. Não prometer: remoção de contato, atender/discar chamadas e encaminhar por ID sem persistência (§2).

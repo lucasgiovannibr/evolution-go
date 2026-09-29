@@ -16,6 +16,8 @@ type ChatHandler interface {
 	ChatMute(ctx *gin.Context)
 	ChatUnmute(ctx *gin.Context)
 	HistorySyncRequest(ctx *gin.Context)
+	SetDisappearing(ctx *gin.Context)
+	SetDefaultDisappearing(ctx *gin.Context)
 }
 
 type chatHandler struct {

@@ -2763,6 +2763,14 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 
 	recipient.User = strings.ReplaceAll(recipient.User, "+", "")
 
+	// Chat with disappearing messages: the message has to carry the timer, or the
+	// recipient is told it "will not disappear" (issue #79).
+	if autoDisappearingEnabled() && disappearingApplies(recipient) {
+		if seconds, known := s.whatsmeowService.ChatDisappearingSeconds(instance.Id, recipient); known && applyDisappearingExpiration(msg, seconds) {
+			s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Chat %s has disappearing messages (%ds): timer applied", instance.Id, recipient.String(), seconds)
+		}
+	}
+
 	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Sending message to %s with ID %s", instance.Id, recipient.String(), message)
 
 	// Preparar extra parameters para o envio

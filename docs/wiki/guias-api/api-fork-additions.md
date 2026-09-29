@@ -194,3 +194,85 @@ O estado fica em memória: depois de reiniciar o processo ele só volta quando o
 ```
 
 O WhatsApp recusou a versão do cliente. O projeto **descarta o cache da versão** (que valia 1 hora e faria todas as novas tentativas repetirem a versão recusada) para a próxima reconexão buscar a atual. Se `versionPinned` for `true`, as variáveis `WHATSAPP_VERSION_*` fixam a versão e precisam ser atualizadas ou removidas. O diagnóstico traz `runtime.clientOutdatedAt` e, por 30 minutos, o aviso `client_outdated`.
+
+## Eventos de pareamento e de estado de chat
+
+Eventos que o whatsmeow emitia e o projeto ignorava. Todos usam o mesmo envelope dos demais (`event`, `data`, `instanceId`, `instanceName`, `instanceToken`).
+
+### Falhas de pareamento (assinatura `QRCODE`)
+
+| Evento | Quando | `data` |
+|---|---|---|
+| `PairError` | O servidor confirmou o pareamento, mas concluí-lo localmente falhou | `id`, `lid`, `businessName`, `platform`, `error` |
+| `QRScannedWithoutMultidevice` | O QR foi lido por um celular **sem multi-dispositivo**; o mesmo QR continua válido depois de ativá-lo | `message` |
+
+Antes o usuário ficava sem nenhum retorno quando o pareamento não completava. `CATRefreshError` (`data.error`) segue a assinatura `CONNECTION`. `ManualLoginReconnect` só existe com `DisableLoginAutoReconnect`, que o projeto nunca liga, e por isso não é tratado.
+
+### Mudanças de estado de chat feitas em outro aparelho (assinatura `CHAT_PRESENCE`)
+
+Onde o `Archive` já era publicado. Uma integração (CRM, caixa de entrada) passa a saber que um chat foi fixado, silenciado, marcado como lido, limpo ou apagado.
+
+| Evento | `data` |
+|---|---|
+| `Mute` | `jid`, `timestamp`, `muted`, `muteEndTimestamp` |
+| `Pin` | `jid`, `timestamp`, `pinned` |
+| `Star` | `chatJid`, `senderJid`, `isFromMe`, `messageId`, `timestamp`, `starred` |
+| `MarkChatAsRead` | `jid`, `timestamp`, `read` |
+| `ClearChat` / `DeleteChat` | `jid`, `timestamp`, `deleteMedia` |
+| `DeleteForMe` | `chatJid`, `senderJid`, `isFromMe`, `messageId`, `timestamp`, `deleteMedia` |
+| `UnarchiveChatsSetting` | `timestamp`, `unarchiveChats` |
+| `UserStatusMute` | `jid`, `timestamp`, `muted` |
+
+**Eventos de full sync não são publicados.** Logo depois de um pareamento o celular reenvia todo o seu estado (cada chat fixado, silenciado ou com estrela). Publicar isso inundaria o assinante com milhares de "mudanças" que não são mudanças; por isso só o que acontece depois vai para os webhooks.
+
+## Mensagens temporárias (issue #79)
+
+Quando um chat tem mensagens temporárias, toda mensagem enviada a ele precisa levar o timer (`ContextInfo.Expiration`); sem isso o destinatário vê "esta mensagem não vai desaparecer". A lib não faz isso no envio e **não permite ler** o timer de um chat, então o projeto o **aprende**:
+
+- de `ContextInfo.Expiration` das mensagens recebidas (ou enviadas de outro aparelho);
+- da mensagem de protocolo `EPHEMERAL_SETTING`, quando o timer muda (a única fonte para "desligado");
+- de `GroupInfo`/`JoinedGroup` (`Ephemeral`);
+- do próprio endpoint abaixo;
+- **grupos**: se o timer é desconhecido (por exemplo, depois de reiniciar), o envio pergunta uma vez ao WhatsApp e guarda a resposta.
+
+O que é aprendido fica em memória, por instância, e expira em 7 dias sem ser renovado (um timer desligado sem o projeto perceber deixa de ser aplicado). Num chat **individual** o timer só é conhecido depois de chegar uma mensagem dele ou de ser definido por aqui; até lá as mensagens saem sem timer, como antes. Um `Expiration` que o chamador já tenha colocado na mensagem prevalece. Para desligar a aplicação automática: `DISAPPEARING_AUTO_APPLY=false`.
+
+### `POST /chat/disappearing`
+
+```json
+{ "chat": "5531999999999", "timer": "24h" }
+```
+
+`chat` é um contato ou um grupo (`...@g.us`). `timer`: `off`, `24h`, `7d` ou `90d` (o WhatsApp não aceita outros; valor inválido devolve 400). Resposta `{"message":"success"}`. Em grupo o servidor devolve o evento `GroupInfo`.
+
+### `POST /user/defaultDisappearing`
+
+```json
+{ "timer": "off" }
+```
+
+Timer com o qual novos chats individuais começam.
+
+## Grupo por convite
+
+| Rota | Corpo | Uso |
+|---|---|---|
+| `POST /group/inviteinfo` | `{"code": "https://chat.whatsapp.com/XXXX"}` (aceita o código ou o link, com ou sem esquema/query) | Consulta o grupo **sem entrar**. Devolve a mesma estrutura de `/group/info` |
+| `POST /group/inviteinfo` | `{"code","groupJid","inviter","expiration"}` | Mesmo, para o **cartão de convite** recebido num chat (`GroupInviteMessage`) |
+| `POST /group/joininvite` | `{"code","groupJid","inviter","expiration"}` | Entra a partir do cartão de convite. Para link use `/group/join` |
+
+O convite por cartão exige `groupJid` e `inviter`; sem `groupJid`, `/group/joininvite` responde 400 em vez de tentar entrar.
+
+## Canais (newsletters)
+
+Todas recebem `jid` do canal (`...@newsletter`); outro tipo de JID devolve 400.
+
+| Rota | Corpo |
+|---|---|
+| `POST /newsletter/follow` | `{"jid"}` |
+| `POST /newsletter/unfollow` | `{"jid"}` |
+| `POST /newsletter/mute` | `{"jid","mute":true}` |
+| `POST /newsletter/markviewed` | `{"jid","serverIds":[12,13]}` — conta uma visualização por mensagem; não marca o canal como lido nos outros aparelhos |
+| `POST /newsletter/react` | `{"jid","serverId":12,"reaction":"👍"}` — `reaction` vazio remove a reação; `messageId` é opcional |
+
+As chamadas têm um limite de 20 s (a lib espera a resposta do `markviewed` sem prazo).

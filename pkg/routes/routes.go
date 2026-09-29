@@ -157,6 +157,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/profileName", r.userHandler.SetProfileName)
 			routes.POST("/profileStatus", r.userHandler.SetProfileStatus)
 			routes.POST("/lid", r.jidValidationMiddleware.ValidateJIDFields("lid", "groupJid"), r.userHandler.ResolveLid)
+			routes.POST("/defaultDisappearing", r.chatHandler.SetDefaultDisappearing)
 		}
 	}
 	routes = eng.Group("/message")
@@ -185,6 +186,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/mute", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatMute)           // TODO: not working
 			routes.POST("/unmute", r.jidValidationMiddleware.ValidateNumberField(), r.chatHandler.ChatUnmute)       // TODO: not working
 			routes.POST("/history-sync", r.chatHandler.HistorySyncRequest)
+			routes.POST("/disappearing", r.chatHandler.SetDisappearing)
 		}
 	}
 	routes = eng.Group("/group")
@@ -201,6 +203,8 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/participant", r.jidValidationMiddleware.ValidateMultipleNumbers("participants"), r.groupHandler.UpdateParticipant)
 			routes.GET("/myall", r.groupHandler.GetMyGroups) // TODO: not working
 			routes.POST("/join", r.groupHandler.JoinGroupLink)
+			routes.POST("/inviteinfo", r.groupHandler.GetInviteInfo)
+			routes.POST("/joininvite", r.groupHandler.JoinGroupInvite)
 			routes.POST("/leave", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.LeaveGroup)
 			routes.POST("/settings", r.jidValidationMiddleware.ValidateNumberField(), r.groupHandler.UpdateGroupSettings)
 			routes.POST("/requests", r.groupHandler.GetGroupRequests)
@@ -251,6 +255,11 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/link", r.jidValidationMiddleware.ValidateJIDFields("newsletterId"), r.newsletterHandler.GetNewsletterInvite)
 			routes.POST("/subscribe", r.jidValidationMiddleware.ValidateJIDFields("newsletterId"), r.newsletterHandler.SubscribeNewsletter)
 			routes.POST("/messages", r.jidValidationMiddleware.ValidateJIDFields("newsletterId"), r.newsletterHandler.GetNewsletterMessages)
+			routes.POST("/follow", r.newsletterHandler.FollowNewsletter)
+			routes.POST("/unfollow", r.newsletterHandler.UnfollowNewsletter)
+			routes.POST("/mute", r.newsletterHandler.MuteNewsletter)
+			routes.POST("/markviewed", r.newsletterHandler.MarkNewsletterViewed)
+			routes.POST("/react", r.newsletterHandler.ReactNewsletter)
 		}
 	}
 

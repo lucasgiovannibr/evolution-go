@@ -28,6 +28,10 @@ Documentação dos endpoints: [`docs/wiki/guias-api/api-fork-additions.md`](docs
 | `ENABLE_PPROF` (`/debug/pprof`, chave global, desligado por padrão) | Necessidade do diagnóstico | Permite ver as pilhas; foi ele que mostrou o vazamento do logger | ✅ |
 | Liberar o logger de instância apagada | Achado com o pprof | 1 arquivo aberto por instância criada nunca era fechado. Limite: a goroutine do `lumberjack` não pode ser parada (1 por instância já criada) | ✅ descritores estáveis em 6 ciclos |
 | **Eventos `ReachoutTimelock`, `StreamError` e `ClientOutdated`** | Levantamento do whatsmeow, sugestões 30 e 31 (issues #50, #124, #115, #185, 405) | Publicados sob `CONNECTION`, no diagnóstico do runtime; o erro 463 do envio agora explica a restrição e até quando; o 405 descarta o cache da versão | ✅ testes de ponta a ponta (evento → estado → webhook → assinante); ❌ os eventos reais não puderam ser provocados (dependem de o WhatsApp restringir a conta ou recusar a versão) |
+| **Eventos de pareamento** (`PairError`, `QRScannedWithoutMultidevice`, `CATRefreshError`) e **de estado de chat** (`Mute`, `Pin`, `Star`, `MarkChatAsRead`, `ClearChat`, `DeleteChat`, `DeleteForMe`, `UnarchiveChatsSetting`, `UserStatusMute`) | Levantamento do whatsmeow, sugestões 32 e 33 | Publicados sob `QRCODE`, `CONNECTION` e `CHAT_PRESENCE`; o full sync que segue um pareamento **não** é publicado | ✅ testes de ponta a ponta; 🟡 eventos reais de fixar/silenciar/estrela dependem de ação no celular (não observados) |
+| **Timer de mensagens temporárias** (`POST /chat/disappearing`, `POST /user/defaultDisappearing`, aplicação automática no envio) | Issue #79, sugestão 34 | O timer é aprendido (mensagens, `EPHEMERAL_SETTING`, grupos, endpoint) e aplicado em `ContextInfo.Expiration`; grupos o releem após reiniciar; `DISAPPEARING_AUTO_APPLY=false` desliga | ✅ grupo (24h aplicado, "off" não aplica, relido após reiniciar), chat individual e padrão |
+| **Grupo por convite** (`POST /group/inviteinfo`, `POST /group/joininvite`) | Sugestão 35 | Consulta por link/código ou por cartão de convite, sem entrar; entrar pelo cartão | ✅ `inviteinfo` por link do grupo de teste; `joininvite` só com testes unitários (exige um cartão real) |
+| **Canais**: seguir, deixar de seguir, silenciar, marcar como visto, reagir (`/newsletter/follow` ... `/react`) | Sugestão 35 | Validação de JID (400), prazo de 20 s | 🟡 validações ao vivo; as ações em si **não** testadas (não há canal de teste) |
 
 ## 2. Propostas ainda em aberto
 
@@ -35,7 +39,6 @@ Documentação dos endpoints: [`docs/wiki/guias-api/api-fork-additions.md`](docs
 
 | # | Proposta | Origem | Esforço | Comentário | Recomendação |
 |---|---|---|---|---|---|
-| 10 | **Timer de mensagens temporárias** herdado do chat nas mensagens enviadas (o destinatário vê "esta mensagem não vai desaparecer") | Issue [#79](https://github.com/evolution-foundation/evolution-go/issues/79) | M | Precisa do timer sincronizado por chat (app-state) ou de um campo `expiration` opcional. Cosmético, mas visível ao usuário final | ◐ |
 | 11 | **Thumbnail HQ em `/send/link`** (card grande de preview) | PR [#207](https://github.com/evolution-foundation/evolution-go/pull/207) (572 linhas), issue [#103](https://github.com/evolution-foundation/evolution-go/issues/103) | M | Envolve upload de mídia de link (`MediaLinkThumbnail`); precisa de teste em aparelho | ◐ |
 | 15 | **Histórico profundo no pareamento** (`HistorySyncConfig`: 10 anos / 2 GB) | parte do PR [#133](https://github.com/evolution-foundation/evolution-go/pull/133) | P | Aumenta banda/armazenamento e tempo de sync; deveria ser configurável por env, não constante | ◐ |
 | 16 | **Backoff do loop de reconexão** (até 30 min de espera) | PR [#197](https://github.com/evolution-foundation/evolution-go/pull/197) | M | Evita martelar o servidor com instância deslogada, mas atrasa recuperação legítima; janela e degraus deveriam ser configuráveis | ◐ |
@@ -62,10 +65,6 @@ As sugestões 23 e 24 (diagnóstico do runtime e health check) e as 30 e 31 (eve
 | 27 | **Reativar o agendador de presença quando `alwaysOnline` é ligado em tempo de execução** | Hoje ele só nasce no evento `Connected`; ligar depois não tem efeito até reconectar | P | ◐ |
 | 28 | **Remover contato via API** | Impossível hoje: o encoder de app state do whatsmeow só gera `SET` (conferido no código). Detalhes e outros limites duros em `docs/WHATSMEOW-CAPABILITIES.md` §2 | — | ✖ (depende da lib) |
 | 29 | **Regenerar o swagger sem regressão** (o `swag init` reescreve ~1.000 linhas e remove as rotas de licença) | Documentação da API desatualizada (`/group/description`, `/group/settings`, novos endpoints) | M | ◐ |
-| 32 | **Retorno de falha de pareamento** (`PairError`, `QRScannedWithoutMultidevice`, `ManualLoginReconnect`) | Hoje o usuário fica sem retorno quando o pareamento falha | P | ◐ |
-| 33 | **Publicar mudanças de estado de chat feitas em outro aparelho** (`Mute`, `Pin`, `Star`, `MarkChatAsRead`, `DeleteChat`, `ClearChat`, `DeleteForMe`) | Só `Archive` é publicado; CRMs perdem essas mudanças | M | ◐ |
-| 34 | **Timer de mensagens temporárias**: expor `SetDisappearingTimer`/`SetDefaultDisappearingTimer` e aprender o timer por chat (`ContextInfo.Expiration`, `GroupInfo.Ephemeral`) | Resolve o #79; a lib não permite *ler* o timer, só aprendê-lo | M | ◐ |
-| 35 | **Newsletters completas** (`FollowNewsletter`, `UnfollowNewsletter`, `NewsletterToggleMute`, `NewsletterMarkViewed`, `NewsletterSendReaction`) e **grupo por convite** (`GetGroupInfoFromInvite/Link`, `JoinGroupWithInvite`) | APIs hoje parciais | M | ◐ |
 | 36 | **`BuildUnavailableMessageRequest`**: pedir ao celular o reenvio de mensagem indisponível | Complementa `REREQUEST_FROM_PHONE` em "não chegou" | M | ◐ |
 
 ## 4. Documentação pendente

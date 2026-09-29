@@ -436,3 +436,18 @@ To contribute to the project:
 
 *Last updated: October 2025*
 
+### Pairing and chat-state events
+- `PairError`, `QRScannedWithoutMultidevice` (under `QRCODE`) and `CATRefreshError`
+  (under `CONNECTION`) are published, so a failed pairing is no longer silent.
+- `Mute`, `Pin`, `Star`, `MarkChatAsRead`, `ClearChat`, `DeleteChat`, `DeleteForMe`,
+  `UnarchiveChatsSetting` and `UserStatusMute` (changes made on another device) are
+  published under `CHAT_PRESENCE`; the full sync after pairing is not.
+
+### Disappearing messages (#79), group invites and channels
+- Messages sent to a chat with disappearing messages now carry the chat's timer
+  (learned from received messages, the `EPHEMERAL_SETTING` protocol message and group
+  info; groups are re-read after a restart). `DISAPPEARING_AUTO_APPLY=false` turns it
+  off. New `POST /chat/disappearing` and `POST /user/defaultDisappearing`.
+- `POST /group/inviteinfo` (by link/code or invite card, without joining) and
+  `POST /group/joininvite` (from an invite card).
+- Channels: `POST /newsletter/{follow,unfollow,mute,markviewed,react}`.
