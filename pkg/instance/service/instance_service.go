@@ -260,8 +260,6 @@ func (i instances) Connect(data *ConnectStruct, instance *instance_model.Instanc
 	if !isInstanceRunning {
 		i.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Starting new client instance", instance.Id)
 
-		i.killChannel.Set(instance.Id, make(chan bool))
-
 		clientData := &whatsmeow_service.ClientData{
 			Instance:      instance,
 			Subscriptions: subscribedEvents,
@@ -308,7 +306,10 @@ func (i instances) Disconnect(instance *instance_model.Instance) (*instance_mode
 	if client.IsConnected() {
 		if client.IsLoggedIn() {
 			i.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Disconnection successful", instance.Id)
-			i.killChannel.Get(instance.Id) <- true
+			select {
+			case i.killChannel.Get(instance.Id) <- true:
+			case <-time.After(5 * time.Second):
+			}
 
 			// Do not clear instance.Events on disconnect (PR #187). Wiping the
 			// subscriptions left the instance with an empty events string after the
@@ -772,8 +773,6 @@ func (i instances) ForceReconnect(instanceId string, number string) error {
 	}
 
 	subscribedEvents := strings.Split(instance.Events, ",")
-
-	i.killChannel.Set(instance.Id, make(chan bool))
 
 	clientData := &whatsmeow_service.ClientData{
 		Instance:      instance,

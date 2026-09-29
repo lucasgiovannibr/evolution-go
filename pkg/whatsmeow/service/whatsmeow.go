@@ -353,6 +353,12 @@ func (w whatsmeowService) ReconnectClient(instanceId string) error {
 	// Passo 4: Aguardar um pouco para garantir limpeza completa
 	time.Sleep(2 * time.Second)
 
+	// The old supervisor loop notices it was replaced within ~1s; the new run cannot
+	// start while it still owns the instance.
+	if !waitRuntimeReleased(instanceId, 10*time.Second) {
+		w.loggerWrapper.GetLogger(instanceId).LogWarn("[%s] Previous runtime still active after 10s, starting anyway", instanceId)
+	}
+
 	// Passo 5: Iniciar nova instância como se fosse a primeira vez
 	w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Starting fresh instance", instanceId)
 	return w.StartInstance(instanceId)
@@ -489,6 +495,30 @@ func (w whatsmeowService) getAuthContainer() (*sqlstore.Container, error) {
 
 func (w whatsmeowService) StartClient(cd *ClientData) {
 	defer recoverAndLog(w.loggerWrapper, cd.Instance.Id, "StartClient")
+
+	// One runtime per instance (see runtime_slot.go): a duplicate start, e.g. the
+	// GET /instance/qr that follows POST /instance/connect, must not create a second
+	// client for the same instance.
+	if !acquireRuntime(cd.Instance.Id) {
+		w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] A runtime is already starting or running for this instance, ignoring duplicate start", cd.Instance.Id)
+		return
+	}
+
+	// The kill channel belongs to this run: created here (it used to be replaced
+	// by every caller, orphaning the loop that was listening on the old one).
+	kill := make(chan bool)
+	w.killChannel.Set(cd.Instance.Id, kill)
+
+	var releaseOnce sync.Once
+	release := func() {
+		releaseOnce.Do(func() {
+			if w.killChannel.Get(cd.Instance.Id) == kill {
+				w.killChannel.Delete(cd.Instance.Id)
+			}
+			releaseRuntime(cd.Instance.Id)
+		})
+	}
+	defer release()
 
 	w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("Starting websocket connection to Whatsapp for user '%s'", cd.Instance.Id)
 
@@ -763,13 +793,6 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 
 	// Removed auto-reconnect logic to prevent infinite loops
 
-	// Bind this loop to the channel that existed when it started. It used to
-	// re-read the shared map on every iteration, so after a reconnect (which puts
-	// a NEW channel in the map) every old loop kept polling the new channel: they
-	// never ended (one leaked goroutine per reconnect) and a later kill could be
-	// consumed by a stale loop that then tore down the NEW client's state.
-	kill := w.killChannel.Get(cd.Instance.Id)
-
 	for {
 		select {
 		case <-kill:
@@ -827,6 +850,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 			// Not a direct (recursive) call: every restart used to stack another
 			// StartClient frame on this goroutine (visible as the repeated
 			// whatsmeow.go:629 frames in issue #203).
+			release() // free the slot so the restarted run can take it
 			go w.StartClient(cd)
 			return
 		default:
@@ -2150,7 +2174,11 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		}
 
 		// Agora mata o canal DEPOIS de enviar o evento
-		mycli.killChannel.Get(mycli.userID) <- true
+		select {
+		case mycli.killChannel.Get(mycli.userID) <- true:
+		case <-time.After(10 * time.Second):
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Kill signal after LoggedOut not received (runtime already ended?)", mycli.userID)
+		}
 	case *events.ChatPresence:
 		doWebhook = true
 		postMap["event"] = "ChatPresence"
@@ -2665,8 +2693,6 @@ func (w whatsmeowService) StartInstance(instanceId string) error {
 
 		}
 	}
-
-	w.killChannel.Set(instance.Id, make(chan bool))
 
 	clientData := &ClientData{
 		Instance:      instance,
