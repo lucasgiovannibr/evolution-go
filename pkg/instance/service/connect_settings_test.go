@@ -75,19 +75,6 @@ func TestApplyConnectSettings(t *testing.T) {
 			wantRabbitmq:    "disabled",
 			wantUpdatesKeys: []string{"rabbitmq_enable"},
 		},
-		{
-			name: "webhook disabled is written",
-			instance: instance_model.Instance{
-				Events:  "MESSAGE",
-				Webhook: "https://example.com/hook",
-			},
-			data: ConnectStruct{
-				WebhookUrl: "disabled",
-			},
-			wantEvents:      "MESSAGE",
-			wantWebhook:     "disabled",
-			wantUpdatesKeys: []string{"webhook"},
-		},
 	}
 
 	for _, tt := range tests {
@@ -115,5 +102,43 @@ func TestApplyConnectSettings(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// The bundled manager sends webhookUrl:"" whenever its field is blank (also when it just
+// reconnects), so an empty value must leave the webhook alone.
+func TestConnectWithEmptyWebhookKeepsIt(t *testing.T) {
+	inst := instance_model.Instance{Events: "MESSAGE", Webhook: "https://example.com/hook"}
+	updates := applyConnectSettings(&inst, &ConnectStruct{WebhookUrl: "", Subscribe: []string{"MESSAGE"}})
+
+	if inst.Webhook != "https://example.com/hook" {
+		t.Fatalf("Webhook = %q, must be kept", inst.Webhook)
+	}
+	if _, ok := updates["webhook"]; ok {
+		t.Fatalf("an empty webhookUrl must not be written: %#v", updates)
+	}
+}
+
+// "disabled" / "false" is the explicit way to clear the webhook; it is stored empty
+// (the manager validates the field as a URL, so a literal "disabled" made it complain).
+func TestConnectClearsTheWebhookExplicitly(t *testing.T) {
+	for _, v := range []string{"disabled", "false", "FALSE", " Disabled "} {
+		inst := instance_model.Instance{Events: "MESSAGE", Webhook: "https://example.com/hook"}
+		updates := applyConnectSettings(&inst, &ConnectStruct{WebhookUrl: v})
+
+		if inst.Webhook != "" {
+			t.Fatalf("%q: Webhook = %q, want it cleared", v, inst.Webhook)
+		}
+		if got, ok := updates["webhook"]; !ok || got != "" {
+			t.Fatalf("%q: updates = %#v, want webhook written as empty", v, updates)
+		}
+	}
+}
+
+func TestConnectSetsANewWebhook(t *testing.T) {
+	inst := instance_model.Instance{Events: "MESSAGE", Webhook: "https://old.example/hook"}
+	applyConnectSettings(&inst, &ConnectStruct{WebhookUrl: "https://new.example/hook"})
+	if inst.Webhook != "https://new.example/hook" {
+		t.Fatalf("Webhook = %q", inst.Webhook)
 	}
 }
