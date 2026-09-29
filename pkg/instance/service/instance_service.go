@@ -620,6 +620,9 @@ func (i instances) Delete(id string) error {
 		return err
 	}
 
+	// The instance is gone: free its log file descriptor and logger.
+	i.loggerWrapper.Release(id)
+
 	return nil
 }
 
