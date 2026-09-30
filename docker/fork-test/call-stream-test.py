@@ -30,10 +30,13 @@ automatically; a peer that simply turns its camera on needs nothing.
     python call-stream-test.py --apikey TOKEN --dial 5511999990000 --video --video-in test.h264
 
 A test file (constrained baseline, one slice per picture, headers repeated on every
-keyframe, which is what the stream expects):
+keyframe, which is what the stream expects). Phones show a call in portrait, so send
+portrait pictures (360x640) to fill the screen; a landscape one (640x360) is letterboxed.
+-pix_fmt yuv420p is needed: the baseline profile refuses the test source's 4:4:4.
 
-    ffmpeg -f lavfi -i testsrc=size=640x360:rate=15 -t 10 -c:v libx264 -profile:v baseline \\
-      -x264-params keyint=30:repeat-headers=1:slices=1:bframes=0 -f h264 test.h264
+    ffmpeg -f lavfi -i testsrc=size=360x640:rate=15 -t 60 -pix_fmt yuv420p -c:v libx264 \\
+      -profile:v baseline -x264-params keyint=30:repeat-headers=1:slices=1:bframes=0 \\
+      -f h264 test.h264
 """
 import argparse
 import asyncio
