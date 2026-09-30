@@ -228,7 +228,7 @@ async def main(args):
                     orient_file.write(f"{video_units} {time.time()-t0:.2f} {int(bool(msg.get('keyframe')))} {msg.get('orientation')}" + chr(10))
                     if msg.get("orientation") != last_frame_orient:
                         last_frame_orient = msg.get("orientation")
-                        print(f"[{time.time()-t0:6.1f}s] frame #{video_units} orientation (RTP) -> {last_frame_orient}")
+                        print(f"[{time.time()-t0:6.1f}s] frame #{video_units} rotation to show upright (clockwise turns) -> {last_frame_orient}")
                     video_units += 1
                     if msg.get("keyframe"):
                         keyframes += 1
