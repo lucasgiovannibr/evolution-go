@@ -2,15 +2,21 @@
 """Live test of the call audio stream (GET /call/stream/{callId}).
 
 Needs `pip install websockets`. The instance must have callsEnabled turned on and
-must have been (re)connected after that. Call the instance's number from another
-phone: the script waits for the ringing call, opens the audio stream, answers, and
+must have been (re)connected after that.
+
+Incoming (default): call the instance's number from another phone. The script waits
+for the ringing call, opens the audio stream, answers, and
 
   * records what the caller says into a WAV file (16 kHz mono), and
   * echoes it back (--echo) and/or plays a 440 Hz tone (--tone SECONDS),
 
 so you can hear both directions work. Ctrl+C hangs the call up.
 
+Outgoing: --dial NUMBER places the call, connects the stream before the other phone
+rings, and does the same once it is picked up.
+
     python call-stream-test.py --base http://localhost:4000 --apikey INSTANCE_TOKEN --echo
+    python call-stream-test.py --apikey INSTANCE_TOKEN --dial 5511999990000 --tone 3
 """
 import argparse
 import asyncio
@@ -79,13 +85,20 @@ def tone_frames(seconds):
 
 
 async def main(args):
-    call = {"callId": args.call_id} if args.call_id else wait_for_ringing_call(args.base, args.apikey)
+    outgoing = bool(args.dial)
+    if outgoing:
+        status, call = api(args.base, args.apikey, "POST", "/call/dial", {"number": args.dial, "stream": True})
+        if status != 200:
+            sys.exit(f"dial failed: {status} {call}")
+        ticket = call["streamTicket"]
+        print(f"Calling {args.dial}... (call {call['callId']}, phase {call['phase']})")
+    else:
+        call = {"callId": args.call_id} if args.call_id else wait_for_ringing_call(args.base, args.apikey)
+        print(f"Call {call['callId']} from {call.get('peer')} (video={call.get('video')})")
+        status, ticket = api(args.base, args.apikey, "POST", "/call/stream-ticket", {"callId": call["callId"]})
+        if status != 200:
+            sys.exit(f"stream-ticket failed: {status} {ticket}")
     call_id = call["callId"]
-    print(f"Call {call_id} from {call.get('peer')} (video={call.get('video')})")
-
-    status, ticket = api(args.base, args.apikey, "POST", "/call/stream-ticket", {"callId": call_id})
-    if status != 200:
-        sys.exit(f"stream-ticket failed: {status} {ticket}")
     ws_url = "ws" + args.base[4:] + ticket["path"]
 
     wav_path = args.record or f"call-{call_id}.wav"
@@ -95,10 +108,13 @@ async def main(args):
         print("start:", {k: v for k, v in start.items() if k != "event"})
 
         # The stream is attached while the call still rings, so no audio is lost.
-        status, body = api(args.base, args.apikey, "POST", "/call/answer", {"callId": call_id})
-        if status != 200:
-            sys.exit(f"answer failed: {status} {body}")
-        print("answered; phase:", body.get("phase"))
+        if not outgoing:
+            status, body = api(args.base, args.apikey, "POST", "/call/answer", {"callId": call_id})
+            if status != 200:
+                sys.exit(f"answer failed: {status} {body}")
+            print("answered; phase:", body.get("phase"))
+        else:
+            print("stream open; waiting for the other side to pick up (Ctrl+C hangs up)")
 
         async def send_tone():
             for frame in tone_frames(args.tone):
@@ -150,6 +166,7 @@ if __name__ == "__main__":
     p.add_argument("--base", default="http://localhost:4000", help="server address")
     p.add_argument("--apikey", required=True, help="the instance token")
     p.add_argument("--call-id", help="use this call instead of waiting for a ringing one")
+    p.add_argument("--dial", metavar="NUMBER", help="place a call to NUMBER instead of waiting for one")
     p.add_argument("--record", help="WAV file for the caller's audio (default call-<id>.wav)")
     p.add_argument("--echo", action="store_true", help="send the caller's audio back")
     p.add_argument("--tone", type=float, default=0, metavar="SECONDS", help="play a 440 Hz tone")

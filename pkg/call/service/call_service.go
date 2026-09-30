@@ -7,6 +7,7 @@ import (
 	call_stream "github.com/evolution-foundation/evolution-go/pkg/call/stream"
 	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
+	"strings"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
@@ -26,6 +27,28 @@ type CallService interface {
 	HangupCall(data *HangupCallStruct, instance *instance_model.Instance) error
 	// IssueStreamTicket creates the one-time ticket that opens the audio stream of a call.
 	IssueStreamTicket(instance *instance_model.Instance, callID string) (StreamTicket, error)
+	// DialCall places an outgoing audio call.
+	DialCall(ctx context.Context, data *DialCallStruct, instance *instance_model.Instance) (DialResult, error)
+}
+
+// ErrInvalidNumber: the number is not one a call can be placed to (a group, a
+// broadcast list, something that is not a number).
+var ErrInvalidNumber = errors.New("number must be a WhatsApp user (a phone number or a @lid), not a group or list")
+
+type DialCallStruct struct {
+	// Number is a phone number or a user JID. The number-validation middleware turns a
+	// phone number into a JID before this is read.
+	Number string `json:"number"`
+	// Stream also returns the ticket that opens the audio stream, so it can be
+	// connected before the callee picks up and says hello.
+	Stream bool `json:"stream"`
+}
+
+// DialResult is the answer of POST /call/dial: the call, and its stream ticket when one
+// was asked for.
+type DialResult struct {
+	call_engine.Info
+	StreamTicket *StreamTicket `json:"streamTicket,omitempty"`
 }
 
 // ErrCallsUnavailable: the running client of the instance has no working call engine.
@@ -156,6 +179,57 @@ func (c *callService) HangupCall(data *HangupCallStruct, instance *instance_mode
 		logger.LogError("[%s] error hanging up call %s: %v", instance.Id, data.CallID, err)
 	}
 	return err
+}
+
+// dialTarget checks that number is a user a call can go to and returns it as the
+// library wants it. The call goes out in a raw node, which the server silently drops
+// when the JID has the "+" that CreateJID puts on phone numbers, hence CanonicalJID.
+func dialTarget(number string) (string, error) {
+	number = strings.TrimSpace(number)
+	if number == "" {
+		return "", ErrInvalidNumber
+	}
+	if !strings.Contains(number, "@") {
+		jid, err := utils.CreateJID(number)
+		if err != nil {
+			return "", ErrInvalidNumber
+		}
+		number = jid
+	}
+	jid, err := types.ParseJID(number)
+	if err != nil || jid.User == "" || (jid.Server != types.DefaultUserServer && jid.Server != types.HiddenUserServer) {
+		return "", ErrInvalidNumber
+	}
+	return utils.CanonicalJID(jid.ToNonAD()).String(), nil
+}
+
+func (c *callService) DialCall(ctx context.Context, data *DialCallStruct, instance *instance_model.Instance) (DialResult, error) {
+	engine, err := c.engine(instance)
+	if err != nil {
+		return DialResult{}, err
+	}
+	target, err := dialTarget(data.Number)
+	if err != nil {
+		return DialResult{}, err
+	}
+
+	t, err := engine.Dial(ctx, instance.Id, target)
+	if err != nil {
+		logger.LogError("[%s] error dialing call: %v", instance.Id, err)
+		return DialResult{}, err
+	}
+	result := DialResult{Info: t.Info()}
+
+	if data.Stream {
+		ticket, err := c.IssueStreamTicket(instance, result.CallID)
+		if err != nil {
+			// The caller asked for a stream it cannot have: do not leave the call ringing.
+			_, _ = engine.Hangup(instance.Id, result.CallID)
+			return DialResult{}, err
+		}
+		result.StreamTicket = &ticket
+	}
+	return result, nil
 }
 
 func (c *callService) IssueStreamTicket(instance *instance_model.Instance, callID string) (StreamTicket, error) {

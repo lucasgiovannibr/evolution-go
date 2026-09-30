@@ -1,8 +1,10 @@
 package call_handler
 
 import (
+	"context"
 	"errors"
 	"net/http"
+	"time"
 
 	call_engine "github.com/evolution-foundation/evolution-go/pkg/call/engine"
 	call_service "github.com/evolution-foundation/evolution-go/pkg/call/service"
@@ -18,6 +20,7 @@ type CallHandler interface {
 	AnswerCall(ctx *gin.Context)
 	HangupCall(ctx *gin.Context)
 	StreamTicket(ctx *gin.Context)
+	DialCall(ctx *gin.Context)
 }
 
 type callHandler struct {
@@ -85,8 +88,12 @@ func callFailure(ctx *gin.Context, err error) {
 		status = http.StatusNotFound
 	case errors.Is(err, call_engine.ErrWrongState), errors.Is(err, call_service.ErrCallsUnavailable):
 		status = http.StatusConflict
-	case errors.Is(err, call_stream.ErrTooManyTickets):
+	case errors.Is(err, call_stream.ErrTooManyTickets), errors.Is(err, call_engine.ErrTooManyCalls), errors.Is(err, call_engine.ErrDialRateLimited):
 		status = http.StatusTooManyRequests
+	case errors.Is(err, call_service.ErrInvalidNumber):
+		status = http.StatusBadRequest
+	case errors.Is(err, call_engine.ErrDialFailed):
+		status = http.StatusBadGateway
 	}
 	ctx.JSON(status, gin.H{"error": err.Error()})
 }
@@ -207,6 +214,44 @@ func (g *callHandler) StreamTicket(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, ticket)
+}
+
+// dialTimeout bounds placing a call: resolving the number, fetching its devices,
+// encrypting the call key for each and sending the offer.
+const dialTimeout = 30 * time.Second
+
+// Dial call
+// @Summary Place a call
+// @Description Places an outgoing audio call to a WhatsApp user and returns it in the "calling" phase; it rings on the other phone. With "stream": true the answer also carries a ticket for the audio stream, so it can be connected before the callee picks up. Video is not supported yet. An instance may place a limited number of calls per minute (CALL_DIAL_LIMIT) and have a limited number at once (CALL_MAX_CONCURRENT): both answer 429.
+// @Tags Call
+// @Accept json
+// @Produce json
+// @Param message body call_service.DialCallStruct true "Who to call"
+// @Success 200 {object} call_service.DialResult
+// @Failure 400 {object} gin.H "Not a number a call can go to"
+// @Failure 409 {object} gin.H "Calls are not active for this instance"
+// @Failure 429 {object} gin.H "Too many calls"
+// @Failure 502 {object} gin.H "WhatsApp or the library could not place the call"
+// @Router /call/dial [post]
+func (g *callHandler) DialCall(ctx *gin.Context) {
+	instance, ok := instanceOf(ctx)
+	if !ok {
+		return
+	}
+	var data call_service.DialCallStruct
+	if err := ctx.ShouldBindJSON(&data); err != nil || data.Number == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "number is required (one number, not a list)"})
+		return
+	}
+
+	dialCtx, cancel := context.WithTimeout(ctx.Request.Context(), dialTimeout)
+	defer cancel()
+	result, err := g.callService.DialCall(dialCtx, &data, instance)
+	if err != nil {
+		callFailure(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, result)
 }
 
 func NewCallHandler(

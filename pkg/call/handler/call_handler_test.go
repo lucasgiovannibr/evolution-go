@@ -2,9 +2,13 @@ package call_handler
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	call_engine "github.com/evolution-foundation/evolution-go/pkg/call/engine"
@@ -38,15 +42,20 @@ type env struct {
 	engine  *call_engine.Manager
 	tickets *call_stream.Tickets
 	router  *gin.Engine
+	dialed  []string // the targets the fake library was asked to call
 }
 
 // newEnv builds the call routes the way routes.go does, for the instance "inst" whose
 // call engine is active; "bare" is an instance without one.
-func newEnv(t *testing.T) *env {
+func newEnv(t *testing.T) *env { return newEnvWith(t, call_engine.Options{}) }
+
+func newEnvWith(t *testing.T, opts call_engine.Options) *env {
 	t.Helper()
 	gin.SetMode(gin.TestMode)
 
-	engine := call_engine.NewManager(call_engine.Options{})
+	e := &env{t: t}
+	opts.Dial = e.fakeDial
+	engine := call_engine.NewManager(opts)
 	if st := engine.Attach("inst", whatsmeow.NewClient(&store.Device{}, nil), false, noLog{}); st.State != call_engine.StateActive {
 		t.Fatalf("engine state = %s (%s)", st.State, st.Error)
 	}
@@ -64,8 +73,22 @@ func newEnv(t *testing.T) *env {
 	g.POST("/answer", h.AnswerCall)
 	g.POST("/hangup", h.HangupCall)
 	g.POST("/stream-ticket", h.StreamTicket)
+	g.POST("/dial", h.DialCall)
 
-	return &env{t: t, engine: engine, tickets: tickets, router: r}
+	e.engine, e.tickets, e.router = engine, tickets, r
+	return e
+}
+
+// fakeDial is the library's Call: it answers with a call in the calling phase, except
+// for numbers that contain "unreachable".
+func (e *env) fakeDial(_ context.Context, _ string, target string) (call_engine.Call, error) {
+	e.dialed = append(e.dialed, target)
+	if strings.Contains(target, "unreachable") {
+		return nil, errors.New("peer has no devices")
+	}
+	f := enginetest.NewFake(fmt.Sprintf("OUT%d", len(e.dialed)))
+	f.SetPhase(call_engine.PhaseCalling)
+	return f, nil
 }
 
 func (e *env) call(method, path, instance string, body interface{}) *httptest.ResponseRecorder {
@@ -200,5 +223,133 @@ func TestStreamTicket(t *testing.T) {
 	}
 	if _, ok := e.tickets.Redeem(ticket.Ticket, "C1"); ok {
 		t.Fatal("the ticket worked twice")
+	}
+}
+
+func TestDial(t *testing.T) {
+	e := newEnv(t)
+
+	w := e.call("POST", "/call/dial", "inst", map[string]interface{}{"number": "5511999990000@s.whatsapp.net"})
+	var result call_service.DialResult
+	decode(t, w, &result)
+	if w.Code != http.StatusOK || result.Direction != call_engine.Outgoing || result.Phase != call_engine.PhaseCalling || result.CallID == "" {
+		t.Fatalf("dial: %d %s", w.Code, w.Body.String())
+	}
+	if result.StreamTicket != nil {
+		t.Fatal("a ticket came back that was not asked for")
+	}
+	if len(e.dialed) != 1 || e.dialed[0] != "5511999990000@s.whatsapp.net" {
+		t.Fatalf("dialed = %v", e.dialed)
+	}
+
+	// the call is followed like any other
+	if w := e.call("GET", "/call/"+result.CallID, "inst", nil); w.Code != http.StatusOK {
+		t.Fatalf("GET the call: %d", w.Code)
+	}
+}
+
+// CreateJID (the number-validation middleware) writes phone numbers as
+// "+5511...@s.whatsapp.net"; the call goes out in a raw node, which the server drops
+// when the user has that "+".
+func TestDialSendsTheJIDWithoutThePlus(t *testing.T) {
+	e := newEnv(t)
+
+	e.call("POST", "/call/dial", "inst", map[string]interface{}{"number": "+5511999990000@s.whatsapp.net"})
+
+	if len(e.dialed) != 1 || e.dialed[0] != "5511999990000@s.whatsapp.net" {
+		t.Fatalf("dialed = %v", e.dialed)
+	}
+}
+
+func TestDialTurnsAPhoneNumberIntoAJID(t *testing.T) {
+	e := newEnv(t)
+
+	e.call("POST", "/call/dial", "inst", map[string]interface{}{"number": "5511999990000"})
+
+	if len(e.dialed) != 1 || e.dialed[0] != "5511999990000@s.whatsapp.net" {
+		t.Fatalf("dialed = %v", e.dialed)
+	}
+}
+
+func TestDialKeepsALIDAndDropsTheDevice(t *testing.T) {
+	e := newEnv(t)
+
+	e.call("POST", "/call/dial", "inst", map[string]interface{}{"number": "123456789012345:7@lid"})
+
+	if len(e.dialed) != 1 || e.dialed[0] != "123456789012345@lid" {
+		t.Fatalf("dialed = %v", e.dialed)
+	}
+}
+
+func TestDialRefusesWhatIsNotAUser(t *testing.T) {
+	e := newEnv(t)
+	for _, number := range []interface{}{
+		"120363012345678901@g.us", // a group
+		"status@broadcast",        // a broadcast list
+		"",                        // nothing
+		"not a number",            // garbage
+		[]string{"5511999990000", "5511999990001"}, // a list: one call, one number
+	} {
+		w := e.call("POST", "/call/dial", "inst", map[string]interface{}{"number": number})
+		if w.Code != http.StatusBadRequest {
+			t.Errorf("number %v: status %d, want 400 (%s)", number, w.Code, w.Body.String())
+		}
+	}
+	if len(e.dialed) != 0 {
+		t.Fatalf("placed calls to %v", e.dialed)
+	}
+}
+
+func TestDialCanReturnTheStreamTicketWithTheCall(t *testing.T) {
+	e := newEnv(t)
+
+	w := e.call("POST", "/call/dial", "inst", map[string]interface{}{"number": "5511999990000", "stream": true})
+
+	var result call_service.DialResult
+	decode(t, w, &result)
+	if w.Code != http.StatusOK || result.StreamTicket == nil {
+		t.Fatalf("dial: %d %s", w.Code, w.Body.String())
+	}
+	if instance, ok := e.tickets.Redeem(result.StreamTicket.Ticket, result.CallID); !ok || instance != "inst" {
+		t.Fatalf("the ticket does not open the new call: %q %v", instance, ok)
+	}
+}
+
+func TestDialOfAnInstanceWithoutAnEngineIs409(t *testing.T) {
+	e := newEnv(t)
+
+	if w := e.call("POST", "/call/dial", "bare", map[string]interface{}{"number": "5511999990000"}); w.Code != http.StatusConflict {
+		t.Fatalf("status %d", w.Code)
+	}
+	if len(e.dialed) != 0 {
+		t.Fatal("placed a call through an instance without an engine")
+	}
+}
+
+func TestDialFailureIs502AndTheLimitsAre429(t *testing.T) {
+	e := newEnvWith(t, call_engine.Options{DialsPerMinute: 3, MaxConcurrent: 20})
+
+	if w := e.call("POST", "/call/dial", "inst", map[string]interface{}{"number": "unreachable@lid"}); w.Code != http.StatusBadGateway {
+		t.Fatalf("unreachable peer: status %d %s", w.Code, w.Body.String())
+	}
+	// that attempt used one of the three; two more go through, the fourth does not
+	for i := 0; i < 2; i++ {
+		if w := e.call("POST", "/call/dial", "inst", map[string]interface{}{"number": "5511999990000"}); w.Code != http.StatusOK {
+			t.Fatalf("dial %d: status %d", i, w.Code)
+		}
+	}
+	if w := e.call("POST", "/call/dial", "inst", map[string]interface{}{"number": "5511999990000"}); w.Code != http.StatusTooManyRequests {
+		t.Fatalf("over the rate: status %d", w.Code)
+	}
+}
+
+func TestDialStopsAtTheConcurrentCallLimit(t *testing.T) {
+	e := newEnvWith(t, call_engine.Options{MaxConcurrent: 1})
+	e.ringing("BUSY")
+
+	w := e.call("POST", "/call/dial", "inst", map[string]interface{}{"number": "5511999990000"})
+
+	if w.Code != http.StatusTooManyRequests || len(e.dialed) != 0 {
+		t.Fatalf("status %d, dialed %v", w.Code, e.dialed)
 	}
 }
