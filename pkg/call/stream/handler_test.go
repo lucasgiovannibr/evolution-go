@@ -15,6 +15,7 @@ import (
 )
 
 type rig struct {
+	video   bool // whether the tickets the rig issues ask for video
 	t       *testing.T
 	engine  *call_engine.Manager
 	tickets *Tickets
@@ -47,7 +48,7 @@ func (r *rig) url(callID, ticket string) string {
 }
 
 func (r *rig) dial(instance, callID string, header http.Header) (*websocket.Conn, *http.Response, error) {
-	token, _, err := r.tickets.Issue(instance, callID)
+	token, _, err := r.tickets.Issue(instance, callID, r.video)
 	if err != nil {
 		r.t.Fatal(err)
 	}
@@ -160,7 +161,7 @@ func TestATicketIsRequiredAndWorksOnce(t *testing.T) {
 		t.Fatalf("no ticket: err=%v status=%v", err, resp)
 	}
 
-	token, _, _ := r.tickets.Issue("inst", "C1")
+	token, _, _ := r.tickets.Issue("inst", "C1", false)
 	conn, _, err := websocket.DefaultDialer.Dial(r.url("C1", token), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -171,7 +172,7 @@ func TestATicketIsRequiredAndWorksOnce(t *testing.T) {
 		t.Fatalf("reused ticket: err=%v status=%v", err, resp)
 	}
 
-	other, _, _ := r.tickets.Issue("inst", "C2")
+	other, _, _ := r.tickets.Issue("inst", "C2", false)
 	_, resp, err = websocket.DefaultDialer.Dial(r.url("C1", other), nil)
 	if err == nil || resp.StatusCode != http.StatusUnauthorized {
 		t.Fatalf("ticket of another call: err=%v status=%v", err, resp)
@@ -317,7 +318,7 @@ func TestAStreamThatIsClosedHangsUpARunningCallAfterTheGrace(t *testing.T) {
 	call.SetPhase(call_engine.PhaseActive)
 	tracked, _ := engine.Track("inst", call, call_engine.Incoming)
 
-	token, _, _ := tickets.Issue("inst", "C1")
+	token, _, _ := tickets.Issue("inst", "C1", false)
 	conn, _, err := websocket.DefaultDialer.Dial("ws"+strings.TrimPrefix(server.URL, "http")+"/call/stream/C1?ticket="+token, nil)
 	if err != nil {
 		t.Fatal(err)
@@ -333,4 +334,194 @@ func TestAStreamThatIsClosedHangsUpARunningCallAfterTheGrace(t *testing.T) {
 	if tracked.Reason() != "stream_closed" {
 		t.Fatalf("reason = %q", tracked.Reason())
 	}
+}
+
+// ---- video
+
+func videoRig(t *testing.T) (*rig, *enginetest.Fake, *websocket.Conn) {
+	t.Helper()
+	r := newRig(t, Config{})
+	r.video = true
+	call := r.track("inst", "C1")
+	call.SetVideo(true)
+	conn := r.mustDial("inst", "C1")
+	return r, call, conn
+}
+
+func b64(b []byte) string { return base64.StdEncoding.EncodeToString(b) }
+
+func TestAVideoStreamTellsTheClientVideoWillFollow(t *testing.T) {
+	_, call, conn := videoRig(t)
+
+	start := read(t, conn)
+
+	if start.Video == nil || !*start.Video || start.VideoStream == nil || !*start.VideoStream {
+		t.Fatalf("start = %+v", start)
+	}
+	eventually(t, "the video sink", func() bool { return call.VideoSink() != nil })
+}
+
+func TestAnAudioOnlyStreamDoesNotCarryVideo(t *testing.T) {
+	r := newRig(t, Config{})
+	call := r.track("inst", "C1")
+	call.SetVideo(true) // the call has video, the stream did not ask for it
+	conn := r.mustDial("inst", "C1")
+
+	start := read(t, conn)
+	if start.Video == nil || !*start.Video || start.VideoStream == nil || *start.VideoStream {
+		t.Fatalf("start = %+v: the call has video but the stream does not", start)
+	}
+	eventually(t, "the audio sink", func() bool { return call.Sink() != nil })
+	if call.VideoSink() != nil {
+		t.Fatal("a video sink was attached to a stream that did not ask for video")
+	}
+
+	conn.WriteJSON(message{Event: "video", Payload: b64(keyAU())})
+	if m := read(t, conn); m.Event != "error" || m.Code != "video_not_enabled" {
+		t.Fatalf("got %+v", m)
+	}
+	if len(call.SentVideo()) != 0 {
+		t.Fatal("video from a stream without video was sent to the peer")
+	}
+}
+
+func TestThePeersVideoReachesTheClientStartingOnAKeyframe(t *testing.T) {
+	_, call, conn := videoRig(t)
+	read(t, conn) // start
+	eventually(t, "the video sink", func() bool { return call.VideoSink() != nil })
+
+	call.VideoSink().WriteVideo(pAU()) // the middle of a GOP: nobody can decode it
+	call.VideoSink().(interface{ SetOrientation(int) }).SetOrientation(1)
+	call.VideoSink().WriteVideo(keyAU())
+	call.VideoSink().WriteVideo(pAU())
+
+	first := read(t, conn)
+	if first.Event != "video" || first.Track != "inbound" || first.Seq != 1 ||
+		first.Keyframe == nil || !*first.Keyframe || first.Orientation == nil || *first.Orientation != 1 {
+		t.Fatalf("first = %+v", first)
+	}
+	got, err := base64.StdEncoding.DecodeString(first.Payload)
+	if err != nil || string(got) != string(keyAU()) {
+		t.Fatalf("payload = %x (%v)", got, err)
+	}
+	second := read(t, conn)
+	if second.Seq != 2 || second.Keyframe == nil || *second.Keyframe {
+		t.Fatalf("second = %+v", second)
+	}
+}
+
+func TestTheClientsVideoReachesThePeerWithItsHeaders(t *testing.T) {
+	_, call, conn := videoRig(t)
+	read(t, conn)
+
+	conn.WriteJSON(message{Event: "video", Payload: b64(keyAU())})
+	conn.WriteJSON(message{Event: "video", Payload: b64(pAU())})
+	conn.WriteJSON(message{Event: "video", Payload: b64(annexB(false, idr))}) // a keyframe asked for later, bare
+
+	eventually(t, "three access units", func() bool { return len(call.SentVideo()) == 3 })
+	sent := call.SentVideo()
+	if string(sent[0].AccessUnit) != string(keyAU()) || string(sent[1].AccessUnit) != string(pAU()) {
+		t.Fatalf("sent = %x", sent)
+	}
+	if string(sent[2].AccessUnit) != string(keyAU()) {
+		t.Fatalf("the bare keyframe went out as %x, want it with the SPS and PPS of the first", sent[2].AccessUnit)
+	}
+}
+
+func TestVideoThatIsNotH264AnnexBIsRefusedOnce(t *testing.T) {
+	_, call, conn := videoRig(t)
+	read(t, conn)
+
+	for i := 0; i < 3; i++ {
+		conn.WriteJSON(message{Event: "video", Payload: b64([]byte{0, 0, 0, 5, 0x65, 1, 2, 3, 4})}) // AVCC
+	}
+	conn.WriteJSON(message{Event: "video", Payload: "not base64!!"})
+
+	got := map[string]int{}
+	for i := 0; i < 2; i++ {
+		got[read(t, conn).Code]++
+	}
+	if got["bad_video"] != 1 || got["bad_payload"] != 1 {
+		t.Fatalf("errors = %v, want one of each", got)
+	}
+	if len(call.SentVideo()) != 0 {
+		t.Fatal("refused video was sent to the peer")
+	}
+}
+
+func TestVideoSentBeforeTheCallIsReadyIsDroppedAndCounted(t *testing.T) {
+	r, call, conn := videoRig(t)
+	read(t, conn)
+	call.RefuseVideo()
+
+	conn.WriteJSON(message{Event: "video", Payload: b64(keyAU())})
+	conn.WriteJSON(message{Event: "video", Payload: b64(keyAU())})
+
+	if m := read(t, conn); m.Event != "error" || m.Code != "video_not_ready" {
+		t.Fatalf("got %+v", m)
+	}
+	eventually(t, "both to be counted", func() bool {
+		info := r.engine.List("inst")[0].Stream
+		return info != nil && info.VideoDroppedFromClient == 2
+	})
+
+	// and it works as soon as the call can take it
+	call.AllowVideo()
+	conn.WriteJSON(message{Event: "video", Payload: b64(keyAU())})
+	eventually(t, "the video to be sent", func() bool { return len(call.SentVideo()) == 1 })
+}
+
+func TestAKeyframeRequestReachesAVideoStream(t *testing.T) {
+	_, call, conn := videoRig(t)
+	read(t, conn)
+
+	call.KeyframeRequest()
+
+	if m := read(t, conn); m.Event != "keyframe_request" {
+		t.Fatalf("got %+v", m)
+	}
+}
+
+func TestAnAudioOnlyStreamIsNotToldAboutKeyframes(t *testing.T) {
+	r := newRig(t, Config{})
+	call := r.track("inst", "C1")
+	conn := r.mustDial("inst", "C1")
+	read(t, conn)
+	eventually(t, "the sink", func() bool { return call.Sink() != nil })
+
+	call.KeyframeRequest()
+	call.Sink().WriteFrame([]float32{0.1})
+
+	if m := read(t, conn); m.Event != "media" {
+		t.Fatalf("got %+v: a keyframe request means nothing to a stream without video", m)
+	}
+}
+
+func TestThePeersVideoStateReachesEveryStream(t *testing.T) {
+	for _, video := range []bool{true, false} {
+		r := newRig(t, Config{})
+		r.video = video
+		call := r.track("inst", "C1")
+		conn := r.mustDial("inst", "C1")
+		read(t, conn)
+		eventually(t, "the stream to attach", func() bool { return call.Sink() != nil })
+
+		call.PeerVideoState(call_engine.VideoState{Active: true, Upgrade: true, Orientation: 2})
+
+		m := read(t, conn)
+		if m.Event != "video_state" || m.Active == nil || !*m.Active || m.Upgrade == nil || !*m.Upgrade ||
+			m.Orientation == nil || *m.Orientation != 2 {
+			t.Fatalf("video=%v: got %+v", video, m)
+		}
+	}
+}
+
+func TestAStreamThatLeavesTakesItsVideoSinkAway(t *testing.T) {
+	_, call, conn := videoRig(t)
+	read(t, conn)
+	eventually(t, "the video sink", func() bool { return call.VideoSink() != nil })
+
+	conn.WriteJSON(message{Event: "stop"})
+
+	eventually(t, "the video sink to go", func() bool { return call.VideoSink() == nil })
 }

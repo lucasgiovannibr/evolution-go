@@ -21,6 +21,7 @@ type CallHandler interface {
 	HangupCall(ctx *gin.Context)
 	StreamTicket(ctx *gin.Context)
 	DialCall(ctx *gin.Context)
+	VideoCall(ctx *gin.Context)
 }
 
 type callHandler struct {
@@ -90,7 +91,7 @@ func callFailure(ctx *gin.Context, err error) {
 		status = http.StatusConflict
 	case errors.Is(err, call_stream.ErrTooManyTickets), errors.Is(err, call_engine.ErrTooManyCalls), errors.Is(err, call_engine.ErrDialRateLimited):
 		status = http.StatusTooManyRequests
-	case errors.Is(err, call_service.ErrInvalidNumber):
+	case errors.Is(err, call_service.ErrInvalidNumber), errors.Is(err, call_engine.ErrInvalidVideoRequest):
 		status = http.StatusBadRequest
 	case errors.Is(err, call_engine.ErrDialFailed):
 		status = http.StatusBadGateway
@@ -189,7 +190,7 @@ func (g *callHandler) HangupCall(ctx *gin.Context) {
 
 // Stream ticket
 // @Summary Ticket for the audio stream of a call
-// @Description Returns a one-time ticket, valid for a few seconds, for one call. Open a WebSocket to "path" on this server with it: GET /call/stream/{callId}?ticket=... . Audio is 16 kHz mono 16-bit little-endian PCM in base64 JSON messages (see the "start" message).
+// @Description Returns a one-time ticket, valid for a few seconds, for one call. Open a WebSocket to "path" on this server with it: GET /call/stream/{callId}?ticket=... . Audio is 16 kHz mono 16-bit little-endian PCM in base64 JSON messages (see the "start" message). With "video": true the stream also carries the call's video as H.264 access units (Annex-B) in "video" messages, and asks for keyframes with "keyframe_request".
 // @Tags Call
 // @Accept json
 // @Produce json
@@ -208,7 +209,7 @@ func (g *callHandler) StreamTicket(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "callId is required"})
 		return
 	}
-	ticket, err := g.callService.IssueStreamTicket(instance, data.CallID)
+	ticket, err := g.callService.IssueStreamTicket(instance, data.CallID, data.Video)
 	if err != nil {
 		callFailure(ctx, err)
 		return
@@ -222,7 +223,7 @@ const dialTimeout = 30 * time.Second
 
 // Dial call
 // @Summary Place a call
-// @Description Places an outgoing audio call to a WhatsApp user and returns it in the "calling" phase; it rings on the other phone. With "stream": true the answer also carries a ticket for the audio stream, so it can be connected before the callee picks up. Video is not supported yet. An instance may place a limited number of calls per minute (CALL_DIAL_LIMIT) and have a limited number at once (CALL_MAX_CONCURRENT): both answer 429.
+// @Description Places an outgoing call to a WhatsApp user and returns it in the "calling" phase; it rings on the other phone. With "video": true it is a video call. With "stream": true the answer also carries a ticket for the stream (with video when "video" is true), so it can be connected before the callee picks up. An instance may place a limited number of calls per minute (CALL_DIAL_LIMIT) and have a limited number at once (CALL_MAX_CONCURRENT): both answer 429.
 // @Tags Call
 // @Accept json
 // @Produce json
@@ -252,6 +253,36 @@ func (g *callHandler) DialCall(ctx *gin.Context) {
 		return
 	}
 	ctx.JSON(http.StatusOK, result)
+}
+
+// Video call
+// @Summary Video controls of a call
+// @Description Changes the video of a call that has been answered. "start" asks the peer to turn an audio call into a video call, "accept" accepts the peer's request (see the video_state event with upgrade=true), "stop" stops sending video, "enable"/"disable" mute and unmute it, "orientation" tells the peer how the camera is rotated (0-3 quarter turns clockwise). The video itself travels on the stream.
+// @Tags Call
+// @Accept json
+// @Produce json
+// @Param message body call_service.VideoCallStruct true "What to do"
+// @Success 200 {object} call_engine.Info
+// @Failure 400 {object} gin.H "Unknown action or orientation"
+// @Failure 404 {object} gin.H "No such call"
+// @Failure 409 {object} gin.H "The call is not in a state that allows it"
+// @Router /call/video [post]
+func (g *callHandler) VideoCall(ctx *gin.Context) {
+	instance, ok := instanceOf(ctx)
+	if !ok {
+		return
+	}
+	var data call_service.VideoCallStruct
+	if err := ctx.ShouldBindJSON(&data); err != nil || data.CallID == "" {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": "callId and action are required"})
+		return
+	}
+	info, err := g.callService.VideoCall(instance, &data)
+	if err != nil {
+		callFailure(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, info)
 }
 
 func NewCallHandler(

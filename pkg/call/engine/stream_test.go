@@ -11,6 +11,8 @@ type nullSink struct{}
 func (nullSink) WriteFrame([]float32) error { return nil }
 func (nullSink) Close() error               { return nil }
 
+func audioOnly() Endpoints { return Endpoints{Sink: nullSink{}, Source: nullSource{}} }
+
 type nullSource struct{}
 
 func (nullSource) ReadFrame() ([]float32, error) { return nil, nil }
@@ -141,7 +143,7 @@ func TestOnlyOneStreamPerCall(t *testing.T) {
 	c := newFake("C1")
 	m.Track("inst", c, Incoming)
 
-	_, detach, err := m.AttachStream("inst", "C1", nullSink{}, nullSource{}, &StreamStats{})
+	_, detach, err := m.AttachStream("inst", "C1", audioOnly(), &StreamStats{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -149,7 +151,7 @@ func TestOnlyOneStreamPerCall(t *testing.T) {
 		t.Fatal("the sink and the source were not attached to the call")
 	}
 
-	if _, _, err := m.AttachStream("inst", "C1", nullSink{}, nullSource{}, &StreamStats{}); !errors.Is(err, ErrStreamBusy) {
+	if _, _, err := m.AttachStream("inst", "C1", audioOnly(), &StreamStats{}); !errors.Is(err, ErrStreamBusy) {
 		t.Fatalf("second stream: err = %v", err)
 	}
 
@@ -158,18 +160,18 @@ func TestOnlyOneStreamPerCall(t *testing.T) {
 	if sink, _ := c.attached(); sink != nil {
 		t.Fatal("the sink stays attached after detach")
 	}
-	if _, _, err := m.AttachStream("inst", "C1", nullSink{}, nullSource{}, &StreamStats{}); err != nil {
+	if _, _, err := m.AttachStream("inst", "C1", audioOnly(), &StreamStats{}); err != nil {
 		t.Fatalf("a new stream must be able to attach after the old one left: %v", err)
 	}
 }
 
 func TestStreamOfAnUnknownOrEndedCall(t *testing.T) {
 	m, _ := newTestManager(Options{})
-	if _, _, err := m.AttachStream("inst", "nope", nullSink{}, nullSource{}, &StreamStats{}); !errors.Is(err, ErrCallNotFound) {
+	if _, _, err := m.AttachStream("inst", "nope", audioOnly(), &StreamStats{}); !errors.Is(err, ErrCallNotFound) {
 		t.Fatalf("err = %v", err)
 	}
 	m.Track("other", newFake("C1"), Incoming)
-	if _, _, err := m.AttachStream("inst", "C1", nullSink{}, nullSource{}, &StreamStats{}); !errors.Is(err, ErrCallNotFound) {
+	if _, _, err := m.AttachStream("inst", "C1", audioOnly(), &StreamStats{}); !errors.Is(err, ErrCallNotFound) {
 		t.Fatalf("another instance's call: err = %v", err)
 	}
 }
@@ -178,7 +180,7 @@ func TestARunningCallWithoutAStreamIsHungUpAfterTheGrace(t *testing.T) {
 	m, log := newTestManager(Options{StreamGrace: 20 * time.Millisecond})
 	c := answered(newFake("C1"))
 	tr, _ := m.Track("inst", c, Incoming)
-	_, detach, _ := m.AttachStream("inst", "C1", nullSink{}, nullSource{}, &StreamStats{})
+	_, detach, _ := m.AttachStream("inst", "C1", audioOnly(), &StreamStats{})
 
 	detach()
 
@@ -202,10 +204,10 @@ func TestAStreamThatComesBackKeepsTheCall(t *testing.T) {
 	m, _ := newTestManager(Options{StreamGrace: 60 * time.Millisecond})
 	c := answered(newFake("C1"))
 	tr, _ := m.Track("inst", c, Incoming)
-	_, detach, _ := m.AttachStream("inst", "C1", nullSink{}, nullSource{}, &StreamStats{})
+	_, detach, _ := m.AttachStream("inst", "C1", audioOnly(), &StreamStats{})
 	detach()
 
-	if _, _, err := m.AttachStream("inst", "C1", nullSink{}, nullSource{}, &StreamStats{}); err != nil {
+	if _, _, err := m.AttachStream("inst", "C1", audioOnly(), &StreamStats{}); err != nil {
 		t.Fatal(err)
 	}
 	time.Sleep(200 * time.Millisecond)
@@ -219,7 +221,7 @@ func TestACallThatWasNeverAnsweredHasNoStreamClock(t *testing.T) {
 	m, _ := newTestManager(Options{StreamGrace: 20 * time.Millisecond})
 	c := newFake("C1") // still ringing
 	tr, _ := m.Track("inst", c, Incoming)
-	_, detach, _ := m.AttachStream("inst", "C1", nullSink{}, nullSource{}, &StreamStats{})
+	_, detach, _ := m.AttachStream("inst", "C1", audioOnly(), &StreamStats{})
 
 	detach()
 	time.Sleep(120 * time.Millisecond)
@@ -233,7 +235,7 @@ func TestACallThatEndsWhileStreamedDoesNotStartTheClock(t *testing.T) {
 	m, _ := newTestManager(Options{StreamGrace: 20 * time.Millisecond})
 	c := answered(newFake("C1"))
 	tr, _ := m.Track("inst", c, Incoming)
-	_, detach, _ := m.AttachStream("inst", "C1", nullSink{}, nullSource{}, &StreamStats{})
+	_, detach, _ := m.AttachStream("inst", "C1", audioOnly(), &StreamStats{})
 
 	c.end("terminate")
 	detach()
@@ -256,7 +258,7 @@ func TestStreamStatsAreReportedWithTheCall(t *testing.T) {
 	}
 
 	stats := &StreamStats{}
-	_, detach, _ := m.AttachStream("inst", "C1", nullSink{}, nullSource{}, stats)
+	_, detach, _ := m.AttachStream("inst", "C1", audioOnly(), stats)
 	stats.ToClient.Add(3)
 	stats.DroppedFromClient.Add(1)
 

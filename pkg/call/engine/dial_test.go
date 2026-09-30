@@ -11,13 +11,15 @@ import (
 // dialer is a DialFunc that hands out fake calls and remembers what it was asked.
 type dialer struct {
 	targets []string
+	options []DialOptions
 	calls   []*fakeCall
 	err     error
 	during  func() // runs while the call is being placed
 }
 
-func (d *dialer) dial(_ context.Context, _ string, target string) (Call, error) {
+func (d *dialer) dial(_ context.Context, _ string, target string, opts DialOptions) (Call, error) {
 	d.targets = append(d.targets, target)
+	d.options = append(d.options, opts)
 	if d.during != nil {
 		d.during()
 	}
@@ -34,7 +36,7 @@ func TestDialPlacesAndTracksAnOutgoingCall(t *testing.T) {
 	d := &dialer{}
 	m, _ := newTestManager(Options{Dial: d.dial})
 
-	tr, err := m.Dial(context.Background(), "inst", "5511999990000@s.whatsapp.net")
+	tr, err := m.Dial(context.Background(), "inst", "5511999990000@s.whatsapp.net", DialOptions{})
 
 	if err != nil {
 		t.Fatal(err)
@@ -55,16 +57,16 @@ func TestDialNeedsAWorkingEngine(t *testing.T) {
 	d := &dialer{}
 	m, _ := newTestManager(Options{Dial: d.dial})
 
-	if _, err := m.Dial(context.Background(), "nobody", "x"); !errors.Is(err, ErrEngineUnavailable) {
+	if _, err := m.Dial(context.Background(), "nobody", "x", DialOptions{}); !errors.Is(err, ErrEngineUnavailable) {
 		t.Fatalf("instance without engine: err = %v", err)
 	}
 
 	m.runtimes["blocked"] = &runtime{status: Status{State: StateBlockedProxy}}
-	if _, err := m.Dial(context.Background(), "blocked", "x"); !errors.Is(err, ErrEngineUnavailable) {
+	if _, err := m.Dial(context.Background(), "blocked", "x", DialOptions{}); !errors.Is(err, ErrEngineUnavailable) {
 		t.Fatalf("proxied instance: err = %v", err)
 	}
 	m.runtimes["broken"] = &runtime{status: Status{State: StateHookFailed}}
-	if _, err := m.Dial(context.Background(), "broken", "x"); !errors.Is(err, ErrEngineUnavailable) {
+	if _, err := m.Dial(context.Background(), "broken", "x", DialOptions{}); !errors.Is(err, ErrEngineUnavailable) {
 		t.Fatalf("instance whose hook failed: err = %v", err)
 	}
 
@@ -78,7 +80,7 @@ func TestDialRespectsTheConcurrentCallLimitBeforePlacingAnything(t *testing.T) {
 	m, _ := newTestManager(Options{MaxConcurrent: 1, Dial: d.dial})
 	m.Track("inst", newFake("BUSY"), Incoming)
 
-	_, err := m.Dial(context.Background(), "inst", "x")
+	_, err := m.Dial(context.Background(), "inst", "x", DialOptions{})
 
 	if !errors.Is(err, ErrTooManyCalls) {
 		t.Fatalf("err = %v", err)
@@ -96,11 +98,11 @@ func TestDialIsRateLimitedPerInstance(t *testing.T) {
 	m.now = func() time.Time { return now }
 
 	for i := 0; i < 2; i++ {
-		if _, err := m.Dial(context.Background(), "inst", "x"); err != nil {
+		if _, err := m.Dial(context.Background(), "inst", "x", DialOptions{}); err != nil {
 			t.Fatalf("dial %d: %v", i, err)
 		}
 	}
-	if _, err := m.Dial(context.Background(), "inst", "x"); !errors.Is(err, ErrDialRateLimited) {
+	if _, err := m.Dial(context.Background(), "inst", "x", DialOptions{}); !errors.Is(err, ErrDialRateLimited) {
 		t.Fatalf("third dial: err = %v", err)
 	}
 	if len(d.targets) != 2 {
@@ -108,13 +110,13 @@ func TestDialIsRateLimitedPerInstance(t *testing.T) {
 	}
 
 	// another instance has its own allowance
-	if _, err := m.Dial(context.Background(), "other", "x"); err != nil {
+	if _, err := m.Dial(context.Background(), "other", "x", DialOptions{}); err != nil {
 		t.Fatalf("other instance: %v", err)
 	}
 
 	// and the allowance comes back with time
 	now = now.Add(61 * time.Second)
-	if _, err := m.Dial(context.Background(), "inst", "x"); err != nil {
+	if _, err := m.Dial(context.Background(), "inst", "x", DialOptions{}); err != nil {
 		t.Fatalf("after a minute: %v", err)
 	}
 }
@@ -124,9 +126,9 @@ func TestAFailedAttemptStillCountsAgainstTheRate(t *testing.T) {
 	m, _ := newTestManager(Options{DialsPerMinute: 2, MaxConcurrent: 50, Dial: d.dial})
 
 	for i := 0; i < 2; i++ {
-		m.Dial(context.Background(), "inst", "x")
+		m.Dial(context.Background(), "inst", "x", DialOptions{})
 	}
-	if _, err := m.Dial(context.Background(), "inst", "x"); !errors.Is(err, ErrDialRateLimited) {
+	if _, err := m.Dial(context.Background(), "inst", "x", DialOptions{}); !errors.Is(err, ErrDialRateLimited) {
 		t.Fatalf("err = %v: failed attempts talk to WhatsApp too and must count", err)
 	}
 }
@@ -135,7 +137,7 @@ func TestAFailedDialTracksNothingAndSaysWhy(t *testing.T) {
 	d := &dialer{err: errors.New("peer has no devices")}
 	m, _ := newTestManager(Options{Dial: d.dial})
 
-	_, err := m.Dial(context.Background(), "inst", "x")
+	_, err := m.Dial(context.Background(), "inst", "x", DialOptions{})
 
 	if !errors.Is(err, ErrDialFailed) || !strings.Contains(err.Error(), "peer has no devices") {
 		t.Fatalf("err = %v", err)
@@ -152,7 +154,7 @@ func TestACallThatLosesTheLastSlotIsHungUp(t *testing.T) {
 	m, _ := newTestManager(Options{MaxConcurrent: 1, Dial: d.dial})
 	d.during = func() { m.Track("inst", newFake("RACE"), Incoming) } // takes the slot mid-dial
 
-	_, err := m.Dial(context.Background(), "inst", "x")
+	_, err := m.Dial(context.Background(), "inst", "x", DialOptions{})
 
 	if !errors.Is(err, ErrTooManyCalls) {
 		t.Fatalf("err = %v", err)
@@ -165,7 +167,7 @@ func TestACallThatLosesTheLastSlotIsHungUp(t *testing.T) {
 func TestAnOutgoingCallNobodyPicksUpIsHungUpAfterTheRingTimeout(t *testing.T) {
 	d := &dialer{}
 	m, _ := newTestManager(Options{RingTimeout: 20 * time.Millisecond, Dial: d.dial})
-	tr, _ := m.Dial(context.Background(), "inst", "x")
+	tr, _ := m.Dial(context.Background(), "inst", "x", DialOptions{})
 
 	select {
 	case <-tr.Done():
@@ -185,9 +187,21 @@ func TestAnOutgoingCallNobodyPicksUpIsHungUpAfterTheRingTimeout(t *testing.T) {
 func TestAnOutgoingCallCannotBeAnswered(t *testing.T) {
 	d := &dialer{}
 	m, _ := newTestManager(Options{Dial: d.dial})
-	tr, _ := m.Dial(context.Background(), "inst", "x")
+	tr, _ := m.Dial(context.Background(), "inst", "x", DialOptions{})
 
 	if _, err := m.Answer("inst", tr.Info().CallID); !errors.Is(err, ErrWrongState) {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestDialCanAskForAVideoCall(t *testing.T) {
+	d := &dialer{}
+	m, _ := newTestManager(Options{MaxConcurrent: 5, Dial: d.dial})
+
+	m.Dial(context.Background(), "inst", "a", DialOptions{})
+	m.Dial(context.Background(), "inst", "b", DialOptions{Video: true})
+
+	if len(d.options) != 2 || d.options[0].Video || !d.options[1].Video {
+		t.Fatalf("options = %+v", d.options)
 	}
 }

@@ -43,6 +43,8 @@ type env struct {
 	tickets *call_stream.Tickets
 	router  *gin.Engine
 	dialed  []string // the targets the fake library was asked to call
+	options []call_engine.DialOptions
+	calls   map[string]*enginetest.Fake // the calls the fake library placed
 }
 
 // newEnv builds the call routes the way routes.go does, for the instance "inst" whose
@@ -74,6 +76,7 @@ func newEnvWith(t *testing.T, opts call_engine.Options) *env {
 	g.POST("/hangup", h.HangupCall)
 	g.POST("/stream-ticket", h.StreamTicket)
 	g.POST("/dial", h.DialCall)
+	g.POST("/video", h.VideoCall)
 
 	e.engine, e.tickets, e.router = engine, tickets, r
 	return e
@@ -81,13 +84,19 @@ func newEnvWith(t *testing.T, opts call_engine.Options) *env {
 
 // fakeDial is the library's Call: it answers with a call in the calling phase, except
 // for numbers that contain "unreachable".
-func (e *env) fakeDial(_ context.Context, _ string, target string) (call_engine.Call, error) {
+func (e *env) fakeDial(_ context.Context, _ string, target string, opts call_engine.DialOptions) (call_engine.Call, error) {
 	e.dialed = append(e.dialed, target)
+	e.options = append(e.options, opts)
 	if strings.Contains(target, "unreachable") {
 		return nil, errors.New("peer has no devices")
 	}
 	f := enginetest.NewFake(fmt.Sprintf("OUT%d", len(e.dialed)))
 	f.SetPhase(call_engine.PhaseCalling)
+	f.SetVideo(opts.Video)
+	if e.calls == nil {
+		e.calls = map[string]*enginetest.Fake{}
+	}
+	e.calls[f.ID()] = f
 	return f, nil
 }
 
@@ -218,10 +227,10 @@ func TestStreamTicket(t *testing.T) {
 	}
 
 	// it opens that call for that instance, once
-	if instance, ok := e.tickets.Redeem(ticket.Ticket, "C1"); !ok || instance != "inst" {
+	if instance, _, ok := e.tickets.Redeem(ticket.Ticket, "C1"); !ok || instance != "inst" {
 		t.Fatalf("Redeem = %q, %v", instance, ok)
 	}
-	if _, ok := e.tickets.Redeem(ticket.Ticket, "C1"); ok {
+	if _, _, ok := e.tickets.Redeem(ticket.Ticket, "C1"); ok {
 		t.Fatal("the ticket worked twice")
 	}
 }
@@ -310,7 +319,7 @@ func TestDialCanReturnTheStreamTicketWithTheCall(t *testing.T) {
 	if w.Code != http.StatusOK || result.StreamTicket == nil {
 		t.Fatalf("dial: %d %s", w.Code, w.Body.String())
 	}
-	if instance, ok := e.tickets.Redeem(result.StreamTicket.Ticket, result.CallID); !ok || instance != "inst" {
+	if instance, _, ok := e.tickets.Redeem(result.StreamTicket.Ticket, result.CallID); !ok || instance != "inst" {
 		t.Fatalf("the ticket does not open the new call: %q %v", instance, ok)
 	}
 }
@@ -351,5 +360,121 @@ func TestDialStopsAtTheConcurrentCallLimit(t *testing.T) {
 
 	if w.Code != http.StatusTooManyRequests || len(e.dialed) != 0 {
 		t.Fatalf("status %d, dialed %v", w.Code, e.dialed)
+	}
+}
+
+func TestDialCanPlaceAVideoCallAndStreamItsVideo(t *testing.T) {
+	e := newEnv(t)
+
+	w := e.call("POST", "/call/dial", "inst", map[string]interface{}{"number": "5511999990000", "video": true, "stream": true})
+
+	var result call_service.DialResult
+	decode(t, w, &result)
+	if w.Code != http.StatusOK || !result.Video {
+		t.Fatalf("dial: %d %s", w.Code, w.Body.String())
+	}
+	if len(e.options) != 1 || !e.options[0].Video {
+		t.Fatalf("options = %+v: the library was not asked for a video call", e.options)
+	}
+	if _, video, ok := e.tickets.Redeem(result.StreamTicket.Ticket, result.CallID); !ok || !video {
+		t.Fatalf("the ticket of a video call must ask for video: video=%v ok=%v", video, ok)
+	}
+}
+
+func TestAnAudioDialIsNotAVideoCall(t *testing.T) {
+	e := newEnv(t)
+
+	w := e.call("POST", "/call/dial", "inst", map[string]interface{}{"number": "5511999990000", "stream": true})
+
+	var result call_service.DialResult
+	decode(t, w, &result)
+	if len(e.options) != 1 || e.options[0].Video || result.Video {
+		t.Fatalf("options = %+v video = %v", e.options, result.Video)
+	}
+	if _, video, _ := e.tickets.Redeem(result.StreamTicket.Ticket, result.CallID); video {
+		t.Fatal("the ticket of an audio call asks for video")
+	}
+}
+
+func TestStreamTicketCanAskForVideo(t *testing.T) {
+	e := newEnv(t)
+	e.ringing("C1")
+
+	w := e.call("POST", "/call/stream-ticket", "inst", map[string]interface{}{"callId": "C1", "video": true})
+
+	var ticket call_service.StreamTicket
+	decode(t, w, &ticket)
+	if _, video, ok := e.tickets.Redeem(ticket.Ticket, "C1"); w.Code != http.StatusOK || !ok || !video {
+		t.Fatalf("status %d video=%v ok=%v", w.Code, video, ok)
+	}
+}
+
+func TestVideoControls(t *testing.T) {
+	e := newEnv(t)
+	call := e.ringing("C1")
+	call.SetPhase(call_engine.PhaseActive)
+
+	for _, body := range []map[string]interface{}{
+		{"callId": "C1", "action": "start"},
+		{"callId": "C1", "action": "accept"},
+		{"callId": "C1", "action": "stop"},
+		{"callId": "C1", "action": "enable"},
+		{"callId": "C1", "action": "disable"},
+		{"callId": "C1", "action": "orientation", "orientation": 2},
+	} {
+		if w := e.call("POST", "/call/video", "inst", body); w.Code != http.StatusOK {
+			t.Fatalf("%v: status %d %s", body, w.Code, w.Body.String())
+		}
+	}
+	want := []string{"start", "accept", "stop", "enable", "disable", "orientation:2"}
+	got := call.VideoActions()
+	if len(got) != len(want) {
+		t.Fatalf("actions = %v", got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("actions = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestVideoControlsRefuseWhatIsWrong(t *testing.T) {
+	e := newEnv(t)
+	call := e.ringing("C1")
+
+	cases := []struct {
+		name string
+		inst string
+		body map[string]interface{}
+		want int
+	}{
+		{"no call id", "inst", map[string]interface{}{"action": "start"}, http.StatusBadRequest},
+		{"unknown action", "inst", map[string]interface{}{"callId": "C1", "action": "explode"}, http.StatusBadRequest},
+		{"no action", "inst", map[string]interface{}{"callId": "C1"}, http.StatusBadRequest},
+		{"orientation out of range", "inst", map[string]interface{}{"callId": "C1", "action": "orientation", "orientation": 9}, http.StatusBadRequest},
+		{"unknown call", "inst", map[string]interface{}{"callId": "nope", "action": "start"}, http.StatusNotFound},
+		{"call still ringing", "inst", map[string]interface{}{"callId": "C1", "action": "start"}, http.StatusConflict},
+		{"instance without engine", "bare", map[string]interface{}{"callId": "C1", "action": "start"}, http.StatusConflict},
+	}
+	for _, c := range cases {
+		if w := e.call("POST", "/call/video", c.inst, c.body); w.Code != c.want {
+			t.Errorf("%s: status %d, want %d (%s)", c.name, w.Code, c.want, w.Body.String())
+		}
+	}
+	if got := call.VideoActions(); len(got) != 0 {
+		t.Fatalf("the call was touched: %v", got)
+	}
+}
+
+func TestAVideoControlTheLibraryRefusesIs409WithItsReason(t *testing.T) {
+	e := newEnv(t)
+	call := e.ringing("C1")
+	call.SetPhase(call_engine.PhaseActive)
+	call.FailVideoActions(errors.New("no pending peer video upgrade"))
+
+	w := e.call("POST", "/call/video", "inst", map[string]interface{}{"callId": "C1", "action": "accept"})
+
+	if w.Code != http.StatusConflict || !strings.Contains(w.Body.String(), "no pending peer video upgrade") {
+		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
 }

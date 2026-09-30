@@ -31,6 +31,7 @@ var ErrTooManyTickets = errors.New("too many pending stream tickets")
 type ticket struct {
 	instanceID string
 	callID     string
+	video      bool
 	expires    time.Time
 }
 
@@ -50,8 +51,9 @@ func tokenKey(token string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// Issue creates a ticket for a call of an instance.
-func (t *Tickets) Issue(instanceID, callID string) (token string, ttl time.Duration, err error) {
+// Issue creates a ticket for a call of an instance. video says whether the stream it
+// opens carries the call's video besides its audio.
+func (t *Tickets) Issue(instanceID, callID string, video bool) (token string, ttl time.Duration, err error) {
 	raw := make([]byte, 24)
 	if _, err := rand.Read(raw); err != nil {
 		return "", 0, err
@@ -72,16 +74,17 @@ func (t *Tickets) Issue(instanceID, callID string) (token string, ttl time.Durat
 			return "", 0, ErrTooManyTickets
 		}
 	}
-	t.m[tokenKey(token)] = ticket{instanceID: instanceID, callID: callID, expires: now.Add(TicketTTL)}
+	t.m[tokenKey(token)] = ticket{instanceID: instanceID, callID: callID, video: video, expires: now.Add(TicketTTL)}
 	return token, TicketTTL, nil
 }
 
-// Redeem consumes a ticket. It returns the instance the ticket was issued to, and only
-// when the token is known, has not expired, has not been used and was issued for
-// callID. A ticket is spent by any attempt to redeem it, right or wrong.
-func (t *Tickets) Redeem(token, callID string) (instanceID string, ok bool) {
+// Redeem consumes a ticket. It returns the instance the ticket was issued to and
+// whether it asks for video, and only when the token is known, has not expired, has not
+// been used and was issued for callID. A ticket is spent by any attempt to redeem it,
+// right or wrong.
+func (t *Tickets) Redeem(token, callID string) (instanceID string, video bool, ok bool) {
 	if token == "" {
-		return "", false
+		return "", false, false
 	}
 	key := tokenKey(token)
 
@@ -93,10 +96,10 @@ func (t *Tickets) Redeem(token, callID string) (instanceID string, ok bool) {
 	t.mu.Unlock()
 
 	if !found || !t.now().Before(tk.expires) {
-		return "", false
+		return "", false, false
 	}
 	if subtle.ConstantTimeCompare([]byte(tk.callID), []byte(callID)) != 1 {
-		return "", false
+		return "", false, false
 	}
-	return tk.instanceID, true
+	return tk.instanceID, tk.video, true
 }

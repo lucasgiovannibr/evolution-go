@@ -27,6 +27,9 @@ type fakeCall struct {
 	ansErr   error
 	sink     AudioSink
 	src      AudioSource
+	vsink    VideoSink
+	onVS     func(VideoState)
+	onKF     func()
 }
 
 func newFake(id string) *fakeCall { return &fakeCall{id: id, phase: PhaseRinging} }
@@ -65,6 +68,18 @@ func (f *fakeCall) OnEnd(fn func(string)) {
 	f.onEnd = fn
 	f.mu.Unlock()
 }
+
+func (f *fakeCall) ReceiveVideo(s VideoSink)              { f.mu.Lock(); f.vsink = s; f.mu.Unlock() }
+func (f *fakeCall) SendVideo([]byte, time.Duration) error { return nil }
+func (f *fakeCall) OnVideoState(fn func(VideoState))      { f.mu.Lock(); f.onVS = fn; f.mu.Unlock() }
+func (f *fakeCall) OnVideoKeyframeRequest(fn func())      { f.mu.Lock(); f.onKF = fn; f.mu.Unlock() }
+func (f *fakeCall) StartVideo() error                     { return nil }
+func (f *fakeCall) AcceptVideo() error                    { return nil }
+func (f *fakeCall) StopVideo() error                      { return nil }
+func (f *fakeCall) SetVideoEnabled(bool) error            { return nil }
+func (f *fakeCall) SetVideoOrientation(int) error         { return nil }
+func (f *fakeCall) IsSendingVideo() bool                  { return false }
+func (f *fakeCall) IsReceivingVideo() bool                { return false }
 
 func (f *fakeCall) end(reason string) {
 	f.mu.Lock()
