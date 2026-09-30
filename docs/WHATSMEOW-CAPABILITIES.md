@@ -22,7 +22,7 @@ Vários pedidos esbarram na lib, não no projeto. Convém não prometê-los.
 | Pedido | Situação na lib | Consequência |
 |---|---|---|
 | **Remover contato** | O encoder de app state só gera mutações `SET` (`appstate/encode.go`); o decoder entende `REMOVE`, mas não há como enviá-lo, e os helpers `Build*` não incluem contato (só mute, pin, archive, marcar como lido, label, star, apagar chat, push name) | `POST /user/contacts` cria/atualiza, **nunca remove**. Só mudaria se a lib ganhar a operação |
-| **Atender / discar chamadas** | Só existe `RejectCall` e os eventos de chamada. Não há sinalização VoIP nem mídia | O PR #141 (5,2 mil linhas) implementa isso **fora** da lib: é um subsistema próprio, com risco e manutenção próprios |
+| **Atender / discar chamadas** | Só existe `RejectCall` e os eventos de chamada. Não há sinalização VoIP nem mídia | O fork implementa isso **fora** da lib, com a biblioteca `purpshell/meowcaller` (fixada em um commit; ela pendura um gancho nos nós de chamada do whatsmeow por reflexão e `unsafe`): é um subsistema próprio, **experimental**, ligado por instância (`callsEnabled`). Ver [`api-call.md`](wiki/guias-api/api-call.md) |
 | **Encaminhar mensagem por ID** | A lib não guarda mensagens. "Encaminhar" é reenviar o conteúdo com `ContextInfo.IsForwarded`/`ForwardingScore` (o projeto já expõe `forwardingScore`) | Precisa do conteúdo: ou o cliente o envia, ou o projeto passa a persistir mensagens |
 | **Botões / listas nativos** | A lib só gera o nó `<biz>` para `ButtonsMessage`, `ListMessage` e respostas; `InteractiveMessage` **não** é coberto (identico entre a versão de junho e a atual) | Renderização em conta pessoal depende do WhatsApp; ver FORK-TRIAGE.md §3 |
 | **Saber o timer de mensagens temporárias de um chat** | `ChatSettingsStore` guarda só mute/pin/archive. Existe `SetDisappearingTimer`, mas não uma leitura do timer atual | Só dá para **aprender** o timer: vem em `ContextInfo.Expiration` de mensagens recebidas, em `events.GroupInfo.Ephemeral` e no history sync |
@@ -74,7 +74,7 @@ Para onde cada evento vai (assinatura → evento publicado):
 | `QRCODE` | `PairError`, `QRScannedWithoutMultidevice` (além de QR e passkey) |
 | `CHAT_PRESENCE` | `Archive`, `Mute`, `Pin`, `Star`, `MarkChatAsRead`, `ClearChat`, `DeleteChat`, `DeleteForMe`, `UnarchiveChatsSetting`, `UserStatusMute` (mudanças de outro aparelho; o full sync não é publicado) |
 | `CONTACT` | `Blocklist` (`action`, `dhash`, `changes`; `modify` sem `changes` = buscar a lista de novo), `PrivacySettings` (novos valores e o que mudou), `BusinessName` |
-| `CALL` | `CallOffer`, `CallAccept`, `CallTerminate`, `CallOfferNotice`, `CallRelayLatency` e agora `CallPreAccept`, `CallTransport`, `CallReject`, `UnknownCallEvent` |
+| `CALL` | `CallOffer`, `CallAccept`, `CallTerminate`, `CallOfferNotice`, `CallRelayLatency` e agora `CallPreAccept`, `CallTransport`, `CallReject`, `UnknownCallEvent`; do motor de chamadas do fork (não vêm da lib): `CallReady`, `CallEnded`, `CallVideoState` |
 | `MESSAGE` | `Message`, `UndecryptableMessage` e `MediaRetry` (o remetente precisa reenviar a mídia; sem o texto cifrado) |
 | `NEWSLETTER` | `NewsletterJoin`, `NewsletterLeave`, `NewsletterLiveUpdate`, `NewsletterMuteChange` |
 

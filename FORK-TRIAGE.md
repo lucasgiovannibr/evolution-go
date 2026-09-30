@@ -8,7 +8,7 @@ Foco do fork: **corrigir, melhorar e ajustar**. O que é funcionalidade nova est
 
 ## 1. Estado do fork
 
-- Em 29/09 a `main` do fork estava **idêntica** ao `upstream/main` (commit `9337afc`, versão `0.7.2`), então não havia o que atualizar. Hoje ela está **95 commits à frente** (22 PRs mesclados dentro do próprio fork).
+- Em 29/09 a `main` do fork estava **idêntica** ao `upstream/main` (commit `9337afc`, versão `0.7.2`), então não havia o que atualizar. Em 30/09 ela está **125 commits à frente** (31 PRs mesclados dentro do próprio fork, até o #36).
 - O upstream tinha **61 issues + 61 PRs abertos** (todos analisados aqui).
 - A branch `upstream/develop` está *atrás* da `main` (VERSION `0.7.1`) — vários PRs abertos apontam para ela (#90, #132, #150, #159–#163, #177, #198) e por isso estão desalinhados com a `main`.
 - Os commits da `main` pública são `sync: 0.7.x from main`, feitos por um bot — ela é um **espelho** de um repositório interno. O GitHub não lista nenhum PR como *merged*; os PRs #33 e #91 (AlwaysOnline) foram apenas **fechados** em 03/07 e a correção chegou à `main` por outro caminho. **O fork é o lugar prático para integrar correções.**
@@ -20,7 +20,7 @@ Tudo foi enviado **somente ao fork** (`origin`). O remote `upstream` está com o
 
 | Onde | Situação |
 |---|---|
-| `main` do fork | Tudo mesclado por PRs **dentro do fork** (#1–#22): triagem, whatsmeow novo + Go 1.26, hardening, ciclo de vida, features, correções do teste real, diagnóstico, eventos do whatsmeow, mensagens temporárias, convites, canais, mensagem que não chegou, correção das rotas de chat, fila de webhook e quatro rodadas de caça a bugs. CI verde; imagem em `ghcr.io/lucasgiovannibr/evolution-go` |
+| `main` do fork | Tudo mesclado por PRs **dentro do fork** (#1–#30 e #36): triagem, whatsmeow novo + Go 1.26, hardening, ciclo de vida, features, correções do teste real, diagnóstico, eventos do whatsmeow, mensagens temporárias, convites, canais, mensagem que não chegou, correção das rotas de chat, fila de webhook, quatro rodadas de caça a bugs, espera pela conexão, painel refeito, `PUT /instance/{id}/integrations` e chamadas (atender, discar, vídeo). CI verde; imagem em `ghcr.io/lucasgiovannibr/evolution-go` |
 | Stack de teste local | `docker/fork-test/` (Postgres novo + imagem do fork, porta 8100), isolado dos seus outros containers |
 
 Build, `go vet` e `go test -race ./...` passam.
@@ -190,6 +190,19 @@ Todos os eventos que a lib entrega ao handler estão tratados (70 dos 75 tipos; 
 | Nove serviços iniciavam a instância e dormiam 2 s fixos antes de checar a conexão (3 s depois de reconectar, 3 s + 2 s no `GET /instance/qr`, 2 s no `ForceReconnect`): uma conexão de 2,1 s falhava a requisição e uma de 0,3 s ainda custava 2 s | `utils.WaitForClient` (usa `WaitForConnection`): responde quando conecta, limite de 10 s; instância sem dispositivo pareado falha na hora (#77); `GetQr` espera QR, passkey ou login | ✅ instância sem pareamento falha em 0,47 s; QR em 0,35 s (antes 3 s fixos); envio depois de desconectar em 0,97 s |
 | `POST /user/devices`, `GET /user/statusprivacy`, `POST /user/business` (novos, só leitura) | 10 s de limite; 404 quando o número não é Business | ✅ ver PROPOSALS |
 
+### Painel, `integrations` e chamadas (PRs #26, #27, #28–#30 e #36)
+
+- **Painel `/manager`** (#26): refeito do zero (React 19, TypeScript, Vite, Tailwind). O código-fonte passou a estar no repositório (`manager/`); o `dist` continua versionado porque o Dockerfile o copia.
+- **`PUT /instance/{id}/integrations`** (#27): grava webhook, eventos e produtores sem conectar a instância.
+- **Chamadas** (#28 fundação e limites, #29 discar, #30 vídeo, #36 correções do teste ao vivo): reimplementação do PR #141 do upstream. Decisões: biblioteca `purpshell/meowcaller` fixada no último commit compatível com o whatsmeow do projeto (`6d9b7b2c1807`; a `main` dela migrou para outro fork do whatsmeow); **opt-in por instância** (`callsEnabled`, porque a biblioteca pré-aceita toda chamada recebida); **instância com proxy recusada** (a mídia UDP ignoraria o proxy e vazaria o IP); **bilhete de uso único** no WebSocket em vez da chave na URL; limites de chamadas simultâneas e por minuto; motivo de fim e eventos próprios (`CallReady`, `CallEnded`, `CallVideoState`). Guia em `docs/wiki/guias-api/api-call.md`.
+- **Achados do teste ao vivo** (30/09/2026, número real e iPhone), corrigidos no #36:
+  - O WhatsApp não manda motivo quando o outro lado desliga; o `CallEnded` saía com motivo vazio e agora sai `peer_hangup`.
+  - O valor de rotação do vídeo recebido (extensão RTP) conta no sentido **anti-horário**, ao contrário do que a biblioteca documenta; o stream entrega os giros horários que deixam a imagem em pé. A orientação do `video_state` é a do aparelho e não serve para girar.
+  - `video_state` não distinguia "aceitou o upgrade" de "desligou a câmera"; ganhou `state` e `stateCode` (o iPhone manda um código 2 sem nome logo após atender, significado não confirmado).
+  - `enable` sem vídeo prévio: o iPhone ignora; agora responde 409 e manda usar `start`.
+  - Um teste dependia da ordem entre o fechamento do `Done` e a publicação do `CallEnded` e falhava de vez em quando.
+- **Não feito de propósito**: chamadas em grupo, duração máxima de chamada atendida e recuperação de um stream caído depois do prazo.
+
 ### Validação ao vivo (instância real, 29/09/2026)
 
 Instância pareada e conectada por você; mensagens só para o seu próprio número; grupo de teste só com você (o primeiro foi removido no fim; o "ZZ Teste Timer Fork", criado depois para as mensagens temporárias, ainda existe e deve ser apagado à mão). As validações das rodadas seguintes estão nas tabelas de cada PR acima.
@@ -274,9 +287,9 @@ Verificado: build, `go vet`, `go test -race`, boot com Postgres, imagem Docker (
 
 | Decisão | Qtde |
 |---|---|
-| ✅ Aplicado / Reimplementado | 22 |
+| ✅ Aplicado / Reimplementado | 23 |
 | ⏩ Superado (duplicado ou coberto) | 23 |
-| 📝 Proposta (feature) | 6 |
+| 📝 Proposta (feature) | 5 |
 | ⏸ Não aplicado | 7 |
 | 🟡 Parcial | 3 |
 
@@ -370,7 +383,7 @@ Legenda de PRs: **Aplicado** = mesclado (com adaptações ao `safemap`); **Reimp
 | [#135](https://github.com/evolution-foundation/evolution-go/pull/135) | fix(events): serialize websocket writes per connection | cesar-carlos | ✅ Reimplementado | Websocket com escrita serializada — implementação própria (também cobre #181), com testes `-race`. |
 | [#136](https://github.com/evolution-foundation/evolution-go/pull/136) | fix(instance): stop Connect/advanced-settings from wiping config | cesar-carlos | ✅ Aplicado | Mesclado: `/instance/connect` e advanced-settings passam a ser parciais. |
 | [#137](https://github.com/evolution-foundation/evolution-go/pull/137) | fix(send): handle document-with-caption and @lid JIDs in mentionAll | cesar-carlos | ✅ Aplicado | Mesclado: mentionAll com documento+legenda e JIDs @lid. |
-| [#141](https://github.com/evolution-foundation/evolution-go/pull/141) | feat: answer/dial/control WhatsApp calls and stream their audio/video over We… | RamonBritoDev | 📝 Proposta | Atender/discar/controlar chamadas + stream de áudio/vídeo (5,2 mil linhas, 19 arquivos). Ver propostas. |
+| [#141](https://github.com/evolution-foundation/evolution-go/pull/141) | feat: answer/dial/control WhatsApp calls and stream their audio/video over We… | RamonBritoDev | ✅ Reimplementado | Atender/discar/controlar chamadas + stream de áudio/vídeo por WebSocket, reimplementado no fork (não o PR, que tinha apikey na URL, `CheckOrigin` sempre verdadeiro, registro que não limpava ao desconectar e rotas de grupo/reação/tela só como esboço): biblioteca `purpshell/meowcaller` fixada em um commit, opt-in por instância (`callsEnabled`), recusa instância com proxy, bilhete de uso único, limites de chamadas, sem grupo. Testado ao vivo (30/09/2026). Ver `docs/wiki/guias-api/api-call.md`. |
 | [#142](https://github.com/evolution-foundation/evolution-go/pull/142) | Eflowchat pg fix | soyezeok | ⏩ Superado | Idêntico ao #117. |
 | [#143](https://github.com/evolution-foundation/evolution-go/pull/143) | fix: skip NATS connection when URL is empty | joldmarfilho | ✅ Aplicado | Mesclado: não conecta ao NATS sem `NATS_URL`. |
 | [#144](https://github.com/evolution-foundation/evolution-go/pull/144) | fix: recover app-state sync errors safely | joldmarfilho | ✅ Aplicado | Mesclado: recovery de `AppStateSyncError` (validar ao vivo). |

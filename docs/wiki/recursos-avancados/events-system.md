@@ -271,7 +271,7 @@ AMQP_GLOBAL_EVENTS=MESSAGE,CALL,CONNECTION
 - `SEND_MESSAGE` → fila `sendmessage`
 - `READ_RECEIPT` → fila `receipt`
 - `PRESENCE` → fila `presence`
-- `CALL` → filas `calloffer`, `callaccept`, `callterminate`
+- `CALL` → filas `calloffer`, `callaccept`, `callterminate`, `callready`, `callended`, `callvideostate`
 - `CONNECTION` → filas `connected`, `disconnected`, `loggedout`
 - `GROUP` → filas `groupinfo`, `joinedgroup`
 - `QRCODE` → filas `qrcode`, `qrtimeout`, `qrsuccess`
@@ -609,7 +609,7 @@ O Evolution GO usa dois níveis de classificação de eventos:
 | `SEND_MESSAGE` | `SendMessage` |
 | `READ_RECEIPT` | `Receipt` |
 | `GROUP` | `GroupInfo`, `JoinedGroup` |
-| `CALL` | `CallOffer`, `CallAccept`, `CallTerminate` |
+| `CALL` | `CallOffer`, `CallAccept`, `CallTerminate`, `CallReady`, `CallEnded`, `CallVideoState` (e os demais de chamada) |
 | `CONNECTION` | `Connected`, `Disconnected`, `LoggedOut` |
 | `QRCODE` | `PairSuccess`, `Disconnected` (com QR) |
 | `ALL` | Todos os eventos |
@@ -651,6 +651,11 @@ O Evolution GO usa dois níveis de classificação de eventos:
 - `CallOffer` - Chamada recebida
 - `CallAccept` - Chamada aceita
 - `CallTerminate` - Chamada encerrada
+- `CallReady` - A mídia da chamada subiu (motor de chamadas)
+- `CallEnded` - A chamada terminou, com o `reason` e a duração (motor de chamadas)
+- `CallVideoState` - O outro lado mudou o vídeo, com `state` e `stateCode` (motor de chamadas)
+
+`CallReady`, `CallEnded` e `CallVideoState` só saem em instâncias com `callsEnabled`. Os campos e os motivos de fim estão em [API de Chamadas](../guias-api/api-call.md#eventos).
 
 ### Eventos de Conexão
 

@@ -347,6 +347,28 @@ Cada URL de destino tem uma fila limitada; os eventos saem por poucos trabalhado
 
 `DELETE /instance/delete/{id}` agora também remove do banco de autenticação o dispositivo pareado (chaves, contatos em cache, mapa de LID) e os votos de enquete da instância. Se a instância não estava conectada, o WhatsApp não é avisado: a sessão continua listada em "aparelhos conectados" no celular e precisa ser removida por lá.
 
+## Gravar webhook e eventos sem conectar — `PUT /instance/{id}/integrations`
+
+Grava o webhook, as assinaturas (`subscribe`) e as chaves de RabbitMQ, WebSocket e NATS **sem iniciar a instância** (o `POST /instance/connect` fazia isso, mas conectava junto). Se a instância está rodando, vale na hora. Campo vazio mantém o valor; `webhookUrl: "disabled"` remove o webhook; `subscribe: ["ALL"]` assina tudo. Detalhes em [API de Instâncias](./api-instances.md#gravar-webhook-eventos-e-produtores).
+
+## Chamadas (atender, discar e vídeo) — experimental
+
+Com `callsEnabled` ligado na instância (`PUT /instance/{id}/advanced-settings`, vale na próxima conexão), o servidor passa a **atender, discar, desligar e controlar o vídeo** de chamadas do WhatsApp, e leva o áudio (PCM 16 kHz) e o vídeo (H.264) por um **WebSocket** por chamada. Antes só existia `POST /call/reject`.
+
+- Rotas novas: `GET /call/active`, `GET /call/{callId}`, `POST /call/answer`, `POST /call/dial`, `POST /call/hangup`, `POST /call/stream-ticket`, `GET /call/stream/{callId}` (WebSocket) e `POST /call/video`.
+- Eventos novos (assinatura `CALL`): `CallReady`, `CallEnded` (com `reason`: `peer_hangup`, `hangup`, `rejected`, `rejected_busy`, `ring_timeout`, `stream_closed`, `server:<código>`) e `CallVideoState` (com `state` e `stateCode`).
+- Variáveis: `CALL_MAX_CONCURRENT` (4), `CALL_RING_TIMEOUT` (90 s), `CALL_STREAM_GRACE` (10 s), `CALL_DIAL_LIMIT` (6/min) e `CALL_STREAM_ORIGINS`.
+- Não funciona em instância com **proxy** (a mídia sairia por UDP direto, ignorando o proxy); `GET /call/active` mostra `state: "blocked_by_proxy"` e `GET /instance/runtimes` traz o aviso `calls_blocked_by_proxy`.
+- Com o motor ligado, toda chamada recebida é **pré-aceita** automaticamente pela biblioteca.
+- Validado ao vivo com um número real e um iPhone: áudio e vídeo, recebidos e enviados, e o upgrade de áudio para vídeo nos dois sentidos. O vídeo recebido traz a rotação em `orientation` (giros horários para ficar em pé); o vídeo enviado deve ser **em pé** (360×640) para ocupar a tela do celular.
+- `enable` em `POST /call/video` só reativa vídeo que já existia: numa chamada que nunca teve vídeo devolve `409` (use `start`).
+
+Guia completo, protocolo do WebSocket e exemplos em [API de Chamadas](./api-call.md).
+
+## Painel (manager)
+
+O painel em `/manager` foi refeito do zero (React 19, TypeScript, Vite e Tailwind, com tema claro e escuro). O código-fonte está em `manager/` e o resultado do build, versionado, em `manager/dist`. Como gerar e a estrutura estão em `manager/README.md`.
+
 ## Demais eventos do whatsmeow
 
 Passam a ser publicados (antes só apareciam como "Unhandled event" no log):

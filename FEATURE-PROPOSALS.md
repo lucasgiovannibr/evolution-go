@@ -40,6 +40,10 @@ Documentação dos endpoints: [`docs/wiki/guias-api/api-fork-additions.md`](docs
 | **`duration` em `/chat/mute`** (`8h`, `1w`, `always`, `30m`) | Achado ao corrigir as rotas de chat | Padrão continua 1 h | ✅ `always` confirmado no celular |
 | **Fila de webhook por destino** (limites, descarte do mais antigo, tentativas com espera crescente, degradação, estatísticas em `/instance/runtimes`; `WEBHOOK_QUEUE_*`) | Risco achado na análise de bugs | Ver FORK-TRIAGE.md | ✅ entrega, falha e recuperação com receptor local; ❌ receptor travado e fila estourada só em teste |
 | **Limpar o webhook** com `"disabled"`/`"false"` em `/instance/connect` (`""` continua "não alterar") | Pedido do teste do webhook | Evita apagar o webhook a cada reconexão do manager | ✅ |
+| **Chamadas** (experimental): atender, discar, desligar, controlar o vídeo e levar áudio (PCM 16 kHz) e vídeo (H.264) por um WebSocket por chamada; `callsEnabled` por instância; `CALL_*`; eventos `CallReady`, `CallEnded`, `CallVideoState` | Proposta 20 (PR #141), reimplementado no fork sobre `purpshell/meowcaller` fixada em um commit | Opt-in por instância (a biblioteca pré-aceita toda chamada recebida), recusa instância com proxy (a mídia UDP ignoraria o proxy), bilhete de uso único no lugar da chave na URL, limites de chamadas simultâneas e por minuto, sem chamadas em grupo. Guia em [`api-call.md`](docs/wiki/guias-api/api-call.md) | ✅ em 30/09/2026 com um número real e um iPhone: áudio e vídeo recebidos e enviados, upgrade de áudio para vídeo nos dois sentidos, celular girado em várias posições (a rotação do vídeo recebido chega corrigida), vídeo em pé ocupando a tela; `enable` sem vídeo recusado (409, só nos testes); ❌ chamada em grupo e duração longa não testadas |
+| **`PUT /instance/{id}/integrations`**: grava webhook, eventos e produtores sem conectar a instância | Pedido do manager | Vale na hora se a instância roda | — |
+| **Painel `/manager` refeito** (React 19, TypeScript, Vite, Tailwind; tema claro e escuro; código-fonte em `manager/`, `dist` versionado) | Reconstruído no fork (PR #26) | Ver `manager/README.md` | — |
+| **Swagger regenerado sem regressão** (swag v1.16.3: 116 rotas, 28 novas, nenhuma perdida; as de `/license/*` ficam declaradas em `pkg/core/license_swagger.go`) | Sugestão 29 | `make swagger` dá o mesmo resultado | ✅ gerado e conferido contra o anterior |
 
 ## 2. Propostas ainda em aberto
 
@@ -58,28 +62,27 @@ Documentação dos endpoints: [`docs/wiki/guias-api/api-fork-additions.md`](docs
 |---|---|---|---|---|---|
 | 18 | **Encaminhar mensagens** (`forward`; a lib não guarda mensagens, então precisa de conteúdo enviado ou persistência própria) | PRs [#132](https://github.com/evolution-foundation/evolution-go/pull/132) / [#150](https://github.com/evolution-foundation/evolution-go/pull/150) | ~4,9 mil linhas (base `develop`) | O PR cria os arquivos em `routes/` e `sendMessage/` **na raiz do repositório**, não em `pkg/`: é uma cópia duplicada do `send_service.go` e não integra. A ideia é boa; reimplementar enxuto em `pkg/` | ◐ |
 | 19 | **Evento de agenda** `POST /send/event` | PR [#90](https://github.com/evolution-foundation/evolution-go/pull/90) | 702 linhas, base `develop` | Recurso de nicho | ✖ por ora |
-| 20 | **Chamadas**: atender/discar/controlar e stream de áudio/vídeo por WebSocket | PR [#141](https://github.com/evolution-foundation/evolution-go/pull/141) | 5,2 mil linhas / 19 arquivos | O whatsmeow só oferece `RejectCall` e eventos: **não há sinalização VoIP nem mídia na lib** (conferido). O PR implementa isso por conta própria, ou seja, um subsistema novo com risco e manutenção próprios; exige projeto separado | ✖ por ora |
+| 20 | **Chamadas**: atender/discar/controlar e stream de áudio/vídeo por WebSocket | PR [#141](https://github.com/evolution-foundation/evolution-go/pull/141) | 5,2 mil linhas / 19 arquivos | O whatsmeow só oferece `RejectCall` e eventos: **não há sinalização VoIP nem mídia na lib** (conferido). O PR implementa isso por conta própria, ou seja, um subsistema novo com risco e manutenção próprios; exigiu projeto separado | ✅ Feito no fork, com implementação própria (ver §1) |
 | 21 | **UI de chat no "sender"** (enviar/receber em tela) | PR [#182](https://github.com/evolution-foundation/evolution-go/pull/182) | 1,6 mil linhas | Ferramenta de teste; não é núcleo da API | ✖ por ora |
 | 22 | **Manager: drawer mobile e ações visíveis em touch** | PR [#184](https://github.com/evolution-foundation/evolution-go/pull/184) | 5 arquivos de UI | Melhoria de usabilidade, baixo risco; não avaliei visualmente | ◐ (abrir o manager no celular antes de decidir) |
 
 ## 3. Sugestões novas (ainda não implementadas)
 
-As sugestões 23 e 24 (diagnóstico do runtime e health check), 26 e 27 (resultado por item e presença em tempo de execução) e 30 a 36 (eventos operacionais, de pareamento e de estado de chat, timer de mensagens temporárias, convites, canais e mensagem que não chegou) já foram feitas (§1). As de whatsmeow vêm do levantamento em [`docs/WHATSMEOW-CAPABILITIES.md`](docs/WHATSMEOW-CAPABILITIES.md).
+As sugestões 23 e 24 (diagnóstico do runtime e health check), 26 e 27 (resultado por item e presença em tempo de execução) 30 a 36 (eventos operacionais, de pareamento e de estado de chat, timer de mensagens temporárias, convites, canais e mensagem que não chegou) e 29 (swagger regenerado sem perder as rotas de licença) já foram feitas (§1). As de whatsmeow vêm do levantamento em [`docs/WHATSMEOW-CAPABILITIES.md`](docs/WHATSMEOW-CAPABILITIES.md).
 
 | # | Sugestão | Por quê | Esforço | Recomendação |
 |---|---|---|---|---|
 | 25 | **Métricas Prometheus** (instâncias conectadas, reconexões, eventos entregues/falhos, conexões do pool) | Observar uso prolongado e alertar antes de a instância cair | M | ◐ |
 | 28 | **Remover contato via API** | Impossível hoje: o encoder de app state do whatsmeow só gera `SET` (conferido no código). Detalhes e outros limites duros em `docs/WHATSMEOW-CAPABILITIES.md` §2 | — | ✖ (depende da lib) |
-| 29 | **Regenerar o swagger sem regressão** (o `swag init` reescreve ~1.000 linhas e remove as rotas de licença) | Documentação da API desatualizada (`/group/description`, `/group/settings`, novos endpoints) | M | ◐ |
 | 37 | **Erros de URL de mídia como 400** (hoje um 404 ou arquivo grande demais em `/send/media` responde 500) | Distingue erro do chamador de erro do servidor; pede separar os dois tipos em todos os fluxos de envio | P | ◐ |
 | 38 | **Atualização parcial em `POST /user/privacy`** (hoje o handler exige todos os campos) | Mudar só "visto por último" sem reenviar o resto | P | ◐ |
 | 39 | **Enquetes no modo SQLite** (a tabela `poll_votes` usa `TEXT[]`, só Postgres) | Hoje `/send/pollVote` e os resultados não funcionam sem Postgres | M | ◐ |
 | 40 | **Remover código morto** apontado pelo `staticcheck` (`convertToWebP`, `stringPointer`, `sectionsToString`, dois campos do repositório de instâncias, uma atribuição no `Connect`) | Manutenção | P | ◐ |
-| 41 | **`webhookUrl: ""` limpar o webhook** | Só depois de corrigir o manager embutido, que envia `""` em toda reconexão (o código-fonte dele não está no repositório, só o `dist`) | M | ✖ por ora |
+| 41 | **`webhookUrl: ""` limpar o webhook** | Só depois de corrigir o manager embutido, que envia `""` em toda reconexão (o código-fonte do painel agora está em `manager/`) | M | ✖ por ora |
 
 ## 4. Documentação pendente
 
-- Os endpoints novos (incluindo `/chat/disappearing`, `/group/inviteinfo`, `/newsletter/*` e `/message/rerequest`), `POST /group/settings` e `quoted.text` estão no wiki; falta o swagger (item 29), que ainda não descreve nada disso.
-- `/chat/*` usa o campo `chat` (não `number`). As rotas deixaram de ser "not working" no PR #17; falta só refletir isso no wiki (`/chat/mute` ganhou `duration`, `/message/subscribe` aceita lista, `/instance/connect` aceita `"disabled"` no `webhookUrl`, `/instance/runtimes` traz o bloco `webhook`).
+A documentação de tudo que está em §1 foi atualizada no preparo do release (30/09/2026): wiki (`api-call.md` reescrita, `api-instances.md`, `api-fork-additions.md`, `events-system.md`, `environment-variables.md`), CHANGELOG, swagger, FORK-TRIAGE e `docs/WHATSMEOW-CAPABILITIES.md`. Ainda em aberto:
+
 - Botões e listas em conta pessoal: já registrado em `api-interactive.md`; revisar quando houver validação em aparelho.
 - README: instruções de Windows (PRs #201/#202 são um começo, mas duplicam o bloco "Setup").

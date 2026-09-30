@@ -154,6 +154,20 @@ PROXY_PASSWORD=senha
 
 ---
 
+## Chamadas
+
+Só têm efeito nas instâncias com `callsEnabled` ligado. Valores inválidos ou não positivos voltam ao padrão. Detalhes em [API de Chamadas](../guias-api/api-call.md).
+
+| Variável | Padrão | Descrição |
+|----------|--------|-----------|
+| `CALL_MAX_CONCURRENT` | `4` | Chamadas simultâneas por instância (as recebidas além disso são rejeitadas) |
+| `CALL_RING_TIMEOUT` | `90` | Segundos até largar uma chamada que ninguém atendeu |
+| `CALL_STREAM_GRACE` | `10` | Segundos que uma chamada atendida espera o stream voltar antes de ser desligada |
+| `CALL_DIAL_LIMIT` | `6` | Chamadas discadas por minuto por instância |
+| `CALL_STREAM_ORIGINS` | - | Origens de navegador aceitas no WebSocket do stream, separadas por vírgula (`*` aceita todas) |
+
+---
+
 ## Recursos Adicionais
 
 | Variável | Descrição |

@@ -17,7 +17,11 @@ and pull requests in `FORK-TRIAGE.md`.
   votes (its `ON CONFLICT` target no longer exists); everything else keeps working.
 - New optional environment variables: `DISAPPEARING_AUTO_APPLY` (default on),
   `WEBHOOK_QUEUE_MAX_EVENTS` (1000), `WEBHOOK_QUEUE_MAX_MB` (64) and
-  `WEBHOOK_QUEUE_WORKERS` (4).
+  `WEBHOOK_QUEUE_WORKERS` (4); for calls, `CALL_MAX_CONCURRENT` (4), `CALL_RING_TIMEOUT`
+  (90 s), `CALL_STREAM_GRACE` (10 s), `CALL_DIAL_LIMIT` (6 per minute) and
+  `CALL_STREAM_ORIGINS`.
+- **New database column** `instances.calls_enabled` (boolean, default false), added by
+  the automatic migration at startup.
 
 ### Fixes
 - **Process crashes**: shared instance maps are now synchronized (`fatal error:
@@ -196,6 +200,69 @@ and pull requests in `FORK-TRIAGE.md`.
 - `POST /instance/connect`: an empty `webhookUrl` still means "unchanged" (the bundled
   manager sends `""` on every reconnect); `"disabled"` or `"false"` now clears the
   webhook (stored empty; a legacy stored `"disabled"` is still ignored on delivery).
+
+### `PUT /instance/{id}/integrations`
+- Stores the webhook URL, the subscribed events and the RabbitMQ/WebSocket/NATS switches
+  of an instance **without starting it** (`POST /instance/connect` did this but connected
+  too). Takes effect at once when the instance runs, otherwise on the next connection.
+  Empty fields keep their value, `webhookUrl: "disabled"` removes the webhook,
+  `subscribe: ["ALL"]` selects every event.
+
+### Manager panel rebuilt
+- `/manager` was rebuilt from scratch (React 19, TypeScript, Vite, Tailwind v4; light and
+  dark theme). The source is in `manager/`; the built `manager/dist` is versioned and
+  what the Docker image ships (see `manager/README.md`).
+
+### WhatsApp calls: answer, dial, video and a stream over WebSocket (experimental)
+Until now the only call feature was `POST /call/reject`. Opt in per instance with
+`callsEnabled` (`PUT /instance/{id}/advanced-settings`, **effective on the next
+connection**). The media side uses the `purpshell/meowcaller` library, pinned to commit
+`6d9b7b2c1807` (its `main` moved to a different whatsmeow fork).
+- **Routes**: `GET /call/active`, `GET /call/{callId}`, `POST /call/answer`,
+  `POST /call/dial`, `POST /call/hangup`, `POST /call/stream-ticket`,
+  `GET /call/stream/{callId}` (WebSocket) and `POST /call/video`; `POST /call/reject`
+  and `rejectCall` now go through the engine when it is on.
+- **Stream**: audio is PCM 16-bit, 16 kHz mono in base64 JSON messages (Twilio Media
+  Streams style); with `video: true` in the ticket, video is H.264 Annex-B, one access
+  unit per message, with `keyframe_request` and `video_state` messages. Authentication is
+  a one-time ticket (30 s) instead of the API key in the URL; browsers must come from an
+  origin in `CALL_STREAM_ORIGINS`.
+- **Video**: `start` asks the peer to turn an audio call into video (an iPhone accepts),
+  `accept`, `stop`, `enable`/`disable` (mute and unmute), `orientation`. `enable` is refused
+  with `409` on a call that never had video: the iPhone ignores "camera on" without the
+  upgrade request. The rotation of each received picture is delivered as the clockwise
+  quarter turns that make it upright (the library documents the RTP value as clockwise, but
+  it counts counter-clockwise); `video_state.orientation` is the device's and must not be
+  used to rotate.
+- **Events** (`CALL`): `CallReady`, `CallEnded` (`reason`: `peer_hangup` when the other
+  side hangs up, because WhatsApp sends no reason then; `hangup`, `rejected`,
+  `rejected_busy`, `ring_timeout`, `stream_closed`, `server:<code>`) and `CallVideoState`
+  (`state` names what the peer signalled: `enabled`, `disabled`, `stopped`,
+  `upgrade_request`, `upgrade_accepted`, `upgrade_rejected`, `upgrade_cancelled`, `unknown`,
+  plus the raw `stateCode`; the iPhone sends an unnamed code 2 right after pickup).
+- **Safeguards**: instances with a **proxy** cannot use calls (the library opens a UDP
+  socket that ignores the proxy, which would leak the IP): `state: "blocked_by_proxy"` and
+  the `calls_blocked_by_proxy` warning; at most `CALL_MAX_CONCURRENT` calls per instance;
+  `CALL_DIAL_LIMIT` calls placed per minute (failures count); a running call whose stream
+  stays away for `CALL_STREAM_GRACE` is hung up; everything an operator can see is in
+  `GET /instance/runtimes` (`runtime.calls` and warnings).
+- **Side effect**: with the engine on, every incoming call is pre-accepted by the library.
+- **Not done on purpose**: group calls, a maximum duration for an answered call, and
+  recovering a stream that dropped after the grace period.
+- **Tested live** with a real number and an iPhone: incoming and outgoing audio,
+  incoming and outgoing video, audio-to-video upgrade in both directions, the phone turned
+  through several positions, and a portrait (360x640) picture filling the phone's screen
+  (a landscape one is letterboxed). `docker/fork-test/call-stream-test.py` repeats it.
+- Guide, WebSocket protocol and examples: `docs/wiki/guias-api/api-call.md`.
+
+### Documentation
+- `docs/swagger.*` regenerated with swag v1.16.3 (`--parseDependency`; it had not been
+  regenerated since the 0.7.2 sync): 28 routes added (calls, `/instance/{id}/integrations`,
+  diagnostics, `/send/pollVote`, newsletters, etc.), none removed. The `/license/*` routes,
+  registered with inline handlers that swag cannot annotate, are declared in
+  `pkg/core/license_swagger.go` so they stay documented.
+- A test that read `CallEnded` right after the call's `Done` channel closed could run
+  before the event was published (and panic on the empty log); it now waits for the event.
 
 ## v0.7.2
 

@@ -32,6 +32,7 @@ Uma **instância** representa uma conexão individual com o WhatsApp. Cada inst�
 - `GET /instance/logs/:instanceId` - Obter logs
 - `GET /instance/:instanceId/advanced-settings` - Configurações avançadas
 - `PUT /instance/:instanceId/advanced-settings` - Atualizar configurações
+- `PUT /instance/:instanceId/integrations` - Gravar webhook, eventos e produtores sem iniciar a instância
 
 ---
 
@@ -690,13 +691,13 @@ apikey: SUA-GLOBAL-API-KEY
 ### Resposta (200)
 ```json
 {
-  "rejectCall": false,
-  "msgCall": "Não estou disponível para chamadas",
-  "groupsIgnore": true,
   "alwaysOnline": false,
+  "rejectCall": false,
+  "msgRejectCall": "Não estou disponível para chamadas",
   "readMessages": false,
-  "readStatus": false,
-  "syncFullHistory": false
+  "ignoreGroups": true,
+  "ignoreStatus": true,
+  "callsEnabled": false
 }
 ```
 
@@ -715,15 +716,25 @@ apikey: SUA-GLOBAL-API-KEY
 ### Body
 ```json
 {
-  "rejectCall": true,
-  "msgCall": "Por favor, envie mensagem",
-  "groupsIgnore": false,
   "alwaysOnline": true,
+  "rejectCall": true,
+  "msgRejectCall": "Por favor, envie mensagem",
   "readMessages": true,
-  "readStatus": true,
-  "syncFullHistory": false
+  "ignoreGroups": false,
+  "ignoreStatus": true,
+  "callsEnabled": false
 }
 ```
+
+Todos os campos são opcionais: só o que você enviar muda (os demais mantêm o valor atual).
+
+| Campo | Efeito |
+|-------|--------|
+| `alwaysOnline` | Mantém a instância "online"; vale na hora |
+| `rejectCall` / `msgRejectCall` | Rejeita chamadas recebidas e responde com a mensagem |
+| `readMessages` | Marca as mensagens recebidas como lidas |
+| `ignoreGroups` / `ignoreStatus` | Ignora eventos de grupos / de status |
+| `callsEnabled` | Liga o **motor de chamadas** (atender, discar, vídeo por WebSocket). **Só vale na próxima conexão** da instância, e não funciona em instância com proxy. Ver [API de Chamadas](./api-call.md) |
 
 ### Exemplo cURL
 ```bash
@@ -735,6 +746,39 @@ curl -X PUT "http://localhost:4000/instance/vendas/advanced-settings" \
     "alwaysOnline": true
   }'
 ```
+
+---
+
+## Gravar Webhook, Eventos e Produtores
+
+```
+PUT /instance/:instanceId/integrations
+```
+
+Grava o webhook, as assinaturas de eventos e as chaves de RabbitMQ, WebSocket e NATS de uma instância **sem iniciá-la** (o `POST /instance/connect` faz isso, mas conecta junto). Se a instância está rodando, vale na hora; se não, vale na próxima conexão.
+
+### Headers
+```
+Content-Type: application/json
+apikey: SUA-GLOBAL-API-KEY
+```
+
+### Body
+```json
+{
+  "webhookUrl": "https://meu-servidor.com/webhook",
+  "subscribe": ["MESSAGE", "CALL"],
+  "rabbitmqEnable": "disabled",
+  "websocketEnable": "disabled",
+  "natsEnable": "disabled"
+}
+```
+
+- Campo vazio ou ausente **mantém o valor atual**.
+- `webhookUrl: "disabled"` remove o webhook.
+- `subscribe: ["ALL"]` assina todos os eventos.
+- `rabbitmqEnable`, `websocketEnable` e `natsEnable` ligam ou desligam cada produtor para a instância (`enabled` ou `disabled`).
+- Responde `200` com os valores gravados, `400` se o ID ou as configurações forem inválidos e `404` se a instância não existir.
 
 ---
 
