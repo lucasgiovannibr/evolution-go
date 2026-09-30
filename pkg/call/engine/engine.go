@@ -89,7 +89,9 @@ type VideoState struct {
 	// Upgrade: the peer asks to turn an audio call into a video call (answer with
 	// the "accept" video action).
 	Upgrade bool `json:"upgrade"`
-	// Orientation is the peer's device rotation in clockwise quarter turns (0..3).
+	// Orientation is the peer's device rotation as the peer reports it (0..3). It does not
+	// follow the camera in use, so do not rotate the picture by it: every video message of
+	// the stream carries the rotation to apply.
 	Orientation int `json:"orientation"`
 	// State is what the peer actually signalled, see the VideoState* constants. Active
 	// and Upgrade alone cannot tell the peer accepting our upgrade from it turning its

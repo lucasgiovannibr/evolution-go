@@ -391,13 +391,13 @@ func TestThePeersVideoReachesTheClientStartingOnAKeyframe(t *testing.T) {
 	eventually(t, "the video sink", func() bool { return call.VideoSink() != nil })
 
 	call.VideoSink().WriteVideo(pAU()) // the middle of a GOP: nobody can decode it
-	call.VideoSink().(interface{ SetOrientation(int) }).SetOrientation(1)
+	call.VideoSink().(interface{ SetOrientation(int) }).SetOrientation(3)
 	call.VideoSink().WriteVideo(keyAU())
 	call.VideoSink().WriteVideo(pAU())
 
 	first := read(t, conn)
 	if first.Event != "video" || first.Track != "inbound" || first.Seq != 1 ||
-		first.Keyframe == nil || !*first.Keyframe || first.Orientation == nil || *first.Orientation != 1 {
+		first.Keyframe == nil || !*first.Keyframe || first.Orientation == nil || *first.Orientation != 1 { // library 3 = one clockwise turn
 		t.Fatalf("first = %+v", first)
 	}
 	got, err := base64.StdEncoding.DecodeString(first.Payload)

@@ -111,8 +111,22 @@ func TestWriteVideoCopiesTheLibrarysBufferAndCarriesTheOrientation(t *testing.T)
 	if !bytes.Equal(got.data, keyAU()) {
 		t.Fatal("the frame changed after the library reused its buffer")
 	}
-	if got.orientation != 3 {
-		t.Fatalf("orientation = %d, want 3", got.orientation)
+	// The library's value 3 is one clockwise turn (seen live on an iPhone).
+	if got.orientation != 1 {
+		t.Fatalf("orientation = %d, want 1", got.orientation)
+	}
+}
+
+// What the library reports for the camera is counter-clockwise quarter turns; a client
+// is given the clockwise turns that make the picture upright.
+func TestTheLibrarysRotationBecomesClockwiseTurnsToShowTheVideoUpright(t *testing.T) {
+	for library, want := range map[int]int{0: 0, 1: 3, 2: 2, 3: 1} {
+		v := newVideoIn(&call_engine.StreamStats{})
+		v.SetOrientation(library)
+		v.WriteVideo(keyAU())
+		if got := (<-v.frames).orientation; got != want {
+			t.Errorf("library %d: client gets %d, want %d", library, got, want)
+		}
 	}
 }
 
