@@ -148,6 +148,9 @@ func (m *Manager) streamGraceExpired(instanceID string, t *Tracked) {
 // videoStateChanged is called by the library when the peer reports its video state.
 // It is kept, published as an event and handed to the stream that is attached.
 func (m *Manager) videoStateChanged(instanceID string, t *Tracked, v VideoState) {
+	if v.Active || v.State == VideoStateUpgradeAccepted {
+		t.hadVideo.Store(true)
+	}
 	t.mu.Lock()
 	t.peerVideo = &v
 	fn := t.onVideoState
@@ -157,6 +160,8 @@ func (m *Manager) videoStateChanged(instanceID string, t *Tracked, v VideoState)
 	data["active"] = v.Active
 	data["upgrade"] = v.Upgrade
 	data["orientation"] = v.Orientation
+	data["state"] = v.State
+	data["stateCode"] = v.StateCode
 	m.notify(instanceID, "CallVideoState", data)
 
 	if fn != nil {

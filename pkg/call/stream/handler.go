@@ -48,8 +48,15 @@ type Config struct {
 //	                  "direction", "video":<the call has video>, "videoStream":<video messages will follow>}
 //	{"event":"media", "track":"inbound", "seq":N, "payload":"<base64 pcm>"}            the peer's audio
 //	{"event":"video", "track":"inbound", "seq":N, "keyframe":bool, "orientation":0..3,
-//	                  "payload":"<base64 H.264 access unit, Annex-B>"}                  the peer's video
-//	{"event":"video_state", "active", "upgrade", "orientation"}                         the peer's camera or upgrade request
+//	                  "payload":"<base64 H.264 access unit, Annex-B>"}                  the peer's video;
+//	                  "orientation" is the clockwise quarter turns to rotate the picture by
+//	                  to show it upright. It follows the camera, so it is the one to use.
+//	{"event":"video_state", "active", "upgrade", "orientation", "state", "stateCode"}   the peer's camera or upgrade request;
+//	                  "state" is enabled, disabled, stopped, upgrade_request, upgrade_accepted,
+//	                  upgrade_rejected, upgrade_cancelled or unknown; "stateCode" is the number
+//	                  WhatsApp sent, the only thing that tells unknown states apart; its
+//	                  "orientation" is the device's as the peer reports it and does not follow
+//	                  the camera in use
 //	{"event":"keyframe_request"}                                                        the next video you send must be an IDR
 //	{"event":"error", "code", "message"}
 //	{"event":"stop",  "reason"}                                                         the call ended
@@ -82,6 +89,8 @@ type message struct {
 	Active      *bool  `json:"active,omitempty"`
 	Upgrade     *bool  `json:"upgrade,omitempty"`
 	Orientation *int   `json:"orientation,omitempty"`
+	State       string `json:"state,omitempty"`
+	StateCode   *int   `json:"stateCode,omitempty"`
 	Reason      string `json:"reason,omitempty"`
 	Code        string `json:"code,omitempty"`
 	Message     string `json:"message,omitempty"`
@@ -196,7 +205,7 @@ func (s *session) emit(m message) {
 }
 
 func (s *session) videoState(v call_engine.VideoState) {
-	s.emit(message{Event: "video_state", Active: &v.Active, Upgrade: &v.Upgrade, Orientation: &v.Orientation})
+	s.emit(message{Event: "video_state", Active: &v.Active, Upgrade: &v.Upgrade, Orientation: &v.Orientation, State: v.State, StateCode: &v.StateCode})
 }
 
 func (s *session) keyframeRequest() {

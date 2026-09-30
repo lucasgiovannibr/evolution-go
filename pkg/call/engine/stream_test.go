@@ -195,7 +195,7 @@ func TestARunningCallWithoutAStreamIsHungUpAfterTheGrace(t *testing.T) {
 	if _, hung := c.counts(); hung != 1 {
 		t.Fatalf("hung up %d times", hung)
 	}
-	if e := log.last(); e.data["reason"] != "stream_closed" {
+	if e := log.waitEnded(t); e.data["reason"] != "stream_closed" {
 		t.Fatalf("event = %+v", e)
 	}
 }

@@ -16,21 +16,26 @@ Outgoing: --dial NUMBER places the call, connects the stream before the other ph
 rings, and does the same once it is picked up.
 
 Video: --video also carries the call's video. What the peer sends is written to
-<name>.h264 (play it with `ffplay file.h264`). --video-in FILE sends that H.264 file
+<name>.h264 (play it with `ffplay file.h264`), and <name>.orient has one line per picture:
+index, seconds, keyframe, rotation in clockwise quarter turns to show it upright. --video-in FILE sends that H.264 file
 (Annex-B, see below) to the peer at --fps; it starts over from its first keyframe
 whenever WhatsApp asks for one. With --dial, --video places a video call; on an audio
-call, --video-in asks the peer to upgrade to video. A peer's upgrade request is
-accepted automatically.
+call, --video-in asks the peer to upgrade to video once the call is up (an iPhone accepts
+it and the call turns into video; just announcing "camera on" does not work, see the
+"enable" video action). A peer's upgrade request is accepted automatically.
 
     python call-stream-test.py --apikey TOKEN --echo
     python call-stream-test.py --apikey TOKEN --dial 5511999990000 --tone 3
     python call-stream-test.py --apikey TOKEN --dial 5511999990000 --video --video-in test.h264
 
 A test file (constrained baseline, one slice per picture, headers repeated on every
-keyframe, which is what the stream expects):
+keyframe, which is what the stream expects). Phones show a call in portrait, so send
+portrait pictures (360x640) to fill the screen; a landscape one (640x360) is letterboxed.
+-pix_fmt yuv420p is needed: the baseline profile refuses the test source's 4:4:4.
 
-    ffmpeg -f lavfi -i testsrc=size=640x360:rate=15 -t 10 -c:v libx264 -profile:v baseline \\
-      -x264-params keyint=30:repeat-headers=1:slices=1:bframes=0 -f h264 test.h264
+    ffmpeg -f lavfi -i testsrc=size=360x640:rate=15 -t 60 -pix_fmt yuv420p -c:v libx264 \\
+      -profile:v baseline -x264-params keyint=30:repeat-headers=1:slices=1:bframes=0 \\
+      -f h264 test.h264
 """
 import argparse
 import asyncio
@@ -157,6 +162,9 @@ async def main(args):
     h264_path = wav_path.rsplit(".", 1)[0] + ".h264"
     received = video_units = keyframes = 0
     video_file = open(h264_path, "wb") if want_video else None
+    orient_file = open(h264_path.rsplit(".", 1)[0] + ".orient", "w") if want_video else None
+    t0 = time.time()
+    last_frame_orient = None
     restart = asyncio.Event()
 
     async with websockets.connect(ws_url, max_size=4 << 20) as ws, _wav(wav_path) as wav:
@@ -216,6 +224,10 @@ async def main(args):
                         await ws.send(json.dumps({"event": "media", "payload": msg["payload"]}))
                 elif event == "video":
                     video_file.write(base64.b64decode(msg["payload"]))
+                    orient_file.write(f"{video_units} {time.time()-t0:.2f} {int(bool(msg.get('keyframe')))} {msg.get('orientation')}" + chr(10))
+                    if msg.get("orientation") != last_frame_orient:
+                        last_frame_orient = msg.get("orientation")
+                        print(f"[{time.time()-t0:6.1f}s] frame #{video_units} rotation to show upright (clockwise turns) -> {last_frame_orient}")
                     video_units += 1
                     if msg.get("keyframe"):
                         keyframes += 1
@@ -224,7 +236,7 @@ async def main(args):
                 elif event == "keyframe_request":
                     restart.set()
                 elif event == "video_state":
-                    print("peer video state:", {k: msg.get(k) for k in ("active", "upgrade", "orientation")})
+                    print(f"[{time.time()-t0:6.1f}s] peer video state:", {k: msg.get(k) for k in ("state", "stateCode", "active", "upgrade", "orientation")})
                     if msg.get("upgrade"):
                         control("accept")
                 elif event == "stop":

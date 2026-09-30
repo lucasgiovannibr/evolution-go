@@ -20,7 +20,8 @@ const (
 	VideoAccept VideoAction = "accept"
 	// VideoStop stops sending video; audio and the peer's video go on.
 	VideoStop VideoAction = "stop"
-	// VideoEnable and VideoDisable mute and unmute our video without ending it.
+	// VideoEnable and VideoDisable mute and unmute our video without ending it. Enable
+	// does not add video to an audio call, only a start that the peer accepts does.
 	VideoEnable  VideoAction = "enable"
 	VideoDisable VideoAction = "disable"
 	// VideoOrientation tells the peer how our camera is rotated (0..3 quarter turns
@@ -54,15 +55,30 @@ func (m *Manager) Video(instanceID, callID string, action VideoAction, orientati
 		return t, fmt.Errorf("%w: the call is %s; video can only be changed once it is answered", ErrWrongState, phase)
 	}
 
+	if t.call.IsVideo() {
+		t.hadVideo.Store(true)
+	}
+
 	var err error
 	switch action {
 	case VideoStart:
 		err = t.call.StartVideo()
+		if err == nil {
+			t.hadVideo.Store(true)
+		}
 	case VideoAccept:
 		err = t.call.AcceptVideo()
+		if err == nil {
+			t.hadVideo.Store(true)
+		}
 	case VideoStop:
 		err = t.call.StopVideo()
 	case VideoEnable:
+		// An iPhone ignores "camera on" on a call that never had video (checked live:
+		// the server answered 200, sent video and nothing showed). Say so instead.
+		if !t.hadVideo.Load() {
+			return t, fmt.Errorf("%w: video enable: this call has no video, and enable only turns back on video that was muted; ask for video with start", ErrWrongState)
+		}
 		err = t.call.SetVideoEnabled(true)
 	case VideoDisable:
 		err = t.call.SetVideoEnabled(false)

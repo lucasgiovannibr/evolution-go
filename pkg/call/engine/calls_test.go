@@ -157,6 +157,28 @@ func (l *eventLog) last() event {
 	return l.events[len(l.events)-1]
 }
 
+// waitEnded returns the latest CallEnded event, waiting for it: finish closes Done
+// before it publishes the event, so a test that has just seen Done may be early.
+func (l *eventLog) waitEnded(t *testing.T) event {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for {
+		l.mu.Lock()
+		for i := len(l.events) - 1; i >= 0; i-- {
+			if l.events[i].name == "CallEnded" {
+				e := l.events[i]
+				l.mu.Unlock()
+				return e
+			}
+		}
+		l.mu.Unlock()
+		if time.Now().After(deadline) {
+			t.Fatal("no CallEnded event was published")
+		}
+		time.Sleep(time.Millisecond)
+	}
+}
+
 func newTestManager(opts Options) (*Manager, *eventLog) {
 	log := &eventLog{}
 	opts.Notify = log.notify
@@ -172,6 +194,25 @@ func closed(t *Tracked) bool {
 		return true
 	default:
 		return false
+	}
+}
+
+// WhatsApp puts no reason in the terminate message of a call the other side hangs up
+// (only the duration), so the library reports an empty one. It is named, so the event
+// and the stream's stop do not leave a client guessing; a reason WhatsApp does give is
+// kept (see TestTrackListsTheCallUntilItEnds).
+func TestACallTheOtherSideEndedIsNotReportedWithoutAReason(t *testing.T) {
+	m, log := newTestManager(Options{})
+	c := answered(newFake("C1"))
+	tr, _ := m.Track("inst", c, Incoming)
+
+	c.end("")
+
+	if !closed(tr) || tr.Reason() != ReasonPeerHangup {
+		t.Fatalf("done=%v reason=%q, want %q", closed(tr), tr.Reason(), ReasonPeerHangup)
+	}
+	if e := log.waitEnded(t); e.data["reason"] != ReasonPeerHangup {
+		t.Fatalf("event = %+v", e)
 	}
 }
 
@@ -202,7 +243,7 @@ func TestTrackListsTheCallUntilItEnds(t *testing.T) {
 	if st, _ := m.Status("inst"); st.ActiveCalls != 0 {
 		t.Fatalf("ActiveCalls = %d, want 0", st.ActiveCalls)
 	}
-	ended := log.last()
+	ended := log.waitEnded(t)
 	if ended.name != "CallEnded" || ended.data["reason"] != "terminate" || ended.data["callId"] != "C1" || ended.data["direction"] != "incoming" {
 		t.Fatalf("event = %+v", ended)
 	}
@@ -317,7 +358,7 @@ func TestAnUnansweredCallIsDroppedAfterTheRingTimeout(t *testing.T) {
 	if tr.Reason() != "ring_timeout" {
 		t.Fatalf("reason = %q, want ring_timeout", tr.Reason())
 	}
-	if e := log.last(); e.data["reason"] != "ring_timeout" {
+	if e := log.waitEnded(t); e.data["reason"] != "ring_timeout" {
 		t.Fatalf("event = %+v", e)
 	}
 }

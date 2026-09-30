@@ -103,9 +103,16 @@ func (v *videoIn) WriteVideo(au []byte) error {
 	return nil
 }
 
-// SetOrientation is told by the library how the peer's frames must be rotated to be
-// upright, in clockwise quarter turns.
-func (v *videoIn) SetOrientation(orientation int) { v.orientation.Store(int32(orientation)) }
+// SetOrientation is told by the library the rotation the peer's frames carry in their
+// RTP header (CVO). The library documents it as clockwise quarter turns, but live tests
+// against an iPhone show it counts counter-clockwise: value 3 needed one clockwise turn
+// to come out upright, 2 needed two, 0 none. So a client gets the clockwise quarter
+// turns that make the picture upright, (4 - value) mod 4.
+func (v *videoIn) SetOrientation(orientation int) { v.orientation.Store(int32(uprightTurns(orientation))) }
+
+// uprightTurns turns the library's rotation value into the clockwise quarter turns a
+// client must apply to show the picture upright.
+func uprightTurns(libraryValue int) int { return (4 - libraryValue&3) & 3 }
 
 // Close is called by the library when the call ends; the socket writer stops with it.
 func (v *videoIn) Close() error { return nil }

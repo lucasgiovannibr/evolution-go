@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -56,6 +57,11 @@ type Tracked struct {
 	attached bool         // an audio stream is attached right now
 	grace    *time.Timer  // hangs the call up when its stream does not come back
 
+	// hadVideo: the call has had video at some point (it started with video, an upgrade
+	// went through, or the peer's camera was on). Video the client muted still counts,
+	// which is why the library's IsVideo, true only while a camera is on, is not enough.
+	hadVideo atomic.Bool
+
 	peerVideo    *VideoState      // the last one the peer reported
 	onVideoState func(VideoState) // of the attached stream
 	onKeyframe   func()           // of the attached stream
@@ -67,7 +73,15 @@ func (t *Tracked) Call() Call { return t.call }
 // Done is closed when the call has ended.
 func (t *Tracked) Done() <-chan struct{} { return t.done }
 
-// Reason is why the call ended, empty while it is running.
+// ReasonPeerHangup is the reason of a call the other side ended. WhatsApp sends no
+// reason in that case (its terminate message only carries the duration), so the
+// library reports an empty one; it is named here so a client is not left to guess.
+const ReasonPeerHangup = "peer_hangup"
+
+// Reason is why the call ended, empty while it is running. Besides what the library
+// reports (for example "rejected", "hangup" when we ended it, "server:<code>", or a
+// reason WhatsApp put in the terminate message), it is ReasonPeerHangup, "ring_timeout",
+// "stream_closed" or "rejected_busy" for the cases this package ends itself.
 func (t *Tracked) Reason() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -141,6 +155,7 @@ func (m *Manager) Track(instanceID string, c Call, dir Direction) (*Tracked, err
 		return nil, ErrTooManyCalls
 	}
 	t := &Tracked{call: c, direction: dir, startedAt: time.Now(), done: make(chan struct{})}
+	t.hadVideo.Store(c.IsVideo())
 	t.timer = time.AfterFunc(m.opts.RingTimeout, func() { m.ringExpired(instanceID, t) })
 	if per == nil {
 		per = make(map[string]*Tracked)
@@ -242,6 +257,9 @@ func (m *Manager) finish(instanceID string, t *Tracked, libReason string) {
 		reason := libReason
 		if t.override != "" {
 			reason = t.override
+		}
+		if reason == "" {
+			reason = ReasonPeerHangup
 		}
 		t.reason = reason
 		if t.grace != nil {
