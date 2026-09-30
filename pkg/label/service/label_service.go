@@ -4,7 +4,6 @@ import (
 	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"context"
 	"errors"
-	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	label_model "github.com/evolution-foundation/evolution-go/pkg/label/model"
@@ -62,10 +61,8 @@ func (l *labelService) ensureClientConnected(instanceId string) (*whatsmeow.Clie
 			return nil, errors.New("no active session found")
 		}
 
-		l.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting 2 seconds...", instanceId)
-		time.Sleep(2 * time.Second)
-
-		client = l.clientPointer.Get(instanceId)
+		l.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting for the connection...", instanceId)
+		client = utils.WaitForClient(func() *whatsmeow.Client { return l.clientPointer.Get(instanceId) }, utils.InstanceStartTimeout)
 		l.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
 			instanceId,
 			client != nil,

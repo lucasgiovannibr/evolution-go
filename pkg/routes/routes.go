@@ -157,6 +157,9 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/profileName", r.userHandler.SetProfileName)
 			routes.POST("/profileStatus", r.userHandler.SetProfileStatus)
 			routes.POST("/lid", r.jidValidationMiddleware.ValidateJIDFields("lid", "groupJid"), r.userHandler.ResolveLid)
+			routes.POST("/devices", r.userHandler.GetUserDevices)
+			routes.GET("/statusprivacy", r.userHandler.GetStatusPrivacy)
+			routes.POST("/business", r.userHandler.GetBusinessProfile)
 			routes.POST("/defaultDisappearing", r.chatHandler.SetDefaultDisappearing)
 		}
 	}

@@ -138,10 +138,8 @@ func (i *instances) ensureClientConnected(instanceId string) (*whatsmeow.Client,
 			return nil, errors.New("no active session found")
 		}
 
-		logger.LogInfo("[%s] Instance started, waiting 2 seconds...", instanceId)
-		time.Sleep(2 * time.Second)
-
-		client = i.clientPointer.Get(instanceId)
+		logger.LogInfo("[%s] Instance started, waiting for the connection...", instanceId)
+		client = utils.WaitForClient(func() *whatsmeow.Client { return i.clientPointer.Get(instanceId) }, utils.InstanceStartTimeout)
 		logger.LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
 			instanceId,
 			client != nil,
@@ -407,6 +405,24 @@ func (i instances) Status(instance *instance_model.Instance) (*StatusStruct, err
 	}, nil
 }
 
+// qrWaitTimeout is the longest GetQr waits for the client to produce a QR code.
+const qrWaitTimeout = 6 * time.Second
+
+// qrOrLoginReady reports whether GetQr has something to answer with: the client logged in,
+// a QR code is stored, or a passkey ceremony is running.
+func (i instances) qrOrLoginReady(instanceID string) bool {
+	if c := i.clientPointer.Get(instanceID); c != nil && c.IsLoggedIn() {
+		return true
+	}
+	if store := i.whatsmeowService.PasskeyCeremonyStore(); store != nil {
+		if _, _, ok := store.StateByInstance(instanceID); ok {
+			return true
+		}
+	}
+	inst, err := i.instanceRepository.GetInstanceByID(instanceID)
+	return err == nil && inst.Qrcode != ""
+}
+
 func (i instances) GetQr(instance *instance_model.Instance) (*QrcodeStruct, error) {
 	logger := i.loggerWrapper.GetLogger(instance.Id)
 	client := i.clientPointer.Get(instance.Id)
@@ -430,9 +446,10 @@ func (i instances) GetQr(instance *instance_model.Instance) (*QrcodeStruct, erro
 			return nil, fmt.Errorf("failed to start instance: %w", err)
 		}
 
-		// Aguardar um pouco para o cliente iniciar e gerar QR code
+		// Wait for what this call needs (a QR code, a passkey ceremony, or a session that
+		// turned out to be logged in) instead of a fixed 3 s.
 		logger.LogInfo("[%s] Waiting for QR code generation...", instance.Id)
-		time.Sleep(3 * time.Second)
+		utils.WaitUntilEvery(qrWaitTimeout, 250*time.Millisecond, func() bool { return i.qrOrLoginReady(instance.Id) })
 
 		// Verificar novamente se há cliente
 		client = i.clientPointer.Get(instance.Id)
@@ -476,7 +493,7 @@ func (i instances) GetQr(instance *instance_model.Instance) (*QrcodeStruct, erro
 	if code == "" {
 		// Se não há QR code ainda, aguardar um pouco mais e tentar novamente
 		logger.LogInfo("[%s] No QR code available yet, waiting a bit more...", instance.Id)
-		time.Sleep(2 * time.Second)
+		utils.WaitUntilEvery(qrWaitTimeout, 250*time.Millisecond, func() bool { return i.qrOrLoginReady(instance.Id) })
 
 		instance, err = i.instanceRepository.GetInstanceByID(instance.Id)
 		if err != nil {
@@ -817,7 +834,7 @@ func (i instances) ForceReconnect(instanceId string, number string) error {
 
 	go i.whatsmeowService.StartClient(clientData)
 
-	time.Sleep(2 * time.Second)
+	utils.WaitForClient(func() *whatsmeow.Client { return i.clientPointer.Get(instance.Id) }, utils.InstanceStartTimeout)
 
 	if i.clientPointer.Get(instance.Id) != nil {
 		if !i.clientPointer.Get(instance.Id).IsConnected() {

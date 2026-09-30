@@ -109,10 +109,8 @@ func (m *messageService) ensureClientConnected(instanceId string) (*whatsmeow.Cl
 			return nil, errors.New("no active session found")
 		}
 
-		m.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting 2 seconds...", instanceId)
-		time.Sleep(2 * time.Second)
-
-		client = m.clientPointer.Get(instanceId)
+		m.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting for the connection...", instanceId)
+		client = utils.WaitForClient(func() *whatsmeow.Client { return m.clientPointer.Get(instanceId) }, utils.InstanceStartTimeout)
 		m.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
 			instanceId,
 			client != nil,
