@@ -116,6 +116,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 		{
 			routes.GET("/:instanceId/advanced-settings", r.instanceHandler.GetAdvancedSettings)
 			routes.PUT("/:instanceId/advanced-settings", r.instanceHandler.UpdateAdvancedSettings)
+			routes.PUT("/:instanceId/integrations", r.instanceHandler.UpdateIntegrations)
 			routes.GET("/:instanceId/runtime", r.instanceHandler.GetRuntime)
 		}
 	}

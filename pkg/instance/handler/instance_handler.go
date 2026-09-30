@@ -1,10 +1,13 @@
 package instance_handler
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
+	"gorm.io/gorm"
 
 	config "github.com/evolution-foundation/evolution-go/pkg/config"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
@@ -33,6 +36,7 @@ type InstanceHandler interface {
 	GetLogs(ctx *gin.Context)
 	GetAdvancedSettings(ctx *gin.Context)
 	UpdateAdvancedSettings(ctx *gin.Context)
+	UpdateIntegrations(ctx *gin.Context)
 }
 
 type instanceHandler struct {
@@ -736,6 +740,58 @@ func (h *instanceHandler) UpdateAdvancedSettings(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{
 		"message":  "Advanced settings updated successfully",
 		"settings": persisted,
+	})
+}
+
+// UpdateIntegrations updates the webhook, events and event producers of an instance
+// @Summary Update webhook, events and producers
+// @Description Stores the webhook URL, subscribed events and RabbitMQ/WebSocket/NATS switches of an instance WITHOUT starting it. If the instance is running the settings take effect immediately; otherwise they are used the next time it connects. Empty fields keep their current value; webhookUrl "disabled" removes the webhook; subscribe ["ALL"] selects every event.
+// @Tags Instance
+// @Accept json
+// @Produce json
+// @Param instanceId path string true "Instance ID"
+// @Param settings body instance_service.IntegrationsStruct true "Integration settings"
+// @Success 200 {object} gin.H "Settings updated; returns the stored values"
+// @Failure 400 {object} gin.H "Invalid instance ID or settings"
+// @Failure 404 {object} gin.H "Instance not found"
+// @Failure 500 {object} gin.H "Internal server error"
+// @Router /instance/{instanceId}/integrations [put]
+func (h *instanceHandler) UpdateIntegrations(c *gin.Context) {
+	instanceId := c.Param("instanceId")
+	if _, err := uuid.Parse(instanceId); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "instanceId must be a valid UUID"})
+		return
+	}
+
+	var data instance_service.IntegrationsStruct
+	if err := c.ShouldBindJSON(&data); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if err := data.Validate(); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	instance, err := h.instanceService.UpdateIntegrations(instanceId, &data)
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+			return
+		}
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Integration settings updated successfully",
+		"settings": gin.H{
+			"webhookUrl":      instance.Webhook,
+			"events":          instance.Events,
+			"rabbitmqEnable":  instance.RabbitmqEnable,
+			"websocketEnable": instance.WebSocketEnable,
+			"natsEnable":      instance.NatsEnable,
+		},
 	})
 }
 

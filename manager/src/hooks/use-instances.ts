@@ -1,15 +1,15 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import {
-  connectInstance,
   createInstance,
   deleteInstance,
   disconnectInstance,
   getInstance,
   listInstances,
   logoutInstance,
+  saveIntegrations,
   updateBehavior,
-  type ConnectInput,
+  type IntegrationsInput,
   type CreateInstanceInput,
 } from '@/api/instances';
 import type { BehaviorSettings, Instance } from '@/api/types';
@@ -91,7 +91,7 @@ export function useLogoutInstance() {
 export function useSaveConnection(i: Instance) {
   const refresh = useRefresh();
   return useMutation({
-    mutationFn: (input: ConnectInput) => connectInstance(i.token, input),
+    mutationFn: (input: IntegrationsInput) => saveIntegrations(i.id, input),
     onSuccess: () => {
       toast.success('Webhook e eventos atualizados');
       refresh(i.id);

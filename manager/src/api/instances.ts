@@ -59,6 +59,22 @@ export async function connectInstance(token: string, input: ConnectInput = {}): 
   });
 }
 
+export interface IntegrationsInput {
+  webhookUrl: string;
+  subscribe: string[];
+  rabbitmqEnable: ProducerState;
+  websocketEnable: ProducerState;
+  natsEnable: ProducerState;
+}
+
+/**
+ * Stores webhook, events and producer switches without starting the instance; a running one
+ * picks them up immediately. Same field semantics as connect (empty keeps, "disabled" clears the webhook).
+ */
+export async function saveIntegrations(id: string, input: IntegrationsInput): Promise<void> {
+  await api(`/instance/${encodeURIComponent(id)}/integrations`, { method: 'PUT', body: input });
+}
+
 export async function getQr(token: string): Promise<QrInfo> {
   const res = await api<Envelope<Partial<QrInfo>>>('/instance/qr', { apikey: token });
   const d = res.data ?? {};

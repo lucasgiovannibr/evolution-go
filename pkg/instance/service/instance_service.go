@@ -48,6 +48,7 @@ type InstanceService interface {
 	GetLogs(instanceId string, startDate, endDate time.Time, level string, limit int) ([]logger_wrapper.LogEntry, error)
 	GetAdvancedSettings(instanceId string) (*instance_model.AdvancedSettings, error)
 	UpdateAdvancedSettings(instanceId string, settings *instance_model.AdvancedSettings) error
+	UpdateIntegrations(instanceId string, data *IntegrationsStruct) (*instance_model.Instance, error)
 }
 
 type instances struct {
@@ -995,6 +996,40 @@ func (i instances) UpdateAdvancedSettings(instanceId string, settings *instance_
 
 	i.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Advanced settings updated successfully", instanceId)
 	return nil
+}
+
+// UpdateIntegrations stores webhook, events and producer switches without starting the
+// instance. If it is already running, the new settings are applied to it right away.
+func (i instances) UpdateIntegrations(instanceId string, data *IntegrationsStruct) (*instance_model.Instance, error) {
+	logger := i.loggerWrapper.GetLogger(instanceId)
+
+	instance, err := i.instanceRepository.GetInstanceByID(instanceId)
+	if err != nil {
+		return nil, err
+	}
+
+	updates := applyConnectSettings(instance, &ConnectStruct{
+		WebhookUrl:      data.WebhookUrl,
+		Subscribe:       data.Subscribe,
+		RabbitmqEnable:  data.RabbitmqEnable,
+		WebSocketEnable: data.WebSocketEnable,
+		NatsEnable:      data.NatsEnable,
+	})
+
+	if len(updates) > 0 {
+		if err := i.instanceRepository.UpdateConnectSettings(instanceId, updates); err != nil {
+			logger.LogError("[%s] Error updating integrations: %v", instanceId, err)
+			return nil, err
+		}
+	}
+
+	// Unlike Connect, a missing runtime is fine here: the stored settings are picked up
+	// the next time the instance starts.
+	if err := i.whatsmeowService.UpdateInstanceSettings(instanceId); err != nil {
+		logger.LogInfo("[%s] Integrations stored; instance not running, nothing to apply", instanceId)
+	}
+
+	return instance, nil
 }
 
 func NewInstanceService(
