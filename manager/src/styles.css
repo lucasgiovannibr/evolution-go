@@ -1,0 +1,217 @@
+@import 'tailwindcss';
+
+@font-face {
+  font-family: 'Inter Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 900;
+  src: url('./assets/fonts/inter-latin-wght-normal.woff2') format('woff2-variations');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono Variable';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 100 800;
+  src: url('./assets/fonts/jetbrains-mono-latin-wght-normal.woff2') format('woff2-variations');
+}
+
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* ------------------------------------------------------------------ */
+/* Design tokens                                                       */
+/* One neutral scale + one brand hue (Evolution green). Status colors  */
+/* are semantic (ok / warn / danger / info) and always come as a solid */
+/* plus a soft tint, so badges and alerts stay consistent everywhere.  */
+/* ------------------------------------------------------------------ */
+:root {
+  --canvas: #f6f7f8;
+  --surface: #ffffff;
+  --surface-2: #f1f3f5;
+  --surface-3: #e9ecef;
+  --line: #e4e7ea;
+  --line-strong: #cfd5da;
+  --fg: #0f1418;
+  --muted: #56616a;
+  --subtle: #6f7a83;
+
+  --brand: #0c8a5e;
+  --brand-hover: #0a7650;
+  --brand-fg: #ffffff;
+  --brand-text: #0a7650;
+  --brand-soft: rgb(12 138 94 / 0.1);
+  --brand-ring: rgb(12 138 94 / 0.35);
+
+  --ok: #0c8a5e;
+  --ok-soft: rgb(12 138 94 / 0.1);
+  --warn: #b45309;
+  --warn-soft: rgb(217 119 6 / 0.12);
+  --danger: #d1322f;
+  --danger-hover: #b52a27;
+  --danger-soft: rgb(209 50 47 / 0.09);
+  --info: #2563eb;
+  --info-soft: rgb(37 99 235 / 0.09);
+
+  --sh-card: 0 1px 2px rgb(15 20 24 / 0.04), 0 0 0 1px rgb(15 20 24 / 0.01);
+  --sh-pop: 0 8px 28px -6px rgb(15 20 24 / 0.18), 0 2px 6px rgb(15 20 24 / 0.06);
+  --overlay: rgb(15 20 24 / 0.45);
+
+  color-scheme: light;
+}
+
+.dark {
+  --canvas: #0a0c0e;
+  --surface: #111417;
+  --surface-2: #171b1f;
+  --surface-3: #1f2429;
+  --line: #22282d;
+  --line-strong: #323a41;
+  --fg: #e9edf0;
+  --muted: #98a3ab;
+  --subtle: #7f8a93;
+
+  --brand: #34d399;
+  --brand-hover: #5ee0b0;
+  --brand-fg: #04150e;
+  --brand-text: #4ade9f;
+  --brand-soft: rgb(52 211 153 / 0.12);
+  --brand-ring: rgb(52 211 153 / 0.4);
+
+  --ok: #34d399;
+  --ok-soft: rgb(52 211 153 / 0.12);
+  --warn: #fbbf24;
+  --warn-soft: rgb(251 191 36 / 0.12);
+  --danger: #f87171;
+  --danger-hover: #fca5a5;
+  --danger-soft: rgb(248 113 113 / 0.12);
+  --info: #60a5fa;
+  --info-soft: rgb(96 165 250 / 0.12);
+
+  --sh-card: 0 1px 2px rgb(0 0 0 / 0.35);
+  --sh-pop: 0 12px 32px -6px rgb(0 0 0 / 0.65), 0 2px 8px rgb(0 0 0 / 0.4);
+  --overlay: rgb(0 0 0 / 0.6);
+
+  color-scheme: dark;
+}
+
+@theme inline {
+  --font-sans: 'Inter Variable', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono Variable', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  --color-canvas: var(--canvas);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-surface-3: var(--surface-3);
+  --color-line: var(--line);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-muted: var(--muted);
+  --color-subtle: var(--subtle);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-fg: var(--brand-fg);
+  --color-brand-text: var(--brand-text);
+  --color-brand-soft: var(--brand-soft);
+  --color-ok: var(--ok);
+  --color-ok-soft: var(--ok-soft);
+  --color-warn: var(--warn);
+  --color-warn-soft: var(--warn-soft);
+  --color-danger: var(--danger);
+  --color-danger-hover: var(--danger-hover);
+  --color-danger-soft: var(--danger-soft);
+  --color-info: var(--info);
+  --color-info-soft: var(--info-soft);
+
+  --shadow-card: var(--sh-card);
+  --shadow-pop: var(--sh-pop);
+
+  --radius-control: 0.5rem;
+  --radius-card: 0.75rem;
+
+  --animate-fade-in: fade-in 0.15s ease-out;
+  --animate-pop-in: pop-in 0.16s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-in: slide-in 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-pulse-ring: pulse-ring 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+
+  @keyframes fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+  }
+  @keyframes pop-in {
+    from { opacity: 0; transform: translateY(6px) scale(0.98); }
+    to { opacity: 1; transform: none; }
+  }
+  @keyframes slide-in {
+    from { transform: translateX(-100%); }
+    to { transform: none; }
+  }
+  @keyframes pulse-ring {
+    0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--ok) 55%, transparent); }
+    70%, 100% { box-shadow: 0 0 0 6px transparent; }
+  }
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body {
+    background: var(--canvas);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+    font-feature-settings: 'cv11', 'ss01';
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background: var(--brand-soft);
+  }
+
+  :focus-visible {
+    outline: 2px solid var(--brand);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+
+  button:not(:disabled),
+  [role='button']:not([aria-disabled='true']) {
+    cursor: pointer;
+  }
+
+  input::placeholder,
+  textarea::placeholder {
+    color: var(--subtle);
+  }
+
+  /* Slim, theme-aware scrollbars */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--line-strong) transparent;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+@layer components {
+  /* Per-instance avatar tint: set --h (0-359) inline. Readable in both themes. */
+  .avatar-tint {
+    background: hsl(var(--h) 65% 50% / 0.14);
+    color: hsl(var(--h) 55% 34%);
+  }
+  .dark .avatar-tint {
+    background: hsl(var(--h) 60% 60% / 0.16);
+    color: hsl(var(--h) 75% 76%);
+  }
+}
