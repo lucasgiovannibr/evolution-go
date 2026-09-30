@@ -33,6 +33,9 @@ type Instance struct {
 	ReadMessages  bool   `json:"readMessages" gorm:"default:false"`
 	IgnoreGroups  bool   `json:"ignoreGroups" gorm:"default:false"`
 	IgnoreStatus  bool   `json:"ignoreStatus" gorm:"default:false"`
+	// CallsEnabled gives the instance a WhatsApp call engine (experimental). It is
+	// read when the client starts, so changing it takes effect on the next connection.
+	CallsEnabled bool `json:"callsEnabled" gorm:"default:false"`
 }
 
 // AdvancedSettings representa as configurações avançadas de uma instância.
@@ -44,6 +47,8 @@ type AdvancedSettings struct {
 	ReadMessages  *bool  `json:"readMessages"`
 	IgnoreGroups  *bool  `json:"ignoreGroups"`
 	IgnoreStatus  *bool  `json:"ignoreStatus"`
+	// CallsEnabled: see Instance.CallsEnabled. Takes effect on the next connection.
+	CallsEnabled *bool `json:"callsEnabled"`
 }
 
 func (m *Instance) BeforeCreate(tx *gorm.DB) (err error) {

@@ -36,6 +36,7 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 
+	call_engine "github.com/evolution-foundation/evolution-go/pkg/call/engine"
 	"github.com/evolution-foundation/evolution-go/pkg/config"
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
@@ -79,6 +80,10 @@ type WhatsmeowService interface {
 	PasskeyCeremonyStore() *ceremony.Store
 	SubmitPasskeyResponse(instanceId string, resp *types.WebAuthnResponse) error
 	ConfirmPasskey(instanceId string) error
+
+	// CallEngine is the per-instance WhatsApp call engine registry (calls are opt-in
+	// per instance, see Instance.CallsEnabled).
+	CallEngine() *call_engine.Manager
 }
 
 type clientVersion struct {
@@ -108,6 +113,7 @@ type whatsmeowService struct {
 	natsProducer       producer_interfaces.Producer
 	loggerWrapper      *logger_wrapper.LoggerManager
 	passkeyCeremony    *ceremony.Store
+	callEngine         *call_engine.Manager
 }
 
 type MyClient struct {
@@ -349,6 +355,7 @@ func (w whatsmeowService) ReconnectClient(instanceId string) error {
 	// Remover das estruturas
 	w.clientPointer.Delete(instanceId)
 	w.myClientPointer.Delete(instanceId)
+	w.callEngine.Detach(instanceId)
 	w.killChannel.Delete(instanceId)
 
 	// Limpar cache de userInfo para esta instância
@@ -641,6 +648,15 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 
 	w.clientPointer.Set(cd.Instance.Id, client)
 
+	// The call engine must be attached before Connect(): it installs its handling of
+	// raw <call> stanzas when it is created. Only instances that asked for calls get
+	// one, because it answers every incoming offer with a preaccept.
+	if cd.Instance.CallsEnabled {
+		w.callEngine.Attach(cd.Instance.Id, client, cd.IsProxy, w.loggerWrapper.GetLogger(cd.Instance.Id))
+	} else {
+		w.callEngine.Detach(cd.Instance.Id)
+	}
+
 	if cd.IsProxy {
 		proxyConfig, err := parseProxyConfig(cd.Instance.Proxy)
 		if err != nil {
@@ -824,6 +840,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 				if w.clientPointer.Get(cd.Instance.Id) == client {
 					w.clientPointer.Delete(cd.Instance.Id)
 					w.myClientPointer.Delete(cd.Instance.Id)
+					w.callEngine.Detach(cd.Instance.Id)
 				}
 				w.userInfoCache.Delete(cd.Instance.Token)
 				return
@@ -834,6 +851,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 
 			w.clientPointer.Delete(cd.Instance.Id)
 			w.myClientPointer.Delete(cd.Instance.Id)
+			w.callEngine.Detach(cd.Instance.Id)
 
 			// Limpar cache de userInfo para esta instância
 			w.userInfoCache.Delete(cd.Instance.Token)
@@ -2295,8 +2313,16 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		if mycli.Instance.RejectCall {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Auto-rejecting call from %s", mycli.userID, evt.CallCreator.String())
 
-			// Rejeita a chamada
-			mycli.WAClient.RejectCall(context.Background(), evt.CallCreator, evt.CallID)
+			// An instance with a call engine has already preaccepted this offer, so the
+			// engine has to reject it or it keeps the call in its own state.
+			if tracked, err := mycli.service.CallEngine().Reject(mycli.userID, evt.CallID); tracked {
+				if err != nil {
+					mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Auto-reject of call %s ended it here but the peer may not have been told: %v", mycli.userID, evt.CallID, err)
+				}
+			} else {
+				// Rejeita a chamada
+				mycli.WAClient.RejectCall(context.Background(), evt.CallCreator, evt.CallID)
+			}
 
 			// Envia mensagem de rejeição se configurada
 			if mycli.Instance.MsgRejectCall != "" {
@@ -2733,7 +2759,7 @@ func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueN
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
 		}
-	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency", "CallPreAccept", "CallReject", "CallTransport", "UnknownCallEvent":
+	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency", "CallPreAccept", "CallReject", "CallTransport", "UnknownCallEvent", "CallReady", "CallEnded":
 		if contains(subscriptions, "CALL") {
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
@@ -3008,7 +3034,7 @@ func globalEventTypeFor(eventType string) string {
 		return "HISTORY_SYNC"
 	case "ChatPresence", "Archive", "Mute", "Pin", "Star", "MarkChatAsRead", "ClearChat", "DeleteChat", "DeleteForMe", "UnarchiveChatsSetting", "UserStatusMute":
 		return "CHAT_PRESENCE"
-	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency", "CallPreAccept", "CallReject", "CallTransport", "UnknownCallEvent":
+	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency", "CallPreAccept", "CallReject", "CallTransport", "UnknownCallEvent", "CallReady", "CallEnded":
 		return "CALL"
 	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored", "ReachoutTimelock", "StreamError", "ClientOutdated", "CATRefreshError", "OfflineSyncPreview":
 		return "CONNECTION"
@@ -3276,6 +3302,7 @@ func (w whatsmeowService) ClearInstanceCache(instanceId string, token string) er
 		w.myClientPointer.Delete(instanceId)
 		w.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] MyClient pointer cleared", instanceId)
 	}
+	w.callEngine.Detach(instanceId)
 
 	// Limpar clientPointer se existir
 	if _, exists := w.clientPointer.Lookup(instanceId); exists {
@@ -3316,7 +3343,7 @@ func NewWhatsmeowService(
 	// Inicializar PollService de forma segura
 	pollSvc := poll_service.NewPollService(authDB, loggerWrapper)
 
-	return &whatsmeowService{
+	svc := &whatsmeowService{
 		instanceRepository: instanceRepository,
 		authDB:             authDB,
 		messageRepository:  messageRepository,
@@ -3338,6 +3365,13 @@ func NewWhatsmeowService(
 		loggerWrapper:      loggerWrapper,
 		passkeyCeremony:    ceremony.NewStore(),
 	}
+	svc.callEngine = call_engine.NewManager(call_engine.Options{
+		MaxConcurrent: config.CallMaxConcurrent,
+		RingTimeout:   time.Duration(config.CallRingTimeout) * time.Second,
+		StreamGrace:   time.Duration(config.CallStreamGrace) * time.Second,
+		Notify:        svc.publishCallEvent,
+	})
+	return svc
 }
 
 // GetPollService retorna o serviço de polls (evita dupla inicialização)
@@ -3349,6 +3383,9 @@ func (w *whatsmeowService) ProxyStatus(instanceId string) (ProxyRuntimeStatus, b
 func (w *whatsmeowService) GetPollService() poll_service.PollService {
 	return w.pollService
 }
+
+// CallEngine exposes the per-instance call engine registry.
+func (w *whatsmeowService) CallEngine() *call_engine.Manager { return w.callEngine }
 
 // PasskeyCeremonyStore exposes the shared ceremony store so the public HTTP
 // polling endpoint can read the current stage for a given ceremony token.

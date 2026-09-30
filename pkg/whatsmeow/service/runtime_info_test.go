@@ -3,6 +3,7 @@ package whatsmeow_service
 import (
 	"testing"
 
+	call_engine "github.com/evolution-foundation/evolution-go/pkg/call/engine"
 	"github.com/evolution-foundation/evolution-go/pkg/config"
 	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"go.mau.fi/whatsmeow"
@@ -116,5 +117,34 @@ func TestProcessInfo(t *testing.T) {
 	p := GetProcessInfo()
 	if p.Goroutines < 1 || p.GoVersion == "" || p.SysMB == 0 {
 		t.Fatalf("unexpected process info: %#v", p)
+	}
+}
+
+func TestRuntimeWarningsCallEngine(t *testing.T) {
+	up := RuntimeInfo{ClientRegistered: true, RuntimeActive: true, KillChannel: true, SupervisorCurrent: true, WebsocketConnected: true, LoggedIn: true, DeviceJID: "5511@s.whatsapp.net", QRMax: 5}
+
+	with := func(st call_engine.Status) RuntimeInfo {
+		i := up
+		i.Calls = &st
+		return i
+	}
+
+	if w := runtimeWarnings(with(call_engine.Status{State: call_engine.StateActive})); len(w) != 0 {
+		t.Fatalf("an active call engine must not warn: %v", w)
+	}
+	if c := codes(runtimeWarnings(with(call_engine.Status{State: call_engine.StateHookFailed, Error: "layout changed"}))); !c["calls_hook_failed"] {
+		t.Fatalf("got %v", c)
+	}
+	if c := codes(runtimeWarnings(with(call_engine.Status{State: call_engine.StateBlockedProxy}))); !c["calls_blocked_by_proxy"] {
+		t.Fatalf("got %v", c)
+	}
+}
+
+// Services built without a call engine (every test in this package) still report a
+// runtime, with no calls section.
+func TestRuntimeInfoWithoutACallEngine(t *testing.T) {
+	info := newInfoService().RuntimeInfo("no-engine")
+	if info.Calls != nil {
+		t.Fatalf("Calls = %+v, want nil", info.Calls)
 	}
 }

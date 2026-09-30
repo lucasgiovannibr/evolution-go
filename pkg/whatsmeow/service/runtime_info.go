@@ -1,6 +1,7 @@
 package whatsmeow_service
 
 import (
+	call_engine "github.com/evolution-foundation/evolution-go/pkg/call/engine"
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
 	"runtime"
 	"sort"
@@ -48,6 +49,10 @@ type RuntimeInfo struct {
 	EventsSeen     uint64     `json:"eventsSeen"`
 
 	Proxy *ProxyRuntimeStatus `json:"proxy,omitempty"`
+
+	// Calls is the state of the call engine; absent when the instance runs without one
+	// (calls not enabled for it).
+	Calls *call_engine.Status `json:"calls,omitempty"`
 
 	// Operational events reported by WhatsApp (see operational_events.go).
 	ReachoutTimelock *ReachoutTimelockStatus `json:"reachoutTimelock,omitempty"`
@@ -105,6 +110,10 @@ func (w *whatsmeowService) RuntimeInfo(instanceID string) RuntimeInfo {
 
 	if st, ok := GetProxyRuntimeStatus(instanceID); ok {
 		info.Proxy = &st
+	}
+
+	if st, ok := w.callEngine.Status(instanceID); ok {
+		info.Calls = &st
 	}
 
 	info.Warnings = runtimeWarnings(info)
@@ -182,6 +191,15 @@ func runtimeWarningsAt(i RuntimeInfo, now time.Time) []Warning {
 
 	if i.LastStreamError != nil && now.Sub(i.LastStreamError.At) < recentEventWindow {
 		add("recent_stream_error", "WhatsApp sent an unknown stream error recently (code "+i.LastStreamError.Code+"); the connection may drop")
+	}
+
+	if i.Calls != nil {
+		switch i.Calls.State {
+		case call_engine.StateHookFailed:
+			add("calls_hook_failed", "calls are enabled but the call engine could not hook into whatsmeow, so calls get no media: "+i.Calls.Error)
+		case call_engine.StateBlockedProxy:
+			add("calls_blocked_by_proxy", "calls are enabled but the instance uses a proxy and call media would bypass it, so calls are off for this instance")
+		}
 	}
 
 	if i.ClientOutdatedAt != nil && now.Sub(*i.ClientOutdatedAt) < recentEventWindow {
