@@ -158,7 +158,17 @@ Organizar conversas com etiquetas
 
 ### Chamadas
 Gerenciar chamadas
-- `POST /call/reject` - Rejeitar chamada
+- `GET /call/active` - Estado do motor de chamadas e chamadas em andamento
+- `GET /call/{callId}` - Uma chamada
+- `POST /call/answer` - Atender chamada recebida
+- `POST /call/dial` - Ligar para alguém
+- `POST /call/hangup` - Encerrar chamada
+- `POST /call/stream-ticket` - Bilhete para abrir o stream de áudio/vídeo
+- `GET /call/stream/{callId}` - WebSocket com o áudio e o vídeo da chamada
+- `POST /call/video` - Controles de vídeo (start, accept, stop, enable, disable, orientation)
+- `POST /call/reject` - Rejeitar chamada recebida
+
+As rotas de atender, discar e vídeo exigem `callsEnabled` na instância (experimental).
 
 ### Newsletter (Canais)
 Gerenciar newsletters/canais

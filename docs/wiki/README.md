@@ -84,7 +84,7 @@ Referência completa de todos os endpoints disponíveis.
 | [**Grupos**](./guias-api/api-groups.md) | 11 | Criar e administrar grupos |
 | [**Chats**](./guias-api/api-chats.md) | 7 | Pin, archive, mute, histórico |
 | [**Labels**](./guias-api/api-labels.md) | 6 | Etiquetar chats e mensagens |
-| [**Chamadas**](./guias-api/api-call.md) | 1 | Rejeitar chamadas recebidas |
+| [**Chamadas**](./guias-api/api-call.md) | 9 | Atender, discar, vídeo e rejeitar chamadas (experimental) |
 | [**Comunidades**](./guias-api/api-community.md) | 3 | Criar e gerenciar comunidades |
 | [**Newsletters**](./guias-api/api-newsletter.md) | 6 | Canais do WhatsApp |
 | [**Webhooks**](./guias-api/api-webhooks.md) | - | Configurar eventos em tempo real |
