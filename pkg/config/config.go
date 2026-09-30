@@ -71,6 +71,8 @@ type Config struct {
 	// CallStreamGrace is how many seconds a running call waits for its audio stream to
 	// come back before it is hung up.
 	CallStreamGrace int
+	// CallDialLimit is how many calls one instance may place per minute.
+	CallDialLimit int
 	// CallStreamOrigins are the browser origins allowed to open the audio stream
 	// besides the server's own; clients that send no Origin (servers, scripts) always may.
 	CallStreamOrigins []string
@@ -299,6 +301,7 @@ func Load() *Config {
 	callMaxConcurrent, _ := strconv.Atoi(os.Getenv(config_env.CALL_MAX_CONCURRENT))
 	callRingTimeout, _ := strconv.Atoi(os.Getenv(config_env.CALL_RING_TIMEOUT))
 	callStreamGrace, _ := strconv.Atoi(os.Getenv(config_env.CALL_STREAM_GRACE))
+	callDialLimit, _ := strconv.Atoi(os.Getenv(config_env.CALL_DIAL_LIMIT))
 	var callStreamOrigins []string
 	for _, origin := range strings.Split(os.Getenv(config_env.CALL_STREAM_ORIGINS), ",") {
 		if origin = strings.TrimSpace(origin); origin != "" {
@@ -405,6 +408,7 @@ func Load() *Config {
 		CallMaxConcurrent:    max(callMaxConcurrent, 0),
 		CallRingTimeout:      max(callRingTimeout, 0),
 		CallStreamGrace:      max(callStreamGrace, 0),
+		CallDialLimit:        max(callDialLimit, 0),
 		CallStreamOrigins:    callStreamOrigins,
 		CheckUserExists:      checkUserExists != "false", // Default true, set to false to disable
 		RerequestFromPhone:   rerequestFromPhone == "true",

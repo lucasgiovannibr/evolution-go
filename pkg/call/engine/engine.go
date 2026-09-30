@@ -22,6 +22,7 @@
 package call_engine
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strings"
@@ -155,6 +156,8 @@ type runtime struct {
 	client *meowcaller.Client
 	status Status
 	log    Logger
+	// dial places a call through the library; nil when there is no library client.
+	dial func(ctx context.Context, target string) (Call, error)
 }
 
 const (
@@ -166,6 +169,9 @@ const (
 	DefaultRingTimeout = 90 * time.Second
 	// DefaultStreamGrace is how long a call without an audio stream is kept.
 	DefaultStreamGrace = 10 * time.Second
+	// DefaultDialsPerMinute bounds the calls an instance places: mass outgoing calls
+	// are what gets an account flagged.
+	DefaultDialsPerMinute = 6
 )
 
 // Notifier publishes a call lifecycle event of an instance (CallReady, CallEnded).
@@ -178,7 +184,11 @@ type Options struct {
 	// StreamGrace is how long a running call waits for its audio stream to come back
 	// before it is hung up.
 	StreamGrace time.Duration
-	Notify      Notifier
+	// DialsPerMinute is how many calls an instance may place per minute.
+	DialsPerMinute int
+	// Dial replaces placing calls through the library (tests).
+	Dial   DialFunc
+	Notify Notifier
 }
 
 // Manager keeps one engine per instance and the calls each one has. Build it with
@@ -190,6 +200,10 @@ type Manager struct {
 	mu       sync.RWMutex
 	runtimes map[string]*runtime
 	calls    map[string]map[string]*Tracked // instance id -> call id -> call
+
+	dialMu sync.Mutex
+	dials  map[string][]time.Time // instance id -> when it placed calls, last minute
+	now    func() time.Time
 }
 
 func NewManager(opts Options) *Manager {
@@ -202,10 +216,15 @@ func NewManager(opts Options) *Manager {
 	if opts.StreamGrace <= 0 {
 		opts.StreamGrace = DefaultStreamGrace
 	}
+	if opts.DialsPerMinute <= 0 {
+		opts.DialsPerMinute = DefaultDialsPerMinute
+	}
 	return &Manager{
 		opts:     opts,
 		runtimes: make(map[string]*runtime),
 		calls:    make(map[string]map[string]*Tracked),
+		dials:    make(map[string][]time.Time),
+		now:      time.Now,
 	}
 }
 
@@ -235,6 +254,14 @@ func (m *Manager) Attach(instanceID string, cli *whatsmeow.Client, proxied bool,
 		}()
 		rt.client = meowcaller.NewClient(cli, meowcaller.WithLogger(zerolog.New(probe).Level(zerolog.InfoLevel)))
 		rt.client.OnIncomingCall(func(c *meowcaller.Call) { m.onIncoming(instanceID, libCall{c}) })
+		client := rt.client
+		rt.dial = func(ctx context.Context, target string) (Call, error) {
+			c, err := client.Call(ctx, target)
+			if err != nil {
+				return nil, err
+			}
+			return libCall{c}, nil
+		}
 	}()
 
 	if failure := probe.stopProbing(); failure != "" && rt.status.State == StateActive {
