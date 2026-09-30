@@ -5,7 +5,6 @@ import { useSaveConnection } from '@/hooks/use-instances';
 import { ALL_EVENT_IDS, EVENT_GROUPS, coversAllEvents, normalizeEvents, toSubscribe } from '@/lib/events';
 import { isHttpUrl } from '@/lib/format';
 import { cn } from '@/lib/cn';
-import { Alert } from '@/components/ui/feedback';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
@@ -24,7 +23,8 @@ interface Draft {
 
 const fromInstance = (i: Instance): Draft => ({
   url: i.webhook,
-  events: normalizeEvents(i.events),
+  // A new instance stores no events; the server then falls back to MESSAGE, so show that effective default.
+  events: normalizeEvents(i.events.length ? i.events : ['MESSAGE']),
   rabbitmq: i.producers.rabbitmq,
   websocket: i.producers.websocket,
   nats: i.producers.nats,
@@ -64,12 +64,6 @@ export function TabWebhook() {
 
   return (
     <div className="space-y-4">
-      {!instance.connected ? (
-        <Alert tone="info" title="Instância desconectada">
-          Ao salvar, o servidor aplica estas configurações e também tenta iniciar a conexão da instância.
-        </Alert>
-      ) : null}
-
       <Card>
         <CardHeader title="Webhook" description="Cada evento selecionado chega como um POST JSON neste endereço." icon={<Webhook />} />
         <CardBody>
