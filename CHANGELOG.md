@@ -77,7 +77,7 @@ and pull requests in `FORK-TRIAGE.md`.
 - The logger of a deleted instance is released (its log file descriptor was kept open
   for the life of the process); `qrcodeCount` is atomic.
 - `docs/WHATSMEOW-CAPABILITIES.md`: what whatsmeow delivers, what the project uses
-  (76 of 136 client methods, 56 of 75 event types, after the work listed below) and the
+  (76 of 136 client methods, 70 of 75 event types, after the work listed below; the other five are never delivered on their own) and the
   hard limits of the library.
 
 ### Additions (small)
@@ -164,6 +164,15 @@ and pull requests in `FORK-TRIAGE.md`.
   `200` with `data: null`): 400 for an invalid number, 429/504 for rate limits and
   timeouts. `POST /message/delete` returns the real timestamp. `GET /user/contacts` is
   `[]` when empty and in a stable order.
+
+### Remaining whatsmeow events
+- `Blocklist`, `PrivacySettings`, `BusinessName` (under `CONTACT`); `CallPreAccept`,
+  `CallTransport`, `CallReject`, `UnknownCallEvent` (`CALL`); `MediaRetry` (`MESSAGE`);
+  `NewsletterLiveUpdate`, `NewsletterMuteChange` (`NEWSLETTER`) and `OfflineSyncPreview`
+  (`CONNECTION`) are published instead of falling into the "Unhandled event" log line.
+- `RotateADVSecret` no longer writes the session's old and new ADV secret into the
+  instance log (the generic log line printed the whole event); it is handled without
+  being published.
 
 ### Webhook delivery queue
 - Webhooks go through one bounded queue per destination URL instead of one goroutine per

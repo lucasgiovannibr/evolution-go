@@ -176,6 +176,13 @@ Como foram achados: `staticcheck` e leitura de **todo** ponto que monta JID (`Pa
 - **Validado ao vivo** com um receptor local: entrega normal, receptor em falha (3 eventos em envio com nova tentativa) e recuperação sem perda. **Só em teste unitário**: receptor travado e estouro da fila.
 - **Limpar o webhook**: `webhookUrl: ""` em `/instance/connect` continua "não alterar" (o manager embutido envia `""` em toda reconexão; tratar como "limpar" apagaria o webhook a cada reconexão, o bug do #111 de volta). `"disabled"` ou `"false"` limpam (guardado vazio; um `"disabled"` antigo continua ignorado na entrega). Validado ao vivo, inclusive a reconexão no estilo do manager.
 
+### Eventos restantes do whatsmeow (PR #24)
+
+Todos os eventos que a lib entrega ao handler estão tratados (70 dos 75 tipos; os outros 5 nunca chegam sozinhos, ver `docs/WHATSMEOW-CAPABILITIES.md` §5). Novos: `Blocklist`, `PrivacySettings`, `BusinessName` (`CONTACT`), `CallPreAccept`, `CallTransport`, `CallReject`, `UnknownCallEvent` (`CALL`), `MediaRetry` (`MESSAGE`), `NewsletterLiveUpdate`, `NewsletterMuteChange` (`NEWSLETTER`) e `OfflineSyncPreview` (`CONNECTION`).
+
+- **Achado no caminho**: `RotateADVSecret` caía na linha genérica "Unhandled event", que imprime o evento inteiro com `%+v`: o segredo ADV **antigo e o novo** da sessão iam parar no log da instância. Agora só há um aviso de que houve rotação; teste garante que os valores não aparecem no log.
+- **Verificado**: testes (mapeamento, publicação pelo handler, roteamento nas duas listas de assinatura, conteúdo do log). **Ao vivo**: `Blocklist` chegou de verdade ao bloquear e desbloquear o contato de teste (dois eventos) e nenhuma linha "Unhandled event" apareceu. **Não observados**: os demais (dependem de chamadas, mídia a reenviar, mudança de privacidade em outro aparelho ou fila offline).
+
 ### Validação ao vivo (instância real, 29/09/2026)
 
 Instância pareada e conectada por você; mensagens só para o seu próprio número; grupo de teste só com você (o primeiro foi removido no fim; o "ZZ Teste Timer Fork", criado depois para as mensagens temporárias, ainda existe e deve ser apagado à mão). As validações das rodadas seguintes estão nas tabelas de cada PR acima.

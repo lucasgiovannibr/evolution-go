@@ -10,8 +10,8 @@ Levantamento feito em 29/09/2026 (números recontados no fim do dia, depois das 
 | Usados pelo projeto | 76 (eram 65 no início do dia) |
 | Não usados | 60 (por categoria no §4) |
 | Tipos de evento emitidos (`types/events`) | 75 |
-| Tratados em `myEventHandler` | 56 (eram 42 no início do dia) |
-| Não tratados | 19 (§5) |
+| Tratados em `myEventHandler` | 70 (eram 42 no início do dia) |
+| Não tratados | 5, e nenhum deles chega sozinho ao handler (§5) |
 
 O projeto usa bem o núcleo (conexão, envio, grupos, newsletters, privacidade, app state). O que sobra são recursos periféricos e, mais importante, **eventos operacionais** que explicam falhas relatadas nas issues.
 
@@ -54,23 +54,33 @@ Vários pedidos esbarram na lib, não no projeto. Convém não prometê-los.
 
 Observação: `SetGroupDescription` é contado como "usado" pela busca só porque o serviço do projeto tem um método de mesmo nome; a lib o marca como **deprecado** (`// Deprecated: duplicate of SetGroupTopic`) e o projeto chama o método correto, `SetGroupTopic`.
 
-## 5. Eventos emitidos e **não tratados**
+## 5. Eventos emitidos: o que foi tratado e o que sobra
 
-Os ✅ desta tabela já são tratados; os demais chegam ao handler e caem no ramo de "evento não tratado" (só log). Ainda não tratados (19): `Blocklist`, `BlocklistChange`, `BusinessName`, `CallPreAccept`, `CallReject`, `CallTransport`, `FBMessage`, `ManualLoginReconnect`, `MediaRetry`, `MediaRetryError`, `MexNotificationData`, `NewsletterLiveUpdate`, `NewsletterMessageMeta`, `NewsletterMuteChange`, `OfflineSyncPreview`, `PrivacySettings`, `PushNameSetting`, `RotateADVSecret`, `UnknownCallEvent`. Os que mais importam:
+**Todos os eventos que a lib entrega ao handler estão tratados.** Os 5 tipos que restam na contagem não chegam sozinhos:
 
-| Evento | O que significa | Por que importa |
-|---|---|---|
-| ✅ **Tratado** — `NotifyAccountReachoutTimelock` (`EnforcementType`, `IsActive`, `TimeEnforcementEnds`) | O WhatsApp **restringiu a conta** para iniciar conversas com quem nunca falou com ela | É a causa provável do **erro 463** (#50, #124, #115). Hoje o usuário só vê "463" na hora de enviar; o evento diz até quando dura. Dá para publicá-lo como webhook e gravar o estado da instância |
-| ✅ **Tratado** — `StreamError` (`Code`, `Raw`) | `<stream:error>` com código **desconhecido** (os conhecidos viram outros eventos) | É exatamente o caso do #185 (`<ack class="status" type="media"/>`): a conexão cai e o projeto não sabe por quê. Registrar e expor no diagnóstico |
-| ✅ **Tratado** — `ClientOutdated` | O servidor rejeitou a versão do cliente (405) | Ligado à versão que só agora chega ao handshake (PR #199). Deveria gerar aviso claro e talvez forçar nova busca de versão |
-| ✅ **Tratados** — `PairError`, `QRScannedWithoutMultidevice`, `CATRefreshError` (`ManualLoginReconnect` não é emitido com o auto-reconnect desligado do projeto) | Falhas de pareamento/login | Publicados sob `QRCODE` e `CONNECTION`; o usuário passa a ter retorno quando o pareamento falha |
-| `MediaRetry`, `MediaRetryError` | Mídia que o remetente precisa reenviar | Ligado a "a imagem só aparece depois de baixar" (#25) e a mídias que não baixam |
-| `OfflineSyncPreview` | Quantas mensagens estão na fila offline | Diagnóstico do #190 (fila que só cresce) |
-| ✅ **Tratados** — `Mute`, `Pin`, `Star`, `MarkChatAsRead`, `DeleteChat`, `ClearChat`, `DeleteForMe`, `UnarchiveChatsSetting`, `UserStatusMute` | Mudanças de estado de chat feitas em **outro aparelho** (app state) | Publicados sob `CHAT_PRESENCE`, onde `Archive` já estava; o full sync depois do pareamento não é publicado. `UndecryptableMessage` também passou a ser publicado (`MESSAGE`) |
-| `PrivacySettings`, `Blocklist`, `BlocklistChange` | Privacidade e bloqueios | Sincronizar bloqueios com o sistema externo |
-| `CallPreAccept`, `CallReject`, `CallTransport`, `UnknownCallEvent` | Eventos de chamada além de oferta/aceite/término | Completar o ciclo de chamadas nos webhooks |
-| `NewsletterLiveUpdate`, `NewsletterMuteChange`, `NewsletterMessageMeta` | Atualizações de canais | Só se canais forem usados |
-| `BusinessName` | Nome comercial mudou | Aparece no log como "Unhandled event" (visto no teste real) |
+| Tipo | Por que não precisa de tratamento |
+|---|---|
+| `BlocklistChange` | Vem dentro de `Blocklist.Changes` (publicado no evento `Blocklist`) |
+| `MediaRetryError` | Vem dentro de `MediaRetry.Error` (`errorCode` no evento `MediaRetry`) |
+| `NewsletterMessageMeta` | É um campo do evento de mensagem de canal, não um evento |
+| `MexNotificationData` | Campo interno dos eventos "mex" (por exemplo `NewsletterMuteChange`) |
+| `FBMessage` | Só existe em sessões Messenger/Instagram (`MessengerConfig`), que o projeto nunca liga |
+
+Para onde cada evento vai (assinatura → evento publicado):
+
+| Assinatura | Eventos |
+|---|---|
+| `CONNECTION` | `ReachoutTimelock` (o erro 463), `StreamError` (#185), `ClientOutdated` (405), `CATRefreshError`, `OfflineSyncPreview` (quantas mensagens estão na fila offline, #190) |
+| `QRCODE` | `PairError`, `QRScannedWithoutMultidevice` (além de QR e passkey) |
+| `CHAT_PRESENCE` | `Archive`, `Mute`, `Pin`, `Star`, `MarkChatAsRead`, `ClearChat`, `DeleteChat`, `DeleteForMe`, `UnarchiveChatsSetting`, `UserStatusMute` (mudanças de outro aparelho; o full sync não é publicado) |
+| `CONTACT` | `Blocklist` (`action`, `dhash`, `changes`; `modify` sem `changes` = buscar a lista de novo), `PrivacySettings` (novos valores e o que mudou), `BusinessName` |
+| `CALL` | `CallOffer`, `CallAccept`, `CallTerminate`, `CallOfferNotice`, `CallRelayLatency` e agora `CallPreAccept`, `CallTransport`, `CallReject`, `UnknownCallEvent` |
+| `MESSAGE` | `Message`, `UndecryptableMessage` e `MediaRetry` (o remetente precisa reenviar a mídia; sem o texto cifrado) |
+| `NEWSLETTER` | `NewsletterJoin`, `NewsletterLeave`, `NewsletterLiveUpdate`, `NewsletterMuteChange` |
+
+Tratados sem publicação: `RotateADVSecret` (só um aviso no log: antes caía na linha genérica "Unhandled event", que imprimia o segredo ADV **antigo e o novo** da sessão no log da instância) e `ManualLoginReconnect` (não é emitido, porque o projeto mantém o login com reconexão automática). `PushNameSetting` já era tratado (renova o estado "Connected").
+
+Como verificar a lista: `grep -c 'case \*events\.'` não basta, porque vários `case` agrupam tipos; a contagem acima procura cada tipo de `types/events` no código do serviço.
 
 ## 6. Recomendação (o que fazer com isso)
 
@@ -78,7 +88,6 @@ Os ✅ desta tabela já são tratados; os demais chegam ao handler e caem no ram
 
 **Feito depois disso**: eventos de pareamento (`PairError`...) e de estado de chat (`Mute`, `Pin`, `Star`...); mensagens temporárias (`POST /chat/disappearing`, `POST /user/defaultDisappearing`, timer aprendido e aplicado no envio, resolve o #79); grupo por convite (`/group/inviteinfo`, `/group/joininvite`); canais (seguir, deixar de seguir, silenciar, marcar como visto, reagir); `BuildUnavailableMessageRequest` (`POST /message/rerequest` e o evento `UndecryptableMessage`). Detalhes em `docs/wiki/guias-api/api-fork-additions.md` e, para o que foi corrigido no caminho (rotas de chat, bloqueio, rótulos, fila de webhook...), em `FORK-TRIAGE.md`.
 
-O que resta:
+**Eventos**: fechados em 29/09/2026 (§5).
 
-1. Os demais eventos não tratados de §5, só quando houver quem precise. Os mais úteis seriam `MediaRetry`/`MediaRetryError` (mídia que não baixa), `OfflineSyncPreview` (fila offline que só cresce, #190) e `Blocklist*`/`PrivacySettings` (sincronizar com sistemas externos).
-2. Não prometer: remoção de contato, atender/discar chamadas e encaminhar por ID sem persistência (§2).
+O que resta é escolher quais dos 60 métodos ainda não usados (§4) valem a implementação; nenhum deles é necessário para corrigir algo que hoje funciona errado. Não prometer: remoção de contato, atender/discar chamadas e encaminhar por ID sem persistência (§2).
