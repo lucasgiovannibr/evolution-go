@@ -207,6 +207,9 @@ func (i instances) Create(data *CreateStruct) (*instance_model.Instance, error) 
 		if data.AdvancedSettings.IgnoreStatus != nil {
 			instance.IgnoreStatus = *data.AdvancedSettings.IgnoreStatus
 		}
+		if data.AdvancedSettings.CallsEnabled != nil {
+			instance.CallsEnabled = *data.AdvancedSettings.CallsEnabled
+		}
 	}
 
 	createdInstance, err := i.instanceRepository.Create(instance)

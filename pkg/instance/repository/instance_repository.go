@@ -198,7 +198,7 @@ func (i *instanceRepository) GetAdvancedSettings(instanceId string) (*instance_m
 	}
 
 	var instance instance_model.Instance
-	err := i.db.Select("always_online, reject_call, msg_reject_call, read_messages, ignore_groups, ignore_status").
+	err := i.db.Select("always_online, reject_call, msg_reject_call, read_messages, ignore_groups, ignore_status, calls_enabled").
 		Where("id = ?", instanceId).First(&instance).Error
 	if err != nil {
 		return nil, err
@@ -211,6 +211,7 @@ func (i *instanceRepository) GetAdvancedSettings(instanceId string) (*instance_m
 		ReadMessages:  instance_model.BoolPtr(instance.ReadMessages),
 		IgnoreGroups:  instance_model.BoolPtr(instance.IgnoreGroups),
 		IgnoreStatus:  instance_model.BoolPtr(instance.IgnoreStatus),
+		CallsEnabled:  instance_model.BoolPtr(instance.CallsEnabled),
 	}
 
 	return settings, nil
@@ -257,6 +258,9 @@ func buildAdvancedSettingsUpdates(settings *instance_model.AdvancedSettings) map
 	}
 	if settings.IgnoreStatus != nil {
 		updates["ignore_status"] = *settings.IgnoreStatus
+	}
+	if settings.CallsEnabled != nil {
+		updates["calls_enabled"] = *settings.CallsEnabled
 	}
 	if settings.MsgRejectCall != "" {
 		updates["msg_reject_call"] = settings.MsgRejectCall

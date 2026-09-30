@@ -14,6 +14,7 @@ type DatabaseState struct {
 	DisconnectReason string `json:"disconnectReason,omitempty"`
 	Jid              string `json:"jid,omitempty"`
 	AlwaysOnline     bool   `json:"alwaysOnline"`
+	CallsEnabled     bool   `json:"callsEnabled"`
 }
 
 // RuntimeDiagnostics compares what the database says about an instance with what
@@ -65,6 +66,18 @@ func diagnose(instance *instance_model.Instance, rt whatsmeow_service.RuntimeInf
 		DisconnectReason: instance.DisconnectReason,
 		Jid:              instance.Jid,
 		AlwaysOnline:     instance.AlwaysOnline,
+		CallsEnabled:     instance.CallsEnabled,
+	}
+
+	// The call engine is created when the client starts, so a change of the flag only
+	// reaches a client that is already running after its next connection.
+	if rt.ClientRegistered {
+		switch {
+		case instance.CallsEnabled && rt.Calls == nil:
+			add("calls_enabled_pending_reconnect", "calls are enabled for the instance but the running client started without a call engine (reconnect the instance to apply)")
+		case !instance.CallsEnabled && rt.Calls != nil:
+			add("calls_disabled_pending_reconnect", "calls are disabled for the instance but the running client still has a call engine (reconnect the instance to apply)")
+		}
 	}
 
 	switch {

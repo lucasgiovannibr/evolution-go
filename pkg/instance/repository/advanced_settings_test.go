@@ -50,3 +50,21 @@ func TestBuildAdvancedSettingsUpdates(t *testing.T) {
 		}
 	})
 }
+
+func TestBuildAdvancedSettingsUpdatesCallsEnabled(t *testing.T) {
+	on, off := true, false
+
+	updates := buildAdvancedSettingsUpdates(&instance_model.AdvancedSettings{CallsEnabled: &on})
+	if len(updates) != 1 || updates["calls_enabled"] != true {
+		t.Fatalf("got %#v, want only calls_enabled=true", updates)
+	}
+
+	updates = buildAdvancedSettingsUpdates(&instance_model.AdvancedSettings{CallsEnabled: &off})
+	if len(updates) != 1 || updates["calls_enabled"] != false {
+		t.Fatalf("explicit false must be written, got %#v", updates)
+	}
+
+	if updates = buildAdvancedSettingsUpdates(&instance_model.AdvancedSettings{}); len(updates) != 0 {
+		t.Fatalf("an omitted callsEnabled must not touch the column, got %#v", updates)
+	}
+}
