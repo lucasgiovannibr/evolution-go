@@ -614,6 +614,11 @@ func (i instances) Delete(id string) error {
 		i.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Failed to clear instance cache: %v", instance.Id, err)
 	}
 
+	// The paired device and the poll votes are not covered by the instance row's delete.
+	if err := i.whatsmeowService.PurgeInstanceData(instance.Id, instance.Jid); err != nil {
+		i.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Failed to purge the instance's stored data: %v", instance.Id, err)
+	}
+
 	err = i.instanceRepository.Delete(id)
 	if err != nil {
 		return err

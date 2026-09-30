@@ -473,8 +473,6 @@ func (m *messageService) DeleteMessageEveryone(data *MessageStruct, instance *in
 		return "", "", err
 	}
 
-	var ts time.Time
-
 	recipient, ok := utils.ParseJID(data.Chat)
 	if !ok {
 		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
@@ -498,7 +496,7 @@ func (m *messageService) DeleteMessageEveryone(data *MessageStruct, instance *in
 
 	response := resp.ID
 
-	return response, ts.String(), nil
+	return response, resp.Timestamp.String(), nil
 }
 
 func (m *messageService) EditMessage(data *EditMessageStruct, instance *instance_model.Instance) (string, string, error) {

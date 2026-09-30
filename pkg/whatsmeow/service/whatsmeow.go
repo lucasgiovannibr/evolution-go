@@ -59,6 +59,7 @@ type WhatsmeowService interface {
 	StartInstance(instanceId string) error
 	ReconnectClient(instanceId string) error
 	ClearInstanceCache(instanceId string, token string) error
+	PurgeInstanceData(instanceId string, jid string) error
 	CallWebhook(instance *instance_model.Instance, queueName string, jsonData []byte)
 	SendToGlobalQueues(event string, jsonData []byte, userId string)
 	ForceUpdateJid(instanceId string, number string) error

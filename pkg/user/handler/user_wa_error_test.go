@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
+	user_service "github.com/evolution-foundation/evolution-go/pkg/user/service"
 	"github.com/gin-gonic/gin"
 	"go.mau.fi/whatsmeow"
 )
@@ -40,6 +41,11 @@ func TestWriteUserWAError(t *testing.T) {
 			name:       "context canceled",
 			err:        fmt.Errorf("avatar: %w", context.Canceled),
 			wantStatus: http.StatusGatewayTimeout,
+		},
+		{
+			name:       "invalid number",
+			err:        fmt.Errorf("check: %w", &user_service.InvalidNumberError{Err: errors.New("invalid number format")}),
+			wantStatus: http.StatusBadRequest,
 		},
 		{
 			name:       "other error",
