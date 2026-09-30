@@ -10,6 +10,7 @@ import (
 
 type CallHandler interface {
 	RejectCall(ctx *gin.Context)
+	ActiveCalls(ctx *gin.Context)
 }
 
 type callHandler struct {
@@ -49,6 +50,24 @@ func (g *callHandler) RejectCall(ctx *gin.Context) {
 	}
 
 	ctx.JSON(http.StatusOK, gin.H{"message": "success"})
+}
+
+// Active calls
+// @Summary Active calls
+// @Description The call engine of the instance and the calls it is following (incoming and outgoing, until they end). "enabled" is false when the running client has no call engine.
+// @Tags Call
+// @Produce json
+// @Success 200 {object} call_service.ActiveCallsResult
+// @Failure 500 {object} gin.H "Internal server error"
+// @Router /call/active [get]
+func (g *callHandler) ActiveCalls(ctx *gin.Context) {
+	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
+	if !ok {
+		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		return
+	}
+
+	ctx.JSON(http.StatusOK, g.callService.ActiveCalls(instance))
 }
 
 func NewCallHandler(

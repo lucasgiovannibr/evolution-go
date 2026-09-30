@@ -44,7 +44,7 @@ func (r *recordingLogger) has(level string) bool {
 // this test fails after a dependency update, calls need a new library revision (or a
 // whatsmeow revision the library still fits) before the update can ship.
 func TestAttachInstallsTheHookOnThePinnedWhatsmeow(t *testing.T) {
-	m := NewManager()
+	m := NewManager(Options{})
 	log := &recordingLogger{}
 	cli := whatsmeow.NewClient(&store.Device{}, nil)
 
@@ -63,7 +63,7 @@ func TestAttachInstallsTheHookOnThePinnedWhatsmeow(t *testing.T) {
 }
 
 func TestAttachRefusesAProxiedInstance(t *testing.T) {
-	m := NewManager()
+	m := NewManager(Options{})
 	log := &recordingLogger{}
 
 	st := m.Attach("inst-1", nil, true, log)
@@ -80,14 +80,14 @@ func TestAttachRefusesAProxiedInstance(t *testing.T) {
 }
 
 func TestStatusOfAnInstanceWithoutAnEngine(t *testing.T) {
-	m := NewManager()
+	m := NewManager(Options{})
 	if _, ok := m.Status("nobody"); ok {
 		t.Fatal("an instance that never attached must have no status")
 	}
 }
 
 func TestDetachForgetsTheEngine(t *testing.T) {
-	m := NewManager()
+	m := NewManager(Options{})
 	m.Attach("inst-1", nil, true, &recordingLogger{})
 	m.Detach("inst-1")
 	if _, ok := m.Status("inst-1"); ok {
@@ -97,7 +97,7 @@ func TestDetachForgetsTheEngine(t *testing.T) {
 }
 
 func TestAttachReplacesThePreviousEngine(t *testing.T) {
-	m := NewManager()
+	m := NewManager(Options{})
 	log := &recordingLogger{}
 	m.Attach("inst-1", nil, true, log)
 

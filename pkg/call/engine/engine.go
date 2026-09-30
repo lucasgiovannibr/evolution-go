@@ -15,6 +15,10 @@
 //   - Its media goes over a UDP socket it opens itself and knows nothing about the
 //     instance proxy, which would show WhatsApp the server's real address for an
 //     account that is configured to hide it. Instances with a proxy get no engine.
+//   - It keeps a single OnEnd/OnReady callback per call and has no way to end every
+//     call of a client at once. The Manager therefore owns those callbacks (see
+//     calls.go) and other code waits on Tracked.Done() instead, and ends the calls of
+//     an instance itself when the instance goes away.
 package call_engine
 
 import (
@@ -22,6 +26,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/purpshell/meowcaller"
 	"github.com/rs/zerolog"
@@ -29,17 +34,55 @@ import (
 	"go.mau.fi/whatsmeow/types"
 )
 
-// Call is what the rest of the code may do with a live call.
+// Phase is where a call is in its life.
+type Phase string
+
+const (
+	PhaseCalling    Phase = "calling"    // outgoing, waiting for the peer
+	PhaseRinging    Phase = "ringing"    // incoming, not answered yet
+	PhaseConnecting Phase = "connecting" // answered, media not flowing yet
+	PhaseActive     Phase = "active"     // media flowing
+	PhaseEnded      Phase = "ended"
+	PhaseOther      Phase = "other" // idle or waiting room: nothing this project acts on
+)
+
+// Call is what the rest of the code may do with a live call. The library's call
+// satisfies it through libCall; tests use fakes.
 type Call interface {
 	ID() string
 	Peer() types.JID
+	IsVideo() bool
+	Phase() Phase
 	Answer() error
 	Reject() error
 	Hangup() error
+	// OnReady and OnEnd replace the previous callback: the library keeps only one.
+	// The Manager owns them; everything else waits on Tracked.Done().
+	OnReady(fn func())
+	OnEnd(fn func(reason string))
 }
 
-// *meowcaller.Call already has exactly these methods.
-var _ Call = (*meowcaller.Call)(nil)
+// libCall adapts the library's call to Call. The embedded *meowcaller.Call already
+// has every method but Phase.
+type libCall struct{ *meowcaller.Call }
+
+var _ Call = libCall{}
+
+func (c libCall) Phase() Phase {
+	switch c.State() {
+	case meowcaller.CallPhaseCalling:
+		return PhaseCalling
+	case meowcaller.CallPhaseRinging:
+		return PhaseRinging
+	case meowcaller.CallPhaseConnecting:
+		return PhaseConnecting
+	case meowcaller.CallPhaseActive:
+		return PhaseActive
+	case meowcaller.CallPhaseEnded:
+		return PhaseEnded
+	}
+	return PhaseOther
+}
 
 // State says why an instance does or does not have a working call engine.
 type State string
@@ -58,6 +101,8 @@ const (
 type Status struct {
 	State State  `json:"state"`
 	Error string `json:"error,omitempty"`
+	// ActiveCalls is how many calls of the instance are tracked right now.
+	ActiveCalls int `json:"activeCalls"`
 }
 
 // Logger is the per-instance logger (*logger.Logger satisfies it).
@@ -71,17 +116,51 @@ type Logger interface {
 type runtime struct {
 	client *meowcaller.Client
 	status Status
+	log    Logger
 }
 
-// Manager keeps one engine per instance. Build it with NewManager; Status and Detach
-// also work on a nil Manager (a service built without one has no engines).
+const (
+	// DefaultMaxConcurrent is how many calls one instance may have at the same time.
+	DefaultMaxConcurrent = 4
+	// DefaultRingTimeout is how long a call may stay unanswered before it is dropped.
+	// It is longer than WhatsApp's own ring time, so it only catches calls whose end
+	// never arrived.
+	DefaultRingTimeout = 90 * time.Second
+)
+
+// Notifier publishes a call lifecycle event of an instance (CallReady, CallEnded).
+type Notifier func(instanceID, event string, data map[string]interface{})
+
+// Options tune a Manager; a zero field takes its default.
+type Options struct {
+	MaxConcurrent int
+	RingTimeout   time.Duration
+	Notify        Notifier
+}
+
+// Manager keeps one engine per instance and the calls each one has. Build it with
+// NewManager; Status, Detach and the call lookups also work on a nil Manager (a
+// service built without one has no engines).
 type Manager struct {
+	opts Options
+
 	mu       sync.RWMutex
 	runtimes map[string]*runtime
+	calls    map[string]map[string]*Tracked // instance id -> call id -> call
 }
 
-func NewManager() *Manager {
-	return &Manager{runtimes: make(map[string]*runtime)}
+func NewManager(opts Options) *Manager {
+	if opts.MaxConcurrent <= 0 {
+		opts.MaxConcurrent = DefaultMaxConcurrent
+	}
+	if opts.RingTimeout <= 0 {
+		opts.RingTimeout = DefaultRingTimeout
+	}
+	return &Manager{
+		opts:     opts,
+		runtimes: make(map[string]*runtime),
+		calls:    make(map[string]map[string]*Tracked),
+	}
 }
 
 // Attach gives the instance a call engine. It must run before cli.Connect(): the
@@ -94,13 +173,13 @@ func (m *Manager) Attach(instanceID string, cli *whatsmeow.Client, proxied bool,
 	if proxied {
 		st := Status{State: StateBlockedProxy, Error: "call media is sent over UDP directly and would bypass the instance proxy"}
 		log.LogWarn("[%s] Calls are not enabled for this instance: %s", instanceID, st.Error)
-		m.store(instanceID, &runtime{status: st})
+		m.store(instanceID, &runtime{status: st, log: log})
 		return st
 	}
 
 	probe := &logBridge{instanceID: instanceID, log: log}
 	probe.startProbing()
-	rt := &runtime{status: Status{State: StateActive}}
+	rt := &runtime{status: Status{State: StateActive}, log: log}
 
 	func() {
 		defer func() {
@@ -109,6 +188,7 @@ func (m *Manager) Attach(instanceID string, cli *whatsmeow.Client, proxied bool,
 			}
 		}()
 		rt.client = meowcaller.NewClient(cli, meowcaller.WithLogger(zerolog.New(probe).Level(zerolog.InfoLevel)))
+		rt.client.OnIncomingCall(func(c *meowcaller.Call) { m.onIncoming(instanceID, libCall{c}) })
 	}()
 
 	if failure := probe.stopProbing(); failure != "" && rt.status.State == StateActive {
@@ -132,6 +212,7 @@ func (m *Manager) Detach(instanceID string) {
 	m.mu.Lock()
 	delete(m.runtimes, instanceID)
 	m.mu.Unlock()
+	m.endAll(instanceID, "instance_stopped")
 }
 
 // Status returns the engine state of an instance; ok is false when the instance has
@@ -146,14 +227,39 @@ func (m *Manager) Status(instanceID string) (st Status, ok bool) {
 	if !ok {
 		return Status{}, false
 	}
-	return rt.status, true
+	st = rt.status
+	st.ActiveCalls = len(m.calls[instanceID])
+	return st, true
 }
 
+// store makes rt the engine of the instance. The calls of an engine it replaces
+// belong to a client that no longer exists, so they end here.
 func (m *Manager) store(instanceID string, rt *runtime) {
 	m.mu.Lock()
+	_, replaced := m.runtimes[instanceID]
 	m.runtimes[instanceID] = rt
 	m.mu.Unlock()
+	if replaced {
+		m.endAll(instanceID, "instance_stopped")
+	}
 }
+
+// logOf is the instance logger, or one that discards.
+func (m *Manager) logOf(instanceID string) Logger {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	if rt, ok := m.runtimes[instanceID]; ok && rt.log != nil {
+		return rt.log
+	}
+	return discardLogger{}
+}
+
+type discardLogger struct{}
+
+func (discardLogger) LogInfo(string, ...interface{})  {}
+func (discardLogger) LogWarn(string, ...interface{})  {}
+func (discardLogger) LogError(string, ...interface{}) {}
+func (discardLogger) LogDebug(string, ...interface{}) {}
 
 // logBridge is the zerolog sink handed to the library: it forwards the library's log
 // lines to the instance log and, while the engine is being constructed, remembers the

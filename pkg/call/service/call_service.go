@@ -1,6 +1,7 @@
 package call_service
 
 import (
+	call_engine "github.com/evolution-foundation/evolution-go/pkg/call/engine"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"context"
@@ -16,6 +17,18 @@ import (
 
 type CallService interface {
 	RejectCall(data *RejectCallStruct, instance *instance_model.Instance) error
+	// ActiveCalls reports the call engine of the instance and the calls it is following.
+	ActiveCalls(instance *instance_model.Instance) ActiveCallsResult
+}
+
+// ActiveCallsResult is the answer of GET /call/active.
+type ActiveCallsResult struct {
+	// Enabled is false when the running client has no call engine (calls are off for
+	// the instance, or it has not reconnected since they were turned on).
+	Enabled bool              `json:"enabled"`
+	State   call_engine.State `json:"state,omitempty"`
+	Error   string            `json:"error,omitempty"`
+	Calls   []call_engine.Info `json:"calls"`
 }
 
 type callService struct {
@@ -66,7 +79,27 @@ func (c *callService) ensureClientConnected(instanceId string) (*whatsmeow.Clien
 	return client, nil
 }
 
+func (c *callService) ActiveCalls(instance *instance_model.Instance) ActiveCallsResult {
+	engine := c.whatsmeowService.CallEngine()
+	result := ActiveCallsResult{Calls: engine.List(instance.Id)}
+	if st, ok := engine.Status(instance.Id); ok {
+		result.Enabled = st.State == call_engine.StateActive
+		result.State = st.State
+		result.Error = st.Error
+	}
+	return result
+}
+
 func (c *callService) RejectCall(data *RejectCallStruct, instance *instance_model.Instance) error {
+	// A call the engine follows (the instance preaccepted it) has to be rejected through
+	// the engine, or it keeps the call in its own state.
+	if tracked, err := c.whatsmeowService.CallEngine().Reject(instance.Id, data.CallID); tracked {
+		if err != nil {
+			logger.LogError("[%s] error reject call: %v", instance.Id, err)
+		}
+		return err
+	}
+
 	client, err := c.ensureClientConnected(instance.Id)
 	if err != nil {
 		return err

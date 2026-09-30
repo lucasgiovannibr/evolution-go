@@ -2313,8 +2313,16 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		if mycli.Instance.RejectCall {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Auto-rejecting call from %s", mycli.userID, evt.CallCreator.String())
 
-			// Rejeita a chamada
-			mycli.WAClient.RejectCall(context.Background(), evt.CallCreator, evt.CallID)
+			// An instance with a call engine has already preaccepted this offer, so the
+			// engine has to reject it or it keeps the call in its own state.
+			if tracked, err := mycli.service.CallEngine().Reject(mycli.userID, evt.CallID); tracked {
+				if err != nil {
+					mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Auto-reject of call %s ended it here but the peer may not have been told: %v", mycli.userID, evt.CallID, err)
+				}
+			} else {
+				// Rejeita a chamada
+				mycli.WAClient.RejectCall(context.Background(), evt.CallCreator, evt.CallID)
+			}
 
 			// Envia mensagem de rejeição se configurada
 			if mycli.Instance.MsgRejectCall != "" {
@@ -2751,7 +2759,7 @@ func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueN
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
 		}
-	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency", "CallPreAccept", "CallReject", "CallTransport", "UnknownCallEvent":
+	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency", "CallPreAccept", "CallReject", "CallTransport", "UnknownCallEvent", "CallReady", "CallEnded":
 		if contains(subscriptions, "CALL") {
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
@@ -3026,7 +3034,7 @@ func globalEventTypeFor(eventType string) string {
 		return "HISTORY_SYNC"
 	case "ChatPresence", "Archive", "Mute", "Pin", "Star", "MarkChatAsRead", "ClearChat", "DeleteChat", "DeleteForMe", "UnarchiveChatsSetting", "UserStatusMute":
 		return "CHAT_PRESENCE"
-	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency", "CallPreAccept", "CallReject", "CallTransport", "UnknownCallEvent":
+	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency", "CallPreAccept", "CallReject", "CallTransport", "UnknownCallEvent", "CallReady", "CallEnded":
 		return "CALL"
 	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored", "ReachoutTimelock", "StreamError", "ClientOutdated", "CATRefreshError", "OfflineSyncPreview":
 		return "CONNECTION"
@@ -3335,7 +3343,7 @@ func NewWhatsmeowService(
 	// Inicializar PollService de forma segura
 	pollSvc := poll_service.NewPollService(authDB, loggerWrapper)
 
-	return &whatsmeowService{
+	svc := &whatsmeowService{
 		instanceRepository: instanceRepository,
 		authDB:             authDB,
 		messageRepository:  messageRepository,
@@ -3346,7 +3354,6 @@ func NewWhatsmeowService(
 		userInfoCache:      cache.New(5*time.Minute, 10*time.Minute),
 		clientPointer:      clientPointer,
 		myClientPointer:    safemap.New[*MyClient](),
-		callEngine:         call_engine.NewManager(),
 		rabbitmqProducer:   rabbitmqProducer,
 		webhookProducer:    webhookProducer,
 		websocketProducer:  websocketProducer,
@@ -3358,6 +3365,12 @@ func NewWhatsmeowService(
 		loggerWrapper:      loggerWrapper,
 		passkeyCeremony:    ceremony.NewStore(),
 	}
+	svc.callEngine = call_engine.NewManager(call_engine.Options{
+		MaxConcurrent: config.CallMaxConcurrent,
+		RingTimeout:   time.Duration(config.CallRingTimeout) * time.Second,
+		Notify:        svc.publishCallEvent,
+	})
+	return svc
 }
 
 // GetPollService retorna o serviço de polls (evita dupla inicialização)

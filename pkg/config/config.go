@@ -65,6 +65,10 @@ type Config struct {
 	QrcodeMaxCount       int
 	CheckUserExists      bool
 
+	// Calls (see pkg/call/engine). Zero means the engine default.
+	CallMaxConcurrent int // calls one instance may have at the same time
+	CallRingTimeout   int // seconds before an unanswered call is dropped
+
 	// Logger configurations
 	LogMaxSize    int
 	LogMaxBackups int
@@ -285,6 +289,10 @@ func Load() *Config {
 
 	rerequestFromPhone := os.Getenv(config_env.REREQUEST_FROM_PHONE)
 
+	// Invalid or non-positive values fall back to the call engine defaults.
+	callMaxConcurrent, _ := strconv.Atoi(os.Getenv(config_env.CALL_MAX_CONCURRENT))
+	callRingTimeout, _ := strconv.Atoi(os.Getenv(config_env.CALL_RING_TIMEOUT))
+
 	// Convertendo para int com valores padrão caso estejam vazios
 	major := 0
 	if whatsappVersionMajor != "" {
@@ -381,6 +389,8 @@ func Load() *Config {
 		EventIgnoreGroup:     eventIgnoreGroup == "true",
 		EventIgnoreStatus:    eventIgnoreStatus == "true",
 		QrcodeMaxCount:       qrMaxCount,
+		CallMaxConcurrent:    max(callMaxConcurrent, 0),
+		CallRingTimeout:      max(callRingTimeout, 0),
 		CheckUserExists:      checkUserExists != "false", // Default true, set to false to disable
 		RerequestFromPhone:   rerequestFromPhone == "true",
 		AmqpGlobalEvents:     amqpGlobalEvents,
