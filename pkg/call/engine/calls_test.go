@@ -197,6 +197,25 @@ func closed(t *Tracked) bool {
 	}
 }
 
+// WhatsApp puts no reason in the terminate message of a call the other side hangs up
+// (only the duration), so the library reports an empty one. It is named, so the event
+// and the stream's stop do not leave a client guessing; a reason WhatsApp does give is
+// kept (see TestTrackListsTheCallUntilItEnds).
+func TestACallTheOtherSideEndedIsNotReportedWithoutAReason(t *testing.T) {
+	m, log := newTestManager(Options{})
+	c := answered(newFake("C1"))
+	tr, _ := m.Track("inst", c, Incoming)
+
+	c.end("")
+
+	if !closed(tr) || tr.Reason() != ReasonPeerHangup {
+		t.Fatalf("done=%v reason=%q, want %q", closed(tr), tr.Reason(), ReasonPeerHangup)
+	}
+	if e := log.waitEnded(t); e.data["reason"] != ReasonPeerHangup {
+		t.Fatalf("event = %+v", e)
+	}
+}
+
 func TestTrackListsTheCallUntilItEnds(t *testing.T) {
 	m, log := newTestManager(Options{})
 	c := newFake("C1")

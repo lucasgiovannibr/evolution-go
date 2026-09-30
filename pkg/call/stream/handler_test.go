@@ -129,6 +129,21 @@ func TestTheStreamCarriesAudioBothWaysAndReportsTheEnd(t *testing.T) {
 	}
 }
 
+// WhatsApp sends no reason when the other side hangs up; the stream says so instead of
+// closing with a stop that explains nothing.
+func TestTheStopOfACallThePeerEndedSaysSo(t *testing.T) {
+	r := newRig(t, Config{})
+	call := r.track("inst", "C1")
+	conn := r.mustDial("inst", "C1")
+	read(t, conn) // start
+
+	call.End("")
+
+	if stop := read(t, conn); stop.Event != "stop" || stop.Reason != call_engine.ReasonPeerHangup {
+		t.Fatalf("stop = %+v", stop)
+	}
+}
+
 func TestPeerAudioBeforeTheEndIsNotLost(t *testing.T) {
 	r := newRig(t, Config{})
 	call := r.track("inst", "C1")

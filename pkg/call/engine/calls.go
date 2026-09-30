@@ -67,7 +67,15 @@ func (t *Tracked) Call() Call { return t.call }
 // Done is closed when the call has ended.
 func (t *Tracked) Done() <-chan struct{} { return t.done }
 
-// Reason is why the call ended, empty while it is running.
+// ReasonPeerHangup is the reason of a call the other side ended. WhatsApp sends no
+// reason in that case (its terminate message only carries the duration), so the
+// library reports an empty one; it is named here so a client is not left to guess.
+const ReasonPeerHangup = "peer_hangup"
+
+// Reason is why the call ended, empty while it is running. Besides what the library
+// reports (for example "rejected", "hangup" when we ended it, "server:<code>", or a
+// reason WhatsApp put in the terminate message), it is ReasonPeerHangup, "ring_timeout",
+// "stream_closed" or "rejected_busy" for the cases this package ends itself.
 func (t *Tracked) Reason() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -242,6 +250,9 @@ func (m *Manager) finish(instanceID string, t *Tracked, libReason string) {
 		reason := libReason
 		if t.override != "" {
 			reason = t.override
+		}
+		if reason == "" {
+			reason = ReasonPeerHangup
 		}
 		t.reason = reason
 		if t.grace != nil {
