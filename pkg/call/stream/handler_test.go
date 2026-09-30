@@ -506,11 +506,12 @@ func TestThePeersVideoStateReachesEveryStream(t *testing.T) {
 		read(t, conn)
 		eventually(t, "the stream to attach", func() bool { return call.Sink() != nil })
 
-		call.PeerVideoState(call_engine.VideoState{Active: true, Upgrade: true, Orientation: 2, State: call_engine.VideoStateUpgradeRequest})
+		call.PeerVideoState(call_engine.VideoState{Active: true, Upgrade: true, Orientation: 2, State: call_engine.VideoStateUpgradeRequest, StateCode: 11})
 
 		m := read(t, conn)
 		if m.Event != "video_state" || m.Active == nil || !*m.Active || m.Upgrade == nil || !*m.Upgrade ||
-			m.Orientation == nil || *m.Orientation != 2 || m.State != call_engine.VideoStateUpgradeRequest {
+			m.Orientation == nil || *m.Orientation != 2 || m.State != call_engine.VideoStateUpgradeRequest ||
+			m.StateCode == nil || *m.StateCode != 11 {
 			t.Fatalf("video=%v: got %+v", video, m)
 		}
 	}

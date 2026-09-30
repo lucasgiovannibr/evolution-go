@@ -240,7 +240,7 @@ async def main(args):
                 elif event == "keyframe_request":
                     restart.set()
                 elif event == "video_state":
-                    print(f"[{time.time()-t0:6.1f}s] peer video state:", {k: msg.get(k) for k in ("state", "active", "upgrade", "orientation")})
+                    print(f"[{time.time()-t0:6.1f}s] peer video state:", {k: msg.get(k) for k in ("state", "stateCode", "active", "upgrade", "orientation")})
                     if msg.get("upgrade"):
                         control("accept")
                 elif event == "stop":

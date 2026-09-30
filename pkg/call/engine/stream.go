@@ -158,6 +158,7 @@ func (m *Manager) videoStateChanged(instanceID string, t *Tracked, v VideoState)
 	data["upgrade"] = v.Upgrade
 	data["orientation"] = v.Orientation
 	data["state"] = v.State
+	data["stateCode"] = v.StateCode
 	m.notify(instanceID, "CallVideoState", data)
 
 	if fn != nil {

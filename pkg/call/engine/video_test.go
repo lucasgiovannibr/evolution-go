@@ -194,7 +194,7 @@ func TestThePeersVideoStateIsKeptPublishedAndHandedToTheStream(t *testing.T) {
 	}
 	r.attach(false)
 
-	r.call.PeerVideoState(call_engine.VideoState{Active: true, Upgrade: true, Orientation: 1, State: call_engine.VideoStateUpgradeRequest})
+	r.call.PeerVideoState(call_engine.VideoState{Active: true, Upgrade: true, Orientation: 1, State: call_engine.VideoStateUpgradeRequest, StateCode: 11})
 
 	info := r.tr.Info()
 	if info.PeerVideo == nil || !info.PeerVideo.Active || !info.PeerVideo.Upgrade || info.PeerVideo.Orientation != 1 {
@@ -202,7 +202,7 @@ func TestThePeersVideoStateIsKeptPublishedAndHandedToTheStream(t *testing.T) {
 	}
 	published := r.ev.named("CallVideoState")
 	if len(published) != 1 || published[0]["callId"] != "C1" || published[0]["upgrade"] != true || published[0]["orientation"] != 1 ||
-		published[0]["state"] != call_engine.VideoStateUpgradeRequest {
+		published[0]["state"] != call_engine.VideoStateUpgradeRequest || published[0]["stateCode"] != 11 {
 		t.Fatalf("published = %+v", published)
 	}
 	if len(r.states) != 1 || !r.states[0].Upgrade || r.states[0].State != call_engine.VideoStateUpgradeRequest {

@@ -28,3 +28,13 @@ func TestEveryStateThePeerCanSignalHasItsOwnName(t *testing.T) {
 		t.Error("an accepted upgrade must not look like a camera turned off")
 	}
 }
+
+// Numbers WhatsApp has been seen to use but nobody has identified stay unknown, and the
+// event carries the number (StateCode) so a live call can tell them apart.
+func TestStatesNobodyHasIdentifiedAreUnknown(t *testing.T) {
+	for _, code := range []int{2, 7, 9, 10, 12} {
+		if got := videoStateName(code); got != VideoStateUnknown {
+			t.Fatalf("videoStateName(%d) = %q; if it now has a name, give it a case and a test", code, got)
+		}
+	}
+}

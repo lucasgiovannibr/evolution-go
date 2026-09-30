@@ -97,6 +97,9 @@ type VideoState struct {
 	// and Upgrade alone cannot tell the peer accepting our upgrade from it turning its
 	// camera off: both leave them false.
 	State string `json:"state"`
+	// StateCode is the number behind State, as WhatsApp sent it. It is what tells apart
+	// the states reported as VideoStateUnknown.
+	StateCode int `json:"stateCode"`
 }
 
 // What the peer signalled about its video (VideoState.State).
@@ -209,7 +212,7 @@ func (c libCall) SendVideo(accessUnit []byte, duration time.Duration) error {
 
 func (c libCall) OnVideoState(fn func(VideoState)) {
 	c.Call.OnVideoState(func(v meowcaller.VideoState) {
-		fn(VideoState{Active: v.Active, Upgrade: v.Upgrade, Orientation: v.Orientation, State: videoStateName(v.Raw)})
+		fn(VideoState{Active: v.Active, Upgrade: v.Upgrade, Orientation: v.Orientation, State: videoStateName(v.Raw), StateCode: v.Raw})
 	})
 }
 
