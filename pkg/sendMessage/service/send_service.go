@@ -429,10 +429,8 @@ func (s *sendService) ensureClientConnected(instanceId string) (*whatsmeow.Clien
 			return nil, errors.New("no active session found")
 		}
 
-		s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting 2 seconds...", instanceId)
-		time.Sleep(2 * time.Second)
-
-		client = s.clientPointer.Get(instanceId)
+		s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting for the connection...", instanceId)
+		client = utils.WaitForClient(func() *whatsmeow.Client { return s.clientPointer.Get(instanceId) }, utils.InstanceStartTimeout)
 		s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
 			instanceId,
 			client != nil,
@@ -483,8 +481,12 @@ func (s *sendService) ensureClientConnectedWithRetry(instanceId string, maxRetri
 			if reconnectErr != nil {
 				s.loggerWrapper.GetLogger(instanceId).LogError("[%s] Failed to reconnect client on attempt %d: %v", instanceId, attempt, reconnectErr)
 			} else {
-				s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Reconnection initiated on attempt %d, waiting 3 seconds...", instanceId, attempt)
-				time.Sleep(3 * time.Second)
+				s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Reconnection initiated on attempt %d, waiting for the connection...", instanceId, attempt)
+				// Wait for the connection itself instead of a fixed 3 s: when it is
+				// back, retry at once; otherwise fall through to the backoff below.
+				if c := utils.WaitForClient(func() *whatsmeow.Client { return s.clientPointer.Get(instanceId) }, utils.InstanceStartTimeout); c != nil && c.IsConnected() {
+					continue
+				}
 			}
 
 			// If this is not the last attempt, continue to retry

@@ -129,10 +129,8 @@ func (g *groupService) ensureClientConnected(instanceId string) (*whatsmeow.Clie
 			return nil, errors.New("no active session found")
 		}
 
-		g.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting 2 seconds...", instanceId)
-		time.Sleep(2 * time.Second)
-
-		client = g.clientPointer.Get(instanceId)
+		g.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting for the connection...", instanceId)
+		client = utils.WaitForClient(func() *whatsmeow.Client { return g.clientPointer.Get(instanceId) }, utils.InstanceStartTimeout)
 		g.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
 			instanceId,
 			client != nil,

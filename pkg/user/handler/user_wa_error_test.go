@@ -74,3 +74,25 @@ func TestWriteUserWAError(t *testing.T) {
 		})
 	}
 }
+
+func TestWriteQueryErrorMapsNotFoundTo404(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cases := []struct {
+		err  error
+		want int
+	}{
+		{&user_service.NotFoundError{Msg: "this number has no business profile"}, http.StatusNotFound},
+		{fmt.Errorf("wrapped: %w", &user_service.NotFoundError{Msg: "x"}), http.StatusNotFound},
+		{&user_service.InvalidNumberError{Err: errors.New("bad")}, http.StatusBadRequest},
+		{fmt.Errorf("usync: %w", whatsmeow.ErrIQRateOverLimit), http.StatusTooManyRequests},
+		{errors.New("boom"), http.StatusInternalServerError},
+	}
+	for _, c := range cases {
+		w := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(w)
+		writeQueryError(ctx, c.err)
+		if w.Code != c.want {
+			t.Errorf("%v: status %d, want %d", c.err, w.Code, c.want)
+		}
+	}
+}

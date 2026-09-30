@@ -29,8 +29,9 @@ const userInfoRequestTimeout = 10 * time.Second
 // PictureURL lookups of one POST /user/info call (shared by all users in it).
 const pictureURLEnrichBudget = 5 * time.Second
 
-// clientReadyWait is the max time to wait after StartInstance before failing.
-const clientReadyWait = 2 * time.Second
+// clientReadyWait is the max time to wait after StartInstance before failing. The wait
+// returns as soon as the client is connected; this is only the upper bound.
+const clientReadyWait = utils.InstanceStartTimeout
 
 type UserService interface {
 	GetUser(ctx context.Context, data *CheckUserStruct, instance *instance_model.Instance) (*UserCollection, error)
@@ -47,6 +48,9 @@ type UserService interface {
 	SetProfileName(data *SetProfileNameStruct, instance *instance_model.Instance) (bool, error)
 	SetProfileStatus(data *SetProfileStatusStruct, instance *instance_model.Instance) (bool, error)
 	ResolveLid(data *ResolveLidStruct, instance *instance_model.Instance) (*ResolveLidResult, error)
+	GetUserDevices(ctx context.Context, data *DevicesStruct, instance *instance_model.Instance) ([]UserDevice, error)
+	GetStatusPrivacy(ctx context.Context, instance *instance_model.Instance) ([]StatusPrivacyEntry, error)
+	GetBusinessProfile(ctx context.Context, data *BusinessProfileStruct, instance *instance_model.Instance) (*types.BusinessProfile, error)
 }
 
 type userService struct {

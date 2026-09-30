@@ -1,10 +1,10 @@
 package chat_service
 
 import (
+	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"context"
 	"errors"
-	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
@@ -55,10 +55,8 @@ func (c *chatService) ensureClientConnected(instanceId string) (*whatsmeow.Clien
 			return nil, errors.New("no active session found")
 		}
 
-		c.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting 2 seconds...", instanceId)
-		time.Sleep(2 * time.Second)
-
-		client = c.clientPointer.Get(instanceId)
+		c.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting for the connection...", instanceId)
+		client = utils.WaitForClient(func() *whatsmeow.Client { return c.clientPointer.Get(instanceId) }, utils.InstanceStartTimeout)
 		c.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
 			instanceId,
 			client != nil,

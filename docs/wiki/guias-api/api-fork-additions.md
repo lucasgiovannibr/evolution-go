@@ -363,3 +363,17 @@ Passam a ser publicados (antes só apareciam como "Unhandled event" no log):
 | `NEWSLETTER` | `NewsletterLiveUpdate` | `jid`, `time`, `messages` |
 | `NEWSLETTER` | `NewsletterMuteChange` | `id`, `mute` |
 | `CONNECTION` | `OfflineSyncPreview` | `total`, `messages`, `notifications`, `receipts`, `appDataChanges` (o que está na fila offline ao conectar) |
+
+## Consultas: dispositivos, privacidade do status e perfil comercial
+
+Todas são somente leitura e têm limite de 10 s.
+
+| Rota | Corpo | Resposta |
+|---|---|---|
+| `POST /user/devices` | `{"number": "5531999999999"}` ou uma lista (até 50) | `data.devices`: `jid`, `user`, `device`, `server` (`device: 0` é o celular; o dispositivo desta instância não entra) e `data.count` |
+| `GET /user/statusprivacy` | — | `data`: as configurações guardadas de "quem vê meu status" (`type`: `contacts`, `blacklist` ou `whitelist`, `list`, `isDefault`); a primeira é a padrão |
+| `POST /user/business` | `{"number": "5531999999999"}` | `data`: perfil comercial (endereço, e-mail, categorias, horários). **404** quando o número não é uma conta Business |
+
+## Espera pela conexão
+
+Ao iniciar uma instância que não estava rodando, as rotas agora esperam a conexão em vez de dormir um tempo fixo: respondem assim que conecta, com limite de 10 s. Uma instância sem dispositivo pareado continua falhando na hora ("instance is not logged in"), e `GET /instance/qr` devolve o QR assim que ele existe.

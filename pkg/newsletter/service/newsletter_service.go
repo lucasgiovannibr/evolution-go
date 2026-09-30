@@ -1,10 +1,10 @@
 package newsletter_service
 
 import (
+	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"context"
 	"errors"
-	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
@@ -64,10 +64,8 @@ func (n *newsletterService) ensureClientConnected(instanceId string) (*whatsmeow
 			return nil, errors.New("no active session found")
 		}
 
-		n.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting 2 seconds...", instanceId)
-		time.Sleep(2 * time.Second)
-
-		client = n.clientPointer.Get(instanceId)
+		n.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting for the connection...", instanceId)
+		client = utils.WaitForClient(func() *whatsmeow.Client { return n.clientPointer.Get(instanceId) }, utils.InstanceStartTimeout)
 		n.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
 			instanceId,
 			client != nil,

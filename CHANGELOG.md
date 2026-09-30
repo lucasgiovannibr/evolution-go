@@ -174,6 +174,17 @@ and pull requests in `FORK-TRIAGE.md`.
   instance log (the generic log line printed the whole event); it is handled without
   being published.
 
+### Waiting for the connection, and three lookups
+- Every service started an instance and then slept a fixed 2 s before checking that it
+  had connected (3 s after a reconnect, 3 s + 2 s in `GET /instance/qr`, 2 s in
+  `ForceReconnect`): a connection that took 2.1 s failed the request and one that took
+  0.3 s still cost 2 s. They now wait for the connection itself (10 s upper bound), an
+  unpaired instance still fails at once, and `GET /instance/qr` waits until a QR code,
+  a passkey ceremony or a login exists (0.35 s instead of a fixed 3 s in the live test).
+- `POST /user/devices` (linked devices of one or several users, device 0 is the phone),
+  `GET /user/statusprivacy` (who sees my status) and `POST /user/business` (public profile
+  of a Business account; 404 for an ordinary number), all bounded to 10 s.
+
 ### Webhook delivery queue
 - Webhooks go through one bounded queue per destination URL instead of one goroutine per
   event: limits in events and bytes, at most a few workers, the OLDEST event is dropped
