@@ -2,13 +2,13 @@
 
 Fork: `lucasgiovannibr/evolution-go` · Upstream: `evolution-foundation/evolution-go`
 
-Atualizado em 29/09/2026, depois do teste com instância real e da implementação das propostas aprovadas (PRs #14 e #15).
+Atualizado em 29/09/2026, depois do teste com instância real, das propostas aprovadas e de quatro rodadas de caça a bugs (PRs #14 a #22).
 
 Foco do fork: **corrigir, melhorar e ajustar**. O que é funcionalidade nova está em [FEATURE-PROPOSALS.md](FEATURE-PROPOSALS.md): a seção 1 lista o que **já foi implementado** (com sua aprovação) e as seções 2 e 3 o que segue **em aberto** para avaliação.
 
 ## 1. Estado do fork
 
-- Em 29/09 a `main` do fork estava **idêntica** ao `upstream/main` (commit `9337afc`, versão `0.7.2`), então não havia o que atualizar. Hoje ela está **81 commits à frente** (15 PRs mesclados dentro do próprio fork).
+- Em 29/09 a `main` do fork estava **idêntica** ao `upstream/main` (commit `9337afc`, versão `0.7.2`), então não havia o que atualizar. Hoje ela está **95 commits à frente** (22 PRs mesclados dentro do próprio fork).
 - O upstream tinha **61 issues + 61 PRs abertos** (todos analisados aqui).
 - A branch `upstream/develop` está *atrás* da `main` (VERSION `0.7.1`) — vários PRs abertos apontam para ela (#90, #132, #150, #159–#163, #177, #198) e por isso estão desalinhados com a `main`.
 - Os commits da `main` pública são `sync: 0.7.x from main`, feitos por um bot — ela é um **espelho** de um repositório interno. O GitHub não lista nenhum PR como *merged*; os PRs #33 e #91 (AlwaysOnline) foram apenas **fechados** em 03/07 e a correção chegou à `main` por outro caminho. **O fork é o lugar prático para integrar correções.**
@@ -20,7 +20,7 @@ Tudo foi enviado **somente ao fork** (`origin`). O remote `upstream` está com o
 
 | Onde | Situação |
 |---|---|
-| `main` do fork | Tudo mesclado por PRs **dentro do fork** (#1–#15): triagem, whatsmeow novo + Go 1.26, hardening, ciclo de vida, features, correções do teste real, diagnóstico, eventos do whatsmeow, mensagens temporárias, convites, canais e mensagem que não chegou. CI verde; imagem em `ghcr.io/lucasgiovannibr/evolution-go` |
+| `main` do fork | Tudo mesclado por PRs **dentro do fork** (#1–#22): triagem, whatsmeow novo + Go 1.26, hardening, ciclo de vida, features, correções do teste real, diagnóstico, eventos do whatsmeow, mensagens temporárias, convites, canais, mensagem que não chegou, correção das rotas de chat, fila de webhook e quatro rodadas de caça a bugs. CI verde; imagem em `ghcr.io/lucasgiovannibr/evolution-go` |
 | Stack de teste local | `docker/fork-test/` (Postgres novo + imagem do fork, porta 8100), isolado dos seus outros containers |
 
 Build, `go vet` e `go test -race ./...` passam.
@@ -134,9 +134,51 @@ Features aprovadas (PR #7), documentadas em `docs/wiki/guias-api/api-fork-additi
 
 O evento `UndecryptableMessage` (antes só uma linha de log) é publicado sob `MESSAGE` com `id`, `chat` e `sender`, e `POST /message/rerequest` pede ao celular uma nova cópia (`BuildUnavailableMessageRequest`); a resposta chega como `Message` com `UnavailableRequestID`. **Validado ao vivo**: o pedido é aceito pelo servidor. **Não observado**: a resposta do celular e um evento real (dependem de o WhatsApp entregar algo que não dá para decifrar).
 
+### Rotas de chat, presença e `subscribe` em lote (PR #17)
+
+| Problema | Correção |
+|---|---|
+| `/chat/pin`, `unpin`, `archive`, `unarchive`, `mute`, `unmute` (marcadas "TODO: not working" no router, #101) não faziam efeito em contatos | A causa era dupla: `utils.ParseJID` põe um `+` no número, então o patch de app state mirava `+<número>@s.whatsapp.net`, um chat que **não existe** (a loja até criava uma linha para ele), e o celular indexa chats individuais por **LID** (67 dos 68 chats da conta de teste). Agora o JID é canônico e resolvido para o LID (`utils.AppStateChatJID`). Em grupo nunca falhou, por isso parecia intermitente. Entrada inválida dá 400 (era 500), o `timestamp` devolvido é real (era data zerada) e `/chat/mute` aceita `duration` opcional (`8h`, `1w`, `always`, `30m`; padrão continua 1 h). **Confirmado no celular**: chat fixado e silenciado apareceram |
+| `POST /message/subscribe` só aceitava um número | Aceita lista (até 100) com resultado por número (`data`/`failed`); a string única responde como antes (proposta 26) |
+| Ligar `alwaysOnline` em tempo de execução não tinha efeito até reconectar | Marca a presença e inicia/para o agendador na hora, com trava contra um segundo agendador (proposta 27) |
+
+### Rodadas de caça a bugs (PRs #18, #19 e #22)
+
+Como foram achados: `staticcheck` e leitura de **todo** ponto que monta JID (`ParseJID`/`CreateJID`) ou faz HTTP de saída. Cada correção tem teste; as marcadas ✅ foram exercitadas com a instância real.
+
+| Problema | Correção | Ao vivo |
+|---|---|---|
+| `/user/block` e `/unblock`: o `+` no JID fazia a lib esperar um timeout de usync | JID canônico; 1,2 s | ✅ bloqueou e desbloqueou o contato de teste |
+| `GET /group/myall` (marcada "not working") sempre vazia: comparava o dono do grupo (LID) com o próprio JID mal montado | Compara o usuário do LID e do telefone | ✅ 6 grupos (antes 0) |
+| Rótulos de chat e de mensagem: mesmo bug de app state do pin | Mesmo helper (canônico + LID) | ✅ criar, rotular, remover |
+| Rótulo apagado no celular continuava na tabela local e em `/label/list` | Apaga ao receber `LabelEdit` com `Deleted` | ✅ |
+| `/community/add` e `/remove`: listas de sucesso/falha montadas errado (todo grupo ia para "success") e grupo inválido enviado como JID vazio | Função única `applyToGroups` | só testes (não há comunidade) |
+| HTTP de saída sem timeout (mídia por URL, preview de link, busca da versão do WhatsApp Web — que segura um mutex por onde passa todo start de instância —, webhooks) | Clientes com timeout de conexão, de cabeçalho e total | testes com servidores que travam |
+| Instância sem JSON de proxy quebrava `/instance/connect` e o start do cliente quando há proxy global no ambiente | `parseProxyConfig` trata `""`/`null` como "sem proxy" | só testes (proxy não ativado, por decisão sua) |
+| `/send/link`: página ilegível, `og:image` relativa ou imagem ausente derrubavam o envio; valores enviados pelo chamador eram sobrescritos pelos da página; `url` ignorada; título de SVG vencia o do documento; ponto final entrava no link | Preview "melhor esforço"; o que o chamador enviou prevalece; `url` respeitada; `og:title` ou primeiro `<title>`; pontuação final fora do link | ✅ link com ponto final enviado |
+| Mídia por URL: página de erro (404) era enviada como o arquivo e o tamanho era ilimitado | `utils.DownloadBytes`: rejeita não-2xx e limita (100 MB mídia, 20 MB imagens, 2 MB miniatura); falha em imagem de carrossel/botão vai para o log | ✅ 404 → erro claro |
+| Conversão de áudio com ffmpeg sem limite de tempo | 3 minutos | só testes |
+| `/send/poll` sem validação (`maxAnswer` maior que as opções virava "ilimitado" em silêncio) | 2 a 12 opções, sem vazia/repetida, `maxAnswer` dentro do número de opções | ✅ 400 |
+| `/send/location` rejeitava latitude ou longitude 0 (Equador, Greenwich) | Só o par (0,0) conta como ausente; faixas conferidas | ✅ latitude 0 enviada |
+| `SendMessage` buscava o cliente 11 vezes; instância parada no meio do envio deixava um nil | Uma busca, validada | só testes |
+| **Apagar instância não conectada deixava o dispositivo no banco para sempre** (chaves de sessão, identidade e grupo, milhares de contatos em cache, mapa de LID) e os votos de enquete nunca eram apagados | Apagar remove o dispositivo guardado e os votos (o celular ainda lista a sessão: remover por lá) | ✅ votos; dispositivo testado com um store SQLite real |
+| `poll_votes` único por (enquete, votante) sem a instância: duas instâncias no mesmo grupo se sobrescreviam | Único por (instância, enquete, votante); migração idempotente | ✅ constraint trocada no banco |
+| `/user/check` respondia 200 com `data: null` quando a consulta falhava | Devolve o erro (400 número inválido, 429/504 limite e timeout) | ✅ 400 |
+| `/message/delete` devolvia data zerada; `/user/contacts` dava `null` sem contatos e ordem diferente a cada chamada | Data real; lista vazia; ordem estável | ✅ 2.501 contatos, mesma ordem |
+
+**Resíduo do bug antigo do pin**: a linha `+553197157574@s.whatsapp.net` (fixada) continua no estado do WhatsApp e no banco de teste; o celular a ignora e não há rota para removê-la.
+
+### Fila de webhook por destino (PR #20) e limpar o webhook (PR #21)
+
+- **Antes**: uma goroutine por evento, cada uma com até 5 tentativas de 30 s. Com o receptor fora do ar sob tráfego intenso, goroutines e payloads (mídia inclusa) se acumulavam sem limite.
+- **Agora**: uma fila por URL, limitada em eventos (`WEBHOOK_QUEUE_MAX_EVENTS`, 1000) e em bytes (`WEBHOOK_QUEUE_MAX_MB`, 64), com no máximo `WEBHOOK_QUEUE_WORKERS` trabalhadores (4; 1 mantém a ordem estrita) que só existem enquanto há trabalho. Fila cheia descarta o evento **mais antigo** e conta. Tentativas com espera de 1 s, 5 s, 30 s e 2 min com aleatoriedade; depois que um evento esgota as tentativas o destino fica "degradado" e os eventos seguintes têm uma tentativa cada, até um passar. A mesma URL do webhook global não recebe o evento duas vezes.
+- **Observabilidade**: `GET /instance/runtimes` traz o bloco `webhook` (destinos, degradados, pendentes, em envio, bytes, enviados, falhos, descartados).
+- **Validado ao vivo** com um receptor local: entrega normal, receptor em falha (3 eventos em envio com nova tentativa) e recuperação sem perda. **Só em teste unitário**: receptor travado e estouro da fila.
+- **Limpar o webhook**: `webhookUrl: ""` em `/instance/connect` continua "não alterar" (o manager embutido envia `""` em toda reconexão; tratar como "limpar" apagaria o webhook a cada reconexão, o bug do #111 de volta). `"disabled"` ou `"false"` limpam (guardado vazio; um `"disabled"` antigo continua ignorado na entrega). Validado ao vivo, inclusive a reconexão no estilo do manager.
+
 ### Validação ao vivo (instância real, 29/09/2026)
 
-Instância pareada e conectada por você; mensagens só para o seu próprio número; grupo de teste só com você (o primeiro foi removido no fim; o "ZZ Teste Timer Fork", criado depois para as mensagens temporárias, ainda existe e deve ser apagado à mão).
+Instância pareada e conectada por você; mensagens só para o seu próprio número; grupo de teste só com você (o primeiro foi removido no fim; o "ZZ Teste Timer Fork", criado depois para as mensagens temporárias, ainda existe e deve ser apagado à mão). As validações das rodadas seguintes estão nas tabelas de cada PR acima.
 
 | Verificado | Resultado |
 |---|---|
@@ -154,7 +196,7 @@ Instância pareada e conectada por você; mensagens só para o seu próprio núm
 
 **Contatos de teste que ficaram na lista do WhatsApp** (remover à mão, a API não remove): "ZZ Teste Fork" (553100000001) e "ZZ Teste Fork 2" (553196596774).
 
-**Não testado**: proxy (por decisão sua), passkey (a conta não exigiu), botões/lista, ações de canal, `joininvite`, eventos reais de estado de chat e de mensagem indecifrável, cenários de horas/dias de uso e redes instáveis.
+**Não testado**: proxy (por decisão sua), passkey (a conta não exigiu), botões/lista, ações de canal, `joininvite`, comunidades, eventos reais de estado de chat de outro aparelho e de mensagem indecifrável, receptor de webhook travado ou fila estourada, redes instáveis. **Uso prolongado**: medição de 48 h em andamento (amostra a cada 10 min: saúde, goroutines, memória, conexões do Postgres, reinícios, panics); ela reinicia a cada troca de imagem, e o último início foi às 00:28 UTC de 30/09.
 
 ## 3. Botões e listas (#59 #71 #110 #170 #204) — não corrigido
 
@@ -179,7 +221,7 @@ Verificado: build, `go vet`, `go test -race`, boot com Postgres, imagem Docker (
 
 ## 5. Situação atual, o que ainda falta e sugestões
 
-**Feito e mesclado no fork**: triagem completa; correções (§2); whatsmeow novo (Go 1.26); CI; publicação da imagem no GHCR; hardening; ciclo de vida; features aprovadas; correções do teste real; diagnóstico e health check; eventos operacionais, de pareamento e de estado de chat; mensagens temporárias (#79); convites de grupo; canais; mensagem que não chegou. CHANGELOG e wiki atualizados.
+**Feito e mesclado no fork**: triagem completa; correções (§2); whatsmeow novo (Go 1.26); CI; publicação da imagem no GHCR; hardening; ciclo de vida; features aprovadas; correções do teste real; diagnóstico e health check; eventos operacionais, de pareamento e de estado de chat; mensagens temporárias (#79); convites de grupo; canais; mensagem que não chegou. rotas de chat corrigidas; fila de webhook; quatro rodadas de caça a bugs. CHANGELOG, wiki e estes documentos atualizados até o PR #22.
 
 **Ainda falta (e por quê)**
 
@@ -187,14 +229,15 @@ Verificado: build, `go vet`, `go test -race`, boot com Postgres, imagem Docker (
 |---|---|
 | Botões e lista (#59 #71 #110 #170 #204) | Só valida em aparelho; o whatsmeow novo **não** muda isso (§3). Limitação documentada no wiki |
 | Erro 463 em contatos frios (#50 #124) | Depende de observação prolongada com o whatsmeow novo |
-| Uso prolongado (horas/dias) | Falta observar reconexões, memória e conexões do Postgres com a instância ativa |
+| Uso prolongado (horas/dias) | **Em andamento**: medição de 48 h com a instância ativa; só vale a partir da última troca de imagem, então convém não mexer no código até terminar |
 | PRs #145/#154/#197/#191/#192 | O ponto central (um runtime por instância, restauração no startup, goroutines órfãs) foi tratado de forma cirúrgica; o restante depende de decisão/teste ao vivo |
 | #32 (número fixo "not registered") | O whatsmeow novo corrige o parse do `IsOnWhatsApp`; reavaliar com um número fixo |
 | #69, #107 | Parecem comportamento do WhatsApp; sem causa no código |
 | Swagger | O `swag init` reescreve ~1.000 linhas e remove as rotas de licença |
 | Proxy real e passkey | Não testados |
+| Enquetes em SQLite | A tabela `poll_votes` usa `TEXT[]` (Postgres); no modo SQLite as enquetes não funcionam |
 
-**Sugestões**: tudo o que veio do levantamento do whatsmeow e foi aprovado **já foi feito** (diagnóstico, health check, eventos operacionais, pareamento, estado de chat, timer, convites, canais e `rerequest`). Em aberto, em FEATURE-PROPOSALS.md §2 e §3: métricas Prometheus, resultado por item em lotes, reativar a presença quando `alwaysOnline` é ligado em tempo de execução, regenerar o swagger, thumbnail HQ em `/send/link` (#103), encaminhar mensagens e os itens que dependem de decisão de produto.
+**Sugestões**: tudo o que veio do levantamento do whatsmeow e foi aprovado **já foi feito** (diagnóstico, health check, eventos operacionais, pareamento, estado de chat, timer, convites, canais e `rerequest`). Também feitos: resultado por item em lote (`subscribe`), presença em tempo de execução e a fila de webhook. Em aberto, em FEATURE-PROPOSALS.md §2 e §3: métricas Prometheus, regenerar o swagger, thumbnail HQ em `/send/link` (#103), encaminhar mensagens e os itens que dependem de decisão de produto.
 
 **Para você**: deixar a instância de teste rodando e me dizer se aparecer algo estranho nos logs; decidir sobre proxy/passkey quando quiser testá-los; escolher o que sobrou em FEATURE-PROPOSALS.md; remover à mão o grupo "ZZ Teste Timer Fork" e os contatos de teste.
 
@@ -259,7 +302,7 @@ Legenda de PRs: **Aplicado** = mesclado (com adaptações ao `safemap`); **Reimp
 | [#97](https://github.com/evolution-foundation/evolution-go/issues/97) | POST /group/participant always returns 400 "participants is required and cann… | ✅ Corrigido | `/group/participant` usava o validador de string única para o array `participants`. Corrigido. **Validado ao vivo** (instância real, 29/09). A rota responde; além disso `/group/participant` agora devolve o resultado por participante (antes dizia "success" mesmo sem adicionar). |
 | [#98](https://github.com/evolution-foundation/evolution-go/issues/98) | Feature Request: Group Settings Update Endpoint | 🔵 Já na main | Duplicada de #42 — `POST /group/settings` já existe. |
 | [#99](https://github.com/evolution-foundation/evolution-go/issues/99) | Panic: concurrent write to websocket connection when sending WebSocket events… | ✅ Corrigido | Panic "concurrent write to websocket connection": escrita agora serializada por conexão, com deadline. |
-| [#101](https://github.com/evolution-foundation/evolution-go/issues/101) | Bug: API /chat/archive - interface conversion: interface {} is *events.Archiv… | ✅ Corrigido | Mesmo panic do #95. Observação: `/chat/archive` usa o campo `chat` (não `number`); a rota está marcada "TODO: not working" no código. |
+| [#101](https://github.com/evolution-foundation/evolution-go/issues/101) | Bug: API /chat/archive - interface conversion: interface {} is *events.Archiv… | ✅ Corrigido | Mesmo panic do #95. Observação: `/chat/archive` usa o campo `chat` (não `number`). As rotas de chat eram marcadas "not working" porque o JID de contato ia errado para o app state; corrigido no PR #17 (ver "Rotas de chat"). |
 | [#103](https://github.com/evolution-foundation/evolution-go/issues/103) | /send/link only produces a small link preview — high-res thumbnail (MediaLink… | 📝 Proposta | Card grande de link preview. PR #207 propõe; ver propostas. |
 | [#104](https://github.com/evolution-foundation/evolution-go/issues/104) | [GOWS/send] /send/media omits imageMessage width/height → square placeholder … | ✅ Corrigido | `Width`/`Height` agora enviados no `ImageMessage`. **Validado ao vivo** (instância real, 29/09). |
 | [#105](https://github.com/evolution-foundation/evolution-go/issues/105) | Passkey* events never reach the webhook: missing cases in subscription filter… | ✅ Corrigido | Eventos `Passkey*` agora seguem a assinatura `QRCODE` no webhook e nas filas globais. |

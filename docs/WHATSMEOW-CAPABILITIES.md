@@ -1,17 +1,17 @@
 # O que o whatsmeow entrega e o que o projeto usa
 
-Levantamento feito em 29/09/2026 sobre `go.mau.fi/whatsmeow v0.0.0-20260929112325-8b41cfe6d9c4` (a versão hoje na `main` do fork). Os números vêm de ferramenta (extração dos métodos exportados de `*Client` e busca por `.Nome(` no código do projeto), não de estimativa. As afirmações sobre limites foram conferidas no código-fonte da lib.
+Levantamento feito em 29/09/2026 (números recontados no fim do dia, depois das implementações listadas no §6) sobre `go.mau.fi/whatsmeow v0.0.0-20260929112325-8b41cfe6d9c4` (a versão hoje na `main` do fork). Os números vêm de ferramenta (extração dos métodos exportados de `*Client` e busca por `.Nome(` no código do projeto), não de estimativa. As afirmações sobre limites foram conferidas no código-fonte da lib.
 
 ## 1. Em números
 
 | | |
 |---|---|
 | Métodos públicos de `*Client` | 136 |
-| Usados pelo projeto | 65 |
-| Não usados | 71 (por categoria no §4) |
+| Usados pelo projeto | 76 (eram 65 no início do dia) |
+| Não usados | 60 (por categoria no §4) |
 | Tipos de evento emitidos (`types/events`) | 75 |
-| Tratados em `myEventHandler` | 45 (42 + os 3 do §6, tratados em 29/09) |
-| Não tratados | 30 (§5) |
+| Tratados em `myEventHandler` | 56 (eram 42 no início do dia) |
+| Não tratados | 19 (§5) |
 
 O projeto usa bem o núcleo (conexão, envio, grupos, newsletters, privacidade, app state). O que sobra são recursos periféricos e, mais importante, **eventos operacionais** que explicam falhas relatadas nas issues.
 
@@ -45,7 +45,7 @@ Vários pedidos esbarram na lib, não no projeto. Convém não prometê-los.
 | **Grupos** | `GetGroupInfoFromInvite`, `GetGroupInfoFromLink`, `JoinGroupWithInvite`, `GetSubGroups`, `GetLinkedGroupsParticipants` | **Feito** para link e convite (`/group/inviteinfo`, `/group/joininvite`); falta comunidades (sub-grupos) |
 | **Contatos / negócios** | `GetContactQRLink`, `ResolveContactQRLink`, `GetBusinessProfile`, `ResolveBusinessMessageLink`, `GetOrderDetails`, `GetStatusPrivacy`, `GetUserDevices` | Perfil comercial, link/QR de contato, pedidos, privacidade do status, lista de dispositivos de um usuário |
 | **Bots / IA** | `GetBotListV2`, `GetBotProfiles` | Listar bots do WhatsApp; nicho |
-| **Mensagens (baixo nível)** | `BuildReaction`, `EncryptReaction`, `DecryptReaction`, `EncryptComment`, `DecryptComment`, `EncryptPollVote`, `RevokeMessage`, `BuildMessageKey`, `BuildUnavailableMessageRequest`, `ParseWebMessage` | Reação e revogação são montadas à mão / com `BuildRevoke`. `BuildUnavailableMessageRequest` (pedir ao celular reenvio de mensagem indisponível) é relevante para "não chegou / não descriptografou". Reação e comentário em **comunidade** exigem `Decrypt*` |
+| **Mensagens (baixo nível)** | `BuildReaction`, `EncryptReaction`, `DecryptReaction`, `EncryptComment`, `DecryptComment`, `EncryptPollVote`, `RevokeMessage`, `BuildMessageKey`, `ParseWebMessage` | Reação e revogação são montadas à mão / com `BuildRevoke`. Reação e comentário em **comunidade** exigem `Decrypt*`. `BuildUnavailableMessageRequest` **já é usado** (`POST /message/rerequest`) |
 | **Mídia** | `DownloadAny`, `DownloadToFile`, `DownloadThumbnail`, `DownloadMediaWith*`, `DeleteMedia`, `UploadReader`, `UploadNewsletterReader`, `DownloadHistorySync`, `FetchStickerPack` | Variantes por streaming/arquivo (menos memória em mídia grande), miniatura, pacotes de figurinhas |
 | **Recibos / retry** | `SendMediaRetryReceipt`, `SendProtocolMessageReceipt`, `SendHistorySyncServerErrorReceipt`, `SetForceActiveDeliveryReceipts`, `SetMaxParallelRetryReceiptHandling` | Ajustes finos de entrega; só com evidência de problema |
 | **Conexão / eventos** | `ConnectContext`, `WaitForConnection`, `ResetConnection`, `SetPassive`, `MarkNotDirty`, `AddEventHandlerWithSuccessStatus`, `RemoveEventHandlers`, `GetQRChannel`, `DangerousInternals` | `ConnectContext` permitiria cancelar uma conexão pendente; `GetQRChannel` é evitado de propósito (quebra o fluxo de passkey); `ResetConnection` não faz nada com auto-reconnect desligado |
@@ -56,17 +56,17 @@ Observação: `SetGroupDescription` é contado como "usado" pela busca só porqu
 
 ## 5. Eventos emitidos e **não tratados**
 
-Todos chegam ao handler e caem no ramo de "evento não tratado" (só log). Os que mais importam:
+Os ✅ desta tabela já são tratados; os demais chegam ao handler e caem no ramo de "evento não tratado" (só log). Ainda não tratados (19): `Blocklist`, `BlocklistChange`, `BusinessName`, `CallPreAccept`, `CallReject`, `CallTransport`, `FBMessage`, `ManualLoginReconnect`, `MediaRetry`, `MediaRetryError`, `MexNotificationData`, `NewsletterLiveUpdate`, `NewsletterMessageMeta`, `NewsletterMuteChange`, `OfflineSyncPreview`, `PrivacySettings`, `PushNameSetting`, `RotateADVSecret`, `UnknownCallEvent`. Os que mais importam:
 
 | Evento | O que significa | Por que importa |
 |---|---|---|
 | ✅ **Tratado** — `NotifyAccountReachoutTimelock` (`EnforcementType`, `IsActive`, `TimeEnforcementEnds`) | O WhatsApp **restringiu a conta** para iniciar conversas com quem nunca falou com ela | É a causa provável do **erro 463** (#50, #124, #115). Hoje o usuário só vê "463" na hora de enviar; o evento diz até quando dura. Dá para publicá-lo como webhook e gravar o estado da instância |
 | ✅ **Tratado** — `StreamError` (`Code`, `Raw`) | `<stream:error>` com código **desconhecido** (os conhecidos viram outros eventos) | É exatamente o caso do #185 (`<ack class="status" type="media"/>`): a conexão cai e o projeto não sabe por quê. Registrar e expor no diagnóstico |
 | ✅ **Tratado** — `ClientOutdated` | O servidor rejeitou a versão do cliente (405) | Ligado à versão que só agora chega ao handshake (PR #199). Deveria gerar aviso claro e talvez forçar nova busca de versão |
-| `PairError`, `QRScannedWithoutMultidevice`, `ManualLoginReconnect`, `CATRefreshError` | Falhas de pareamento/login | Hoje o usuário fica sem retorno quando o pareamento falha |
+| ✅ **Tratados** — `PairError`, `QRScannedWithoutMultidevice`, `CATRefreshError` (`ManualLoginReconnect` não é emitido com o auto-reconnect desligado do projeto) | Falhas de pareamento/login | Publicados sob `QRCODE` e `CONNECTION`; o usuário passa a ter retorno quando o pareamento falha |
 | `MediaRetry`, `MediaRetryError` | Mídia que o remetente precisa reenviar | Ligado a "a imagem só aparece depois de baixar" (#25) e a mídias que não baixam |
 | `OfflineSyncPreview` | Quantas mensagens estão na fila offline | Diagnóstico do #190 (fila que só cresce) |
-| `Mute`, `Pin`, `Star`, `MarkChatAsRead`, `DeleteChat`, `ClearChat`, `DeleteForMe`, `UnarchiveChatsSetting`, `UserStatusMute` | Mudanças de estado de chat feitas em **outro aparelho** (app state) | Hoje só `Archive` é publicado; integrações de CRM não sabem que o chat foi fixado, silenciado ou apagado |
+| ✅ **Tratados** — `Mute`, `Pin`, `Star`, `MarkChatAsRead`, `DeleteChat`, `ClearChat`, `DeleteForMe`, `UnarchiveChatsSetting`, `UserStatusMute` | Mudanças de estado de chat feitas em **outro aparelho** (app state) | Publicados sob `CHAT_PRESENCE`, onde `Archive` já estava; o full sync depois do pareamento não é publicado. `UndecryptableMessage` também passou a ser publicado (`MESSAGE`) |
 | `PrivacySettings`, `Blocklist`, `BlocklistChange` | Privacidade e bloqueios | Sincronizar bloqueios com o sistema externo |
 | `CallPreAccept`, `CallReject`, `CallTransport`, `UnknownCallEvent` | Eventos de chamada além de oferta/aceite/término | Completar o ciclo de chamadas nos webhooks |
 | `NewsletterLiveUpdate`, `NewsletterMuteChange`, `NewsletterMessageMeta` | Atualizações de canais | Só se canais forem usados |
@@ -76,11 +76,9 @@ Todos chegam ao handler e caem no ramo de "evento não tratado" (só log). Os qu
 
 **Feito em 29/09/2026** (item 1): `NotifyAccountReachoutTimelock`, `StreamError` e `ClientOutdated` agora são publicados como eventos de conexão, aparecem no diagnóstico do runtime e têm efeito prático: o erro 463 do envio passa a explicar a restrição (e até quando), e o 405 descarta o cache da versão para a próxima reconexão buscar a atual. Detalhes em `docs/wiki/guias-api/api-fork-additions.md`.
 
-**Feito depois disso**: eventos de pareamento (`PairError`...) e de estado de chat (`Mute`, `Pin`, `Star`...); mensagens temporárias (`POST /chat/disappearing`, `POST /user/defaultDisappearing`, timer aprendido e aplicado no envio, resolve o #79); grupo por convite (`/group/inviteinfo`, `/group/joininvite`); canais (seguir, deixar de seguir, silenciar, marcar como visto, reagir). Detalhes em `docs/wiki/guias-api/api-fork-additions.md`.
-
-`BuildUnavailableMessageRequest` também foi feito: `POST /message/rerequest` e o evento `UndecryptableMessage`.
+**Feito depois disso**: eventos de pareamento (`PairError`...) e de estado de chat (`Mute`, `Pin`, `Star`...); mensagens temporárias (`POST /chat/disappearing`, `POST /user/defaultDisappearing`, timer aprendido e aplicado no envio, resolve o #79); grupo por convite (`/group/inviteinfo`, `/group/joininvite`); canais (seguir, deixar de seguir, silenciar, marcar como visto, reagir); `BuildUnavailableMessageRequest` (`POST /message/rerequest` e o evento `UndecryptableMessage`). Detalhes em `docs/wiki/guias-api/api-fork-additions.md` e, para o que foi corrigido no caminho (rotas de chat, bloqueio, rótulos, fila de webhook...), em `FORK-TRIAGE.md`.
 
 O que resta:
 
-1. Os demais eventos não tratados de §5, só quando houver quem precise (canais ao vivo, bots, comunidades).
+1. Os demais eventos não tratados de §5, só quando houver quem precise. Os mais úteis seriam `MediaRetry`/`MediaRetryError` (mídia que não baixa), `OfflineSyncPreview` (fila offline que só cresce, #190) e `Blocklist*`/`PrivacySettings` (sincronizar com sistemas externos).
 2. Não prometer: remoção de contato, atender/discar chamadas e encaminhar por ID sem persistência (§2).

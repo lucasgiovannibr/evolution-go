@@ -11,6 +11,13 @@ and pull requests in `FORK-TRIAGE.md`.
   the migrations are forward-only, so **back up `evogo_auth` before deploying** —
   the previous image cannot run on the upgraded database.
 - Docker images are published to `ghcr.io/<owner>/<repo>` by the fork's workflow.
+- **`poll_votes` migration** (idempotent, runs at startup): the unique constraint
+  `(poll_message_id, voter_jid)` is replaced by a unique index that includes
+  `instance_id`. Going back to an older image on that database breaks saving poll
+  votes (its `ON CONFLICT` target no longer exists); everything else keeps working.
+- New optional environment variables: `DISAPPEARING_AUTO_APPLY` (default on),
+  `WEBHOOK_QUEUE_MAX_EVENTS` (1000), `WEBHOOK_QUEUE_MAX_MB` (64) and
+  `WEBHOOK_QUEUE_WORKERS` (4).
 
 ### Fixes
 - **Process crashes**: shared instance maps are now synchronized (`fatal error:
@@ -70,7 +77,8 @@ and pull requests in `FORK-TRIAGE.md`.
 - The logger of a deleted instance is released (its log file descriptor was kept open
   for the life of the process); `qrcodeCount` is atomic.
 - `docs/WHATSMEOW-CAPABILITIES.md`: what whatsmeow delivers, what the project uses
-  (65 of 136 client methods, 42 of 75 event types) and the hard limits of the library.
+  (76 of 136 client methods, 56 of 75 event types, after the work listed below) and the
+  hard limits of the library.
 
 ### Additions (small)
 - Endpoints (details in `docs/wiki/guias-api/api-fork-additions.md`): `viewOnce` in
@@ -86,6 +94,88 @@ and pull requests in `FORK-TRIAGE.md`.
 - `REREQUEST_FROM_PHONE` (opt-in) re-requests undecryptable messages.
 - CI (build, vet, `test -race`) and a Postgres integration test for the pool fix
   (`EVOGO_TEST_POSTGRES_DSN`).
+
+### Pairing and chat-state events
+- `PairError`, `QRScannedWithoutMultidevice` (under `QRCODE`) and `CATRefreshError`
+  (under `CONNECTION`) are published, so a failed pairing is no longer silent.
+- `Mute`, `Pin`, `Star`, `MarkChatAsRead`, `ClearChat`, `DeleteChat`, `DeleteForMe`,
+  `UnarchiveChatsSetting` and `UserStatusMute` (changes made on another device) are
+  published under `CHAT_PRESENCE`; the full sync after pairing is not.
+
+### Disappearing messages (#79), group invites and channels
+- Messages sent to a chat with disappearing messages now carry the chat's timer
+  (learned from received messages, the `EPHEMERAL_SETTING` protocol message and group
+  info; groups are re-read after a restart). `DISAPPEARING_AUTO_APPLY=false` turns it
+  off. New `POST /chat/disappearing` and `POST /user/defaultDisappearing`.
+- `POST /group/inviteinfo` (by link/code or invite card, without joining) and
+  `POST /group/joininvite` (from an invite card).
+- Channels: `POST /newsletter/{follow,unfollow,mute,markviewed,react}`.
+
+### Messages that did not arrive
+- The `UndecryptableMessage` event is published under `MESSAGE` (it used to be only a
+  log line), and `POST /message/rerequest` asks the phone for another copy of it.
+
+### Chat routes, presence and batch subscribe
+- `/chat/pin|unpin|archive|unarchive|mute|unmute` (marked "not working" in the router)
+  wrote the app-state patch under `+<number>@s.whatsapp.net`, a chat that does not
+  exist, and the phone keys one-to-one chats by LID. The JID is now canonical and
+  resolved to the LID; groups were never affected. Bad input is a 400 (was 500), the
+  returned timestamp is real (was a zero time) and `/chat/mute` accepts an optional
+  `duration` (`8h`, `1w`, `always`, `30m`; the default stays 1 hour). Chat and message
+  labels had the same bug and now use the same helper.
+- `POST /message/subscribe` accepts a list of numbers (up to 100) and reports each one
+  (`data` / `failed`); a single string answers as before.
+- Switching `alwaysOnline` at runtime takes effect immediately (presence mark and
+  scheduler) instead of at the next reconnect; a guard prevents a second scheduler.
+
+### Fixes from code-review rounds
+- `POST /user/block|unblock` timed out because of the `+` in the JID.
+- `GET /group/myall` always answered empty (the owner is a LID and was compared with a
+  mangled own JID).
+- `POST /community/add|remove` built the success/failed lists wrongly and sent
+  unparseable groups as zero JIDs.
+- A label deleted on the phone stayed in the local table and in `GET /label/list`.
+- Outbound HTTP had no timeout (media URLs, link previews, the WhatsApp Web version
+  lookup that holds a lock every instance start goes through, webhooks); everything now
+  goes through clients with dial, header and total timeouts.
+- An instance without proxy JSON made `/instance/connect` and the client start fail when
+  a global proxy is configured in the environment.
+- `/send/link`: a page that cannot be read, a relative `og:image` or a missing image no
+  longer fail the send; values sent by the caller win over the scraped ones; `url` is
+  honoured; the title is `og:title` or the first `<title>`; trailing punctuation is not
+  part of the link.
+- Media fetched from a URL rejects non-2xx answers (a 404 page was sent as the file) and
+  is size-limited (100 MB media, 20 MB images, 2 MB link thumbnails); carousel and button
+  header media that cannot be fetched are logged instead of vanishing silently.
+- ffmpeg audio conversion times out after 3 minutes.
+- `/send/poll`: 2 to 12 options, no empty or repeated option, `maxAnswer` within the
+  options (a larger value was silently turned into "unlimited"). `/send/location`:
+  latitude/longitude 0 are valid (only the pair 0,0 counts as missing) and ranges are
+  checked.
+- `SendMessage` looks the client up once, so an instance stopped mid-send no longer leaves
+  a nil to dereference.
+- Deleting an instance purges its stored device (session/identity/sender keys, cached
+  contacts, LID map) and its poll votes; a paired instance that was not connected used to
+  keep all of it in the auth database. The phone still lists the session as a linked
+  device in that case.
+- Poll votes are unique per instance: two instances in one group both receive a poll and
+  the second used to overwrite the first's row.
+- `POST /user/check` returns the error when the WhatsApp query fails (it answered
+  `200` with `data: null`): 400 for an invalid number, 429/504 for rate limits and
+  timeouts. `POST /message/delete` returns the real timestamp. `GET /user/contacts` is
+  `[]` when empty and in a stable order.
+
+### Webhook delivery queue
+- Webhooks go through one bounded queue per destination URL instead of one goroutine per
+  event: limits in events and bytes, at most a few workers, the OLDEST event is dropped
+  (and counted) when full, retries back off 1 s / 5 s / 30 s / 2 min with jitter, and a
+  destination whose event exhausted its retries gets a single attempt per event until one
+  succeeds. `WEBHOOK_QUEUE_WORKERS=1` keeps strict order. The same URL as the global
+  webhook is no longer delivered twice. `GET /instance/runtimes` reports the queues
+  (`webhook`: pending, in flight, degraded destinations, sent, failed, dropped).
+- `POST /instance/connect`: an empty `webhookUrl` still means "unchanged" (the bundled
+  manager sends `""` on every reconnect); `"disabled"` or `"false"` now clears the
+  webhook (stored empty; a legacy stored `"disabled"` is still ignored on delivery).
 
 ## v0.7.2
 
@@ -435,23 +525,3 @@ To contribute to the project:
 ---
 
 *Last updated: October 2025*
-
-### Pairing and chat-state events
-- `PairError`, `QRScannedWithoutMultidevice` (under `QRCODE`) and `CATRefreshError`
-  (under `CONNECTION`) are published, so a failed pairing is no longer silent.
-- `Mute`, `Pin`, `Star`, `MarkChatAsRead`, `ClearChat`, `DeleteChat`, `DeleteForMe`,
-  `UnarchiveChatsSetting` and `UserStatusMute` (changes made on another device) are
-  published under `CHAT_PRESENCE`; the full sync after pairing is not.
-
-### Disappearing messages (#79), group invites and channels
-- Messages sent to a chat with disappearing messages now carry the chat's timer
-  (learned from received messages, the `EPHEMERAL_SETTING` protocol message and group
-  info; groups are re-read after a restart). `DISAPPEARING_AUTO_APPLY=false` turns it
-  off. New `POST /chat/disappearing` and `POST /user/defaultDisappearing`.
-- `POST /group/inviteinfo` (by link/code or invite card, without joining) and
-  `POST /group/joininvite` (from an invite card).
-- Channels: `POST /newsletter/{follow,unfollow,mute,markviewed,react}`.
-
-### Messages that did not arrive
-- The `UndecryptableMessage` event is published under `MESSAGE` (it used to be only a
-  log line), and `POST /message/rerequest` asks the phone for another copy of it.
