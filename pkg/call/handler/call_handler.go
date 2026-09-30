@@ -257,7 +257,7 @@ func (g *callHandler) DialCall(ctx *gin.Context) {
 
 // Video call
 // @Summary Video controls of a call
-// @Description Changes the video of a call that has been answered. "start" asks the peer to turn an audio call into a video call, "accept" accepts the peer's request (see the video_state event with upgrade=true), "stop" stops sending video, "enable"/"disable" mute and unmute it, "orientation" tells the peer how the camera is rotated (0-3 quarter turns clockwise). The video itself travels on the stream.
+// @Description Changes the video of a call that has been answered. "start" asks the peer to turn an audio call into a video call, "accept" accepts the peer's request (see the video_state event with upgrade=true), "stop" stops sending video, "enable"/"disable" mute and unmute it ("enable" is refused on a call that never had video: turning the camera on does not turn an audio call into a video call on WhatsApp, use "start"), "orientation" tells the peer how the camera is rotated (0-3 quarter turns clockwise). The video itself travels on the stream.
 // @Tags Call
 // @Accept json
 // @Produce json

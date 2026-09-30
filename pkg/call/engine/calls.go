@@ -4,6 +4,7 @@ import (
 	"errors"
 	"sort"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -55,6 +56,11 @@ type Tracked struct {
 	stats    *StreamStats // of the last audio stream that attached
 	attached bool         // an audio stream is attached right now
 	grace    *time.Timer  // hangs the call up when its stream does not come back
+
+	// hadVideo: the call has had video at some point (it started with video, an upgrade
+	// went through, or the peer's camera was on). Video the client muted still counts,
+	// which is why the library's IsVideo, true only while a camera is on, is not enough.
+	hadVideo atomic.Bool
 
 	peerVideo    *VideoState      // the last one the peer reported
 	onVideoState func(VideoState) // of the attached stream
@@ -149,6 +155,7 @@ func (m *Manager) Track(instanceID string, c Call, dir Direction) (*Tracked, err
 		return nil, ErrTooManyCalls
 	}
 	t := &Tracked{call: c, direction: dir, startedAt: time.Now(), done: make(chan struct{})}
+	t.hadVideo.Store(c.IsVideo())
 	t.timer = time.AfterFunc(m.opts.RingTimeout, func() { m.ringExpired(instanceID, t) })
 	if per == nil {
 		per = make(map[string]*Tracked)

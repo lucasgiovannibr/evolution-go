@@ -2,6 +2,7 @@ package call_engine_test
 
 import (
 	"errors"
+	"strings"
 	"sync"
 	"testing"
 
@@ -122,6 +123,87 @@ func TestEveryVideoActionReachesTheCall(t *testing.T) {
 			t.Fatalf("actions = %v, want %v", got, want)
 		}
 	}
+}
+
+// An iPhone ignores "camera on" on a call that never had video (checked live: the server
+// answered 200, sent video and nothing showed), so the server refuses it and says what
+// to do instead.
+func TestEnableIsRefusedOnACallThatNeverHadVideo(t *testing.T) {
+	r := newRig(t)
+
+	_, err := r.m.Video("inst", "C1", call_engine.VideoEnable, 0)
+	if !errors.Is(err, call_engine.ErrWrongState) || !strings.Contains(err.Error(), "start") {
+		t.Fatalf("err = %v, want a wrong-state error that points to start", err)
+	}
+	if got := r.call.VideoActions(); len(got) != 0 {
+		t.Fatalf("the call was touched: %v", got)
+	}
+}
+
+func TestEnableWorksOnceTheCallHasHadVideo(t *testing.T) {
+	enableWorks := func(t *testing.T, r *rig) {
+		t.Helper()
+		if _, err := r.m.Video("inst", "C1", call_engine.VideoEnable, 0); err != nil {
+			t.Fatalf("enable: %v", err)
+		}
+	}
+
+	t.Run("a call that started with video, after muting it", func(t *testing.T) {
+		m := call_engine.NewManager(call_engine.Options{Notify: (&events{}).notify})
+		f := enginetest.NewFake("V1")
+		f.SetPhase(call_engine.PhaseActive)
+		f.SetVideo(true)
+		if _, err := m.Track("inst", f, call_engine.Outgoing); err != nil {
+			t.Fatal(err)
+		}
+		if _, err := m.Video("inst", "V1", call_engine.VideoDisable, 0); err != nil {
+			t.Fatal(err)
+		}
+		f.SetVideo(false) // muted: no camera is on any more
+		if _, err := m.Video("inst", "V1", call_engine.VideoEnable, 0); err != nil {
+			t.Fatalf("unmuting video that started with the call: %v", err)
+		}
+	})
+
+	t.Run("after we asked for video", func(t *testing.T) {
+		r := newRig(t)
+		if _, err := r.m.Video("inst", "C1", call_engine.VideoStart, 0); err != nil {
+			t.Fatal(err)
+		}
+		enableWorks(t, r)
+	})
+
+	t.Run("after we accepted the peer's request", func(t *testing.T) {
+		r := newRig(t)
+		if _, err := r.m.Video("inst", "C1", call_engine.VideoAccept, 0); err != nil {
+			t.Fatal(err)
+		}
+		enableWorks(t, r)
+	})
+
+	t.Run("after the peer accepted our request", func(t *testing.T) {
+		r := newRig(t)
+		r.call.PeerVideoState(call_engine.VideoState{State: call_engine.VideoStateUpgradeAccepted, StateCode: 4})
+		enableWorks(t, r)
+	})
+
+	t.Run("after the peer turned its camera on", func(t *testing.T) {
+		r := newRig(t)
+		r.call.PeerVideoState(call_engine.VideoState{Active: true, State: call_engine.VideoStateEnabled, StateCode: 1})
+		enableWorks(t, r)
+	})
+
+	t.Run("a refused start does not count", func(t *testing.T) {
+		r := newRig(t)
+		r.call.FailVideoActions(errors.New("call is not active"))
+		if _, err := r.m.Video("inst", "C1", call_engine.VideoStart, 0); err == nil {
+			t.Fatal("start should have been refused")
+		}
+		r.call.FailVideoActions(nil)
+		if _, err := r.m.Video("inst", "C1", call_engine.VideoEnable, 0); !errors.Is(err, call_engine.ErrWrongState) {
+			t.Fatalf("err = %v, want the enable to be refused", err)
+		}
+	})
 }
 
 func TestBadVideoRequestsNeverReachTheCall(t *testing.T) {
