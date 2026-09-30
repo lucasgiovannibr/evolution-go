@@ -35,6 +35,10 @@ Makefile
 *_test.go
 *.test
 
+# Manager: o código-fonte (manager/src, node_modules) não entra na imagem; só manager/dist.
+manager/node_modules/
+manager/src/
+
 # Manager/dist é necessário - serve arquivos estáticos do frontend React
 # Não excluir - precisa estar na imagem final para ser acessado via /manager
 
