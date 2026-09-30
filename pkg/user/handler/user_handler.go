@@ -14,7 +14,10 @@ import (
 // writeUserWAError maps WhatsApp IQ / context errors to honest HTTP statuses.
 // rate-overlimit → 429; IQ/context timeout or cancel → 504; everything else → 500.
 func writeUserWAError(ctx *gin.Context, err error) {
+	var invalidNumber *user_service.InvalidNumberError
 	switch {
+	case errors.As(err, &invalidNumber):
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	case errors.Is(err, whatsmeow.ErrIQRateOverLimit):
 		ctx.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
 	case errors.Is(err, whatsmeow.ErrIQTimedOut),
@@ -122,7 +125,7 @@ func (u *userHandler) CheckUser(ctx *gin.Context) {
 
 	uc, err := u.userService.CheckUser(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		writeUserWAError(ctx, err)
 		return
 	}
 

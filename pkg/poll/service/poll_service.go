@@ -21,6 +21,10 @@ type PollService interface {
 
 	// GetPollResults retorna os resultados de uma enquete
 	GetPollResults(ctx context.Context, pollMessageID string, instanceID string) (*model.PollResults, error)
+
+	// DeleteInstanceVotes removes every vote stored for an instance (used when the
+	// instance is deleted).
+	DeleteInstanceVotes(ctx context.Context, instanceID string) error
 }
 
 type pollService struct {
@@ -67,6 +71,13 @@ func (s *pollService) autoMigrate() error {
 		CREATE INDEX IF NOT EXISTS idx_poll_votes_poll_message ON poll_votes(poll_message_id);
 		CREATE INDEX IF NOT EXISTS idx_poll_votes_chat ON poll_votes(poll_chat_jid);
 		CREATE INDEX IF NOT EXISTS idx_poll_votes_voter ON poll_votes(voter_jid);
+
+		-- A vote is unique per instance, not per poll: two instances in the same group
+		-- both receive the same poll and the same votes, and with the old constraint
+		-- the second one overwrote the row of the first (whose instance_id then stayed
+		-- the first's), so the second instance never saw its votes.
+		CREATE UNIQUE INDEX IF NOT EXISTS unique_vote_per_poll_instance ON poll_votes(instance_id, poll_message_id, voter_jid);
+		ALTER TABLE poll_votes DROP CONSTRAINT IF EXISTS unique_vote_per_poll;
 	`
 
 	s.loggerWrapper.GetLogger("poll-service").LogInfo("[POLL] Running auto-migration...")
@@ -106,7 +117,7 @@ func (s *pollService) SavePollVote(ctx context.Context, vote *model.PollVote) er
 			$6, $7, $8, $9,
 			$10, $11, $12
 		)
-		ON CONFLICT (poll_message_id, voter_jid)
+		ON CONFLICT (instance_id, poll_message_id, voter_jid)
 		DO UPDATE SET
 			selected_options = EXCLUDED.selected_options,
 			voted_at = EXCLUDED.voted_at,
@@ -301,4 +312,13 @@ func BuildPollVoteFromEvent(
 		VotedAt:         voteInfo.Timestamp,
 		ReceivedAt:      time.Now(),
 	}
+}
+
+// DeleteInstanceVotes removes every vote of an instance.
+func (s *pollService) DeleteInstanceVotes(ctx context.Context, instanceID string) error {
+	if s == nil || s.db == nil || instanceID == "" {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, "DELETE FROM poll_votes WHERE instance_id = $1", instanceID)
+	return err
 }

@@ -1,6 +1,7 @@
 package user_service
 
 import (
+	"sort"
 	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"context"
 	"errors"
@@ -296,7 +297,12 @@ func (u *userService) CheckUser(data *CheckUserStruct, instance *instance_model.
 	}
 
 	// First attempt with the requested formatJid setting
-	uc, shouldRetry := u.performCheckUser(client, data.Number, formatJid, instance.Id)
+	uc, shouldRetry, err := u.performCheckUser(client, data.Number, formatJid, instance.Id)
+	if err != nil {
+		// A failed check used to come back as 200 with `data: null`, indistinguishable
+		// from "checked, nothing to report".
+		return nil, err
+	}
 	if !shouldRetry {
 		return uc, nil
 	}
@@ -304,7 +310,7 @@ func (u *userService) CheckUser(data *CheckUserStruct, instance *instance_model.
 	// If formatJid was true and we got false results, retry with formatJid=false
 	if formatJid {
 		u.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Some users not found with formatJid=true, retrying with formatJid=false", instance.Id)
-		ucRetry, _ := u.performCheckUser(client, data.Number, false, instance.Id)
+		ucRetry, _, _ := u.performCheckUser(client, data.Number, false, instance.Id)
 
 		// Merge results: use retry results for users that weren't found in first attempt
 		return u.mergeCheckUserResults(uc, ucRetry), nil
@@ -314,18 +320,18 @@ func (u *userService) CheckUser(data *CheckUserStruct, instance *instance_model.
 }
 
 // performCheckUser executes the actual user check with specified formatJid
-func (u *userService) performCheckUser(client *whatsmeow.Client, numbers []string, formatJid bool, instanceId string) (*CheckUserCollection, bool) {
+func (u *userService) performCheckUser(client *whatsmeow.Client, numbers []string, formatJid bool, instanceId string) (*CheckUserCollection, bool, error) {
 	// Use centralized function to prepare numbers for WhatsApp check
 	phoneNumbers, err := utils.PrepareNumbersForWhatsAppCheck(numbers, &formatJid)
 	if err != nil {
 		u.loggerWrapper.GetLogger(instanceId).LogWarn("[%s] Failed to prepare numbers for WhatsApp check: %v", instanceId, err)
-		return nil, false
+		return nil, false, &InvalidNumberError{Err: err}
 	}
 
 	resp, err := client.IsOnWhatsApp(context.Background(), phoneNumbers)
 	if err != nil {
 		u.loggerWrapper.GetLogger(instanceId).LogError("[%s] Failed to check users on WhatsApp: %v", instanceId, err)
-		return nil, false
+		return nil, false, fmt.Errorf("failed to check users on WhatsApp: %w", err)
 	}
 
 	uc := new(CheckUserCollection)
@@ -374,8 +380,14 @@ func (u *userService) performCheckUser(client *whatsmeow.Client, numbers []strin
 		}
 	}
 
-	return uc, shouldRetry
+	return uc, shouldRetry, nil
 }
+
+// InvalidNumberError is a number the caller sent that cannot be checked.
+type InvalidNumberError struct{ Err error }
+
+func (e *InvalidNumberError) Error() string { return e.Err.Error() }
+func (e *InvalidNumberError) Unwrap() error { return e.Err }
 
 // mergeCheckUserResults merges results from two CheckUser attempts
 // Priority: if a user is found in retry (formatJid=false), use that result
@@ -531,7 +543,9 @@ func (u *userService) GetContacts(instance *instance_model.Instance) ([]ContactI
 		return nil, err
 	}
 
-	var contactsArray []ContactInfo
+	// Never null (an account without contacts answered `data: null`), and in a stable
+	// order: the store returns a map, so every call listed them differently.
+	contactsArray := make([]ContactInfo, 0, len(contacts))
 
 	for jid, contact := range contacts {
 		contactsArray = append(contactsArray, ContactInfo{
@@ -544,8 +558,9 @@ func (u *userService) GetContacts(instance *instance_model.Instance) ([]ContactI
 		})
 	}
 
-	return contactsArray, nil
+	sort.Slice(contactsArray, func(i, j int) bool { return contactsArray[i].Jid < contactsArray[j].Jid })
 
+	return contactsArray, nil
 }
 
 func (u *userService) GetPrivacy(instance *instance_model.Instance) (types.PrivacySettings, error) {
