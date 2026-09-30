@@ -3,8 +3,11 @@ package user_service
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strconv"
 	"testing"
+
+	"go.mau.fi/whatsmeow"
 )
 
 // Validation happens before the client is touched (a service without a client would panic).
@@ -40,5 +43,20 @@ func TestNotFoundError(t *testing.T) {
 	var nf *NotFoundError
 	if !errors.As(err, &nf) || err.Error() != "no profile" {
 		t.Fatal("NotFoundError must be recognisable and carry its message")
+	}
+}
+
+func TestIsNoBusinessProfile(t *testing.T) {
+	for _, err := range []error{
+		errors.New("missing jid in business profile"),
+		fmt.Errorf("wrapped: %w", whatsmeow.ErrIQNotFound),
+		&whatsmeow.ElementMissingError{Tag: "business_profile", In: "response"},
+	} {
+		if !isNoBusinessProfile(err) {
+			t.Errorf("%v must count as "+"no business profile", err)
+		}
+	}
+	if isNoBusinessProfile(errors.New("timed out")) {
+		t.Error("a timeout is not a missing profile")
 	}
 }

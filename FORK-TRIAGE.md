@@ -183,6 +183,13 @@ Todos os eventos que a lib entrega ao handler estão tratados (70 dos 75 tipos; 
 - **Achado no caminho**: `RotateADVSecret` caía na linha genérica "Unhandled event", que imprime o evento inteiro com `%+v`: o segredo ADV **antigo e o novo** da sessão iam parar no log da instância. Agora só há um aviso de que houve rotação; teste garante que os valores não aparecem no log.
 - **Verificado**: testes (mapeamento, publicação pelo handler, roteamento nas duas listas de assinatura, conteúdo do log). **Ao vivo**: `Blocklist` chegou de verdade ao bloquear e desbloquear o contato de teste (dois eventos) e nenhuma linha "Unhandled event" apareceu. **Não observados**: os demais (dependem de chamadas, mídia a reenviar, mudança de privacidade em outro aparelho ou fila offline).
 
+### Espera pela conexão e consultas (PR #25)
+
+| Problema / entrega | Correção | Ao vivo |
+|---|---|---|
+| Nove serviços iniciavam a instância e dormiam 2 s fixos antes de checar a conexão (3 s depois de reconectar, 3 s + 2 s no `GET /instance/qr`, 2 s no `ForceReconnect`): uma conexão de 2,1 s falhava a requisição e uma de 0,3 s ainda custava 2 s | `utils.WaitForClient` (usa `WaitForConnection`): responde quando conecta, limite de 10 s; instância sem dispositivo pareado falha na hora (#77); `GetQr` espera QR, passkey ou login | ✅ instância sem pareamento falha em 0,47 s; QR em 0,35 s (antes 3 s fixos); envio depois de desconectar em 0,97 s |
+| `POST /user/devices`, `GET /user/statusprivacy`, `POST /user/business` (novos, só leitura) | 10 s de limite; 404 quando o número não é Business | ✅ ver PROPOSALS |
+
 ### Validação ao vivo (instância real, 29/09/2026)
 
 Instância pareada e conectada por você; mensagens só para o seu próprio número; grupo de teste só com você (o primeiro foi removido no fim; o "ZZ Teste Timer Fork", criado depois para as mensagens temporárias, ainda existe e deve ser apagado à mão). As validações das rodadas seguintes estão nas tabelas de cada PR acima.

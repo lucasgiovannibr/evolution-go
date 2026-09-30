@@ -7,8 +7,8 @@ Levantamento feito em 29/09/2026 (números recontados no fim do dia, depois das 
 | | |
 |---|---|
 | Métodos públicos de `*Client` | 136 |
-| Usados pelo projeto | 76 (eram 65 no início do dia) |
-| Não usados | 60 (por categoria no §4) |
+| Usados pelo projeto | 79 (eram 65 no início do dia) |
+| Não usados | 57 (por categoria no §4) |
 | Tipos de evento emitidos (`types/events`) | 75 |
 | Tratados em `myEventHandler` | 70 (eram 42 no início do dia) |
 | Não tratados | 5, e nenhum deles chega sozinho ao handler (§5) |
@@ -43,12 +43,12 @@ Vários pedidos esbarram na lib, não no projeto. Convém não prometê-los.
 | **Mensagens temporárias** | `SetDisappearingTimer`, `SetDefaultDisappearingTimer` | **Feito**: `POST /chat/disappearing`, `POST /user/defaultDisappearing` e aprendizado do timer por chat (#79) |
 | **Newsletters** | `FollowNewsletter`, `UnfollowNewsletter`, `NewsletterMarkViewed`, `NewsletterSendReaction`, `NewsletterToggleMute`, `GetNewsletterMessageUpdates` | **Feito**: seguir, deixar de seguir, marcar como visto, reagir e silenciar (sem teste ao vivo). Falta `GetNewsletterMessageUpdates` |
 | **Grupos** | `GetGroupInfoFromInvite`, `GetGroupInfoFromLink`, `JoinGroupWithInvite`, `GetSubGroups`, `GetLinkedGroupsParticipants` | **Feito** para link e convite (`/group/inviteinfo`, `/group/joininvite`); falta comunidades (sub-grupos) |
-| **Contatos / negócios** | `GetContactQRLink`, `ResolveContactQRLink`, `GetBusinessProfile`, `ResolveBusinessMessageLink`, `GetOrderDetails`, `GetStatusPrivacy`, `GetUserDevices` | Perfil comercial, link/QR de contato, pedidos, privacidade do status, lista de dispositivos de um usuário |
+| **Contatos / negócios** | `GetContactQRLink`, `ResolveContactQRLink`, `ResolveBusinessMessageLink`, `GetOrderDetails` | **Feito**: `GetBusinessProfile` (`POST /user/business`), `GetStatusPrivacy` (`GET /user/statusprivacy`) e `GetUserDevices` (`POST /user/devices`). Sobram link/QR de contato e pedidos |
 | **Bots / IA** | `GetBotListV2`, `GetBotProfiles` | Listar bots do WhatsApp; nicho |
 | **Mensagens (baixo nível)** | `BuildReaction`, `EncryptReaction`, `DecryptReaction`, `EncryptComment`, `DecryptComment`, `EncryptPollVote`, `RevokeMessage`, `BuildMessageKey`, `ParseWebMessage` | Reação e revogação são montadas à mão / com `BuildRevoke`. Reação e comentário em **comunidade** exigem `Decrypt*`. `BuildUnavailableMessageRequest` **já é usado** (`POST /message/rerequest`) |
 | **Mídia** | `DownloadAny`, `DownloadToFile`, `DownloadThumbnail`, `DownloadMediaWith*`, `DeleteMedia`, `UploadReader`, `UploadNewsletterReader`, `DownloadHistorySync`, `FetchStickerPack` | Variantes por streaming/arquivo (menos memória em mídia grande), miniatura, pacotes de figurinhas |
 | **Recibos / retry** | `SendMediaRetryReceipt`, `SendProtocolMessageReceipt`, `SendHistorySyncServerErrorReceipt`, `SetForceActiveDeliveryReceipts`, `SetMaxParallelRetryReceiptHandling` | Ajustes finos de entrega; só com evidência de problema |
-| **Conexão / eventos** | `ConnectContext`, `WaitForConnection`, `ResetConnection`, `SetPassive`, `MarkNotDirty`, `AddEventHandlerWithSuccessStatus`, `RemoveEventHandlers`, `GetQRChannel`, `DangerousInternals` | `ConnectContext` permitiria cancelar uma conexão pendente; `GetQRChannel` é evitado de propósito (quebra o fluxo de passkey); `ResetConnection` não faz nada com auto-reconnect desligado |
+| **Conexão / eventos** | `ConnectContext`, `ResetConnection`, `SetPassive`, `MarkNotDirty`, `AddEventHandlerWithSuccessStatus`, `RemoveEventHandlers`, `GetQRChannel`, `DangerousInternals` | **`WaitForConnection` já é usado** (`utils.WaitForClient`, no lugar dos `Sleep` fixos de 2 s e 3 s). `ConnectContext` permitiria cancelar uma conexão pendente; `GetQRChannel` é evitado de propósito (quebra o fluxo de passkey); `ResetConnection` não faz nada com auto-reconnect desligado |
 | **HTTP / proxy** | `SetWebsocketHTTPClient`, `SetMediaHTTPClient`, `SetPreLoginHTTPClient`, `SetSOCKSProxy` | Só se for preciso proxies diferentes para websocket e mídia |
 | **Facebook / push** | `SendFBMessage`, `DownloadFB*`, `RegisterForPushNotifications`, `GetServerPushNotificationConfig`, `AcceptTOSNotice`, `TryFetchPrivacySettings`, `StoreLIDPNMapping` | Sem uso para este projeto |
 
@@ -90,4 +90,4 @@ Como verificar a lista: `grep -c 'case \*events\.'` não basta, porque vários `
 
 **Eventos**: fechados em 29/09/2026 (§5).
 
-O que resta é escolher quais dos 60 métodos ainda não usados (§4) valem a implementação; nenhum deles é necessário para corrigir algo que hoje funciona errado. Não prometer: remoção de contato, atender/discar chamadas e encaminhar por ID sem persistência (§2).
+Feitos depois: a espera pela conexão (`WaitForConnection`) e as consultas de dispositivos, privacidade de status e perfil comercial. O que resta é escolher quais dos 57 métodos ainda não usados (§4) valem a implementação; os candidatos são mídia por streaming (`UploadReader`, `DownloadToFile`, `DownloadThumbnail`) e, se comunidades forem usadas, `GetSubGroups`/`GetLinkedGroupsParticipants`; nenhum deles é necessário para corrigir algo que hoje funciona errado. Não prometer: remoção de contato, atender/discar chamadas e encaminhar por ID sem persistência (§2).

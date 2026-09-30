@@ -3,6 +3,7 @@ package user_service
 import (
 	"context"
 	"errors"
+	"strings"
 	"time"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
@@ -116,6 +117,15 @@ func (u *userService) GetStatusPrivacy(ctx context.Context, instance *instance_m
 	return out, nil
 }
 
+// isNoBusinessProfile recognises the answer for an account that is not a business. The
+// library has no sentinel for it: an ordinary account answers with an empty profile node
+// and the parser fails with a plain "missing jid in business profile" error.
+func isNoBusinessProfile(err error) bool {
+	var missing *whatsmeow.ElementMissingError
+	return errors.Is(err, whatsmeow.ErrIQNotFound) || errors.As(err, &missing) ||
+		strings.Contains(err.Error(), "missing jid in business profile")
+}
+
 // GetBusinessProfile returns the public profile of a WhatsApp Business account. An
 // account that is not a business answers *NotFoundError.
 func (u *userService) GetBusinessProfile(ctx context.Context, data *BusinessProfileStruct, instance *instance_model.Instance) (*types.BusinessProfile, error) {
@@ -138,8 +148,7 @@ func (u *userService) GetBusinessProfile(ctx context.Context, data *BusinessProf
 
 	profile, err := client.GetBusinessProfile(ctx, jid)
 	if err != nil {
-		var missing *whatsmeow.ElementMissingError
-		if errors.Is(err, whatsmeow.ErrIQNotFound) || errors.As(err, &missing) {
+		if isNoBusinessProfile(err) {
 			return nil, &NotFoundError{Msg: "this number has no business profile"}
 		}
 		return nil, err
