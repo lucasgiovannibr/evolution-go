@@ -298,3 +298,51 @@ Pede ao celular uma nova cópia da mensagem.
 `sender` é opcional num chat individual (é o próprio chat) e **obrigatório em grupo**; canal e status devolvem 400. Resposta: `{"data":{"requestId":"..."}}`. A resposta do celular chega depois como um evento `Message` normal cujo `UnavailableRequestID` é esse `requestId`. Não há garantia: o celular precisa estar online e ainda ter a mensagem.
 
 `REREQUEST_FROM_PHONE=true` faz a lib pedir sozinha; a rota serve para quem prefere decidir (por exemplo, depois de ver o evento).
+
+## Rotas de chat (`/chat/*`)
+
+`/chat/pin`, `/chat/unpin`, `/chat/archive`, `/chat/unarchive`, `/chat/mute` e `/chat/unmute` usam o campo **`chat`** (não `number`): um número ou um JID de grupo. Em contatos individuais o número é resolvido para o LID com o qual o celular conhece o chat; antes o patch ia para um chat inexistente e nada acontecia.
+
+```json
+{ "chat": "5531999999999" }
+```
+
+`/chat/mute` aceita `duration` opcional: `8h`, `1w` (ou `7d`), `always` ou uma duração como `30m`. Sem ela, silencia por 1 hora, como sempre. A resposta traz o `timestamp` real (`{"data":{"timestamp":"2026-09-29T22:14:10Z"}}`); entrada inválida devolve 400.
+
+## `POST /message/subscribe` em lote
+
+`number` aceita um texto (como sempre) ou uma lista de até 100 números. Com lista, a resposta traz o resultado de cada um:
+
+```json
+{ "message": "success", "data": [{"number":"...","subscribed":true}], "failed": [] }
+```
+
+Só devolve erro (500) quando **nenhum** número foi inscrito.
+
+## Presença ao mudar `alwaysOnline`
+
+`PUT /instance/{id}/advanced-settings` com `alwaysOnline` diferente do atual marca a presença (`available`/`unavailable`) e inicia ou para o agendador imediatamente; antes só valia na próxima reconexão.
+
+## `webhookUrl` em `POST /instance/connect`
+
+| Valor | Efeito |
+|---|---|
+| ausente ou `""` | mantém o webhook atual (o manager envia `""` em toda reconexão) |
+| uma URL | define o webhook |
+| `"disabled"` ou `"false"` | **limpa** o webhook (guardado vazio) |
+
+## Fila de entrega de webhooks
+
+Cada URL de destino tem uma fila limitada; os eventos saem por poucos trabalhadores e, se o receptor falha, são reenviados com espera crescente (1 s, 5 s, 30 s, 2 min). Com a fila cheia, o evento **mais antigo** é descartado e contado. Depois que um evento esgota as tentativas, o destino fica "degradado" e os eventos seguintes têm uma tentativa cada, até um passar.
+
+| Variável | Padrão | Efeito |
+|---|---|---|
+| `WEBHOOK_QUEUE_MAX_EVENTS` | 1000 | eventos pendentes por destino |
+| `WEBHOOK_QUEUE_MAX_MB` | 64 | bytes pendentes por destino |
+| `WEBHOOK_QUEUE_WORKERS` | 4 | entregas simultâneas por destino; `1` mantém a ordem estrita |
+
+`GET /instance/runtimes` mostra o estado no bloco `webhook`: `destinations`, `degradedDestinations`, `pending`, `inFlight`, `pendingBytes`, `sent`, `failed` e `dropped` (contam desde que o processo subiu).
+
+## Apagar uma instância
+
+`DELETE /instance/delete/{id}` agora também remove do banco de autenticação o dispositivo pareado (chaves, contatos em cache, mapa de LID) e os votos de enquete da instância. Se a instância não estava conectada, o WhatsApp não é avisado: a sessão continua listada em "aparelhos conectados" no celular e precisa ser removida por lá.

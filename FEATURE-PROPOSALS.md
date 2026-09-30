@@ -33,6 +33,11 @@ Documentação dos endpoints: [`docs/wiki/guias-api/api-fork-additions.md`](docs
 | **Grupo por convite** (`POST /group/inviteinfo`, `POST /group/joininvite`) | Sugestão 35 | Consulta por link/código ou por cartão de convite, sem entrar; entrar pelo cartão | ✅ `inviteinfo` por link do grupo de teste; `joininvite` só com testes unitários (exige um cartão real) |
 | **Canais**: seguir, deixar de seguir, silenciar, marcar como visto, reagir (`/newsletter/follow` ... `/react`) | Sugestão 35 | Validação de JID (400), prazo de 20 s | 🟡 validações ao vivo; as ações em si **não** testadas (não há canal de teste) |
 | **Mensagem que não chegou**: evento `UndecryptableMessage` e `POST /message/rerequest` (`BuildUnavailableMessageRequest`) | Sugestão 36 | O evento traz id/chat/sender; a rota pede o reenvio ao celular e devolve o `requestId` | ✅ pedido aceito pelo servidor; 🟡 a resposta do celular e o evento real não observados |
+| **Resultado por número em `POST /message/subscribe`** (lista de até 100) | Sugestão 26, issue #146 | `data`/`failed`; a string única responde como antes | ✅ lista de dois números |
+| **Presença em tempo de execução**: ligar/desligar `alwaysOnline` marca a presença e inicia/para o agendador na hora | Sugestão 27 | Trava contra dois agendadores | ✅ logs "presence now available/unavailable" |
+| **`duration` em `/chat/mute`** (`8h`, `1w`, `always`, `30m`) | Achado ao corrigir as rotas de chat | Padrão continua 1 h | ✅ `always` confirmado no celular |
+| **Fila de webhook por destino** (limites, descarte do mais antigo, tentativas com espera crescente, degradação, estatísticas em `/instance/runtimes`; `WEBHOOK_QUEUE_*`) | Risco achado na análise de bugs | Ver FORK-TRIAGE.md | ✅ entrega, falha e recuperação com receptor local; ❌ receptor travado e fila estourada só em teste |
+| **Limpar o webhook** com `"disabled"`/`"false"` em `/instance/connect` (`""` continua "não alterar") | Pedido do teste do webhook | Evita apagar o webhook a cada reconexão do manager | ✅ |
 
 ## 2. Propostas ainda em aberto
 
@@ -57,19 +62,22 @@ Documentação dos endpoints: [`docs/wiki/guias-api/api-fork-additions.md`](docs
 
 ## 3. Sugestões novas (ainda não implementadas)
 
-As sugestões 23 e 24 (diagnóstico do runtime e health check) e as 30 a 36 (eventos operacionais, de pareamento e de estado de chat, timer de mensagens temporárias, convites, canais e mensagem que não chegou) já foram feitas (§1). As de whatsmeow vêm do levantamento em [`docs/WHATSMEOW-CAPABILITIES.md`](docs/WHATSMEOW-CAPABILITIES.md).
+As sugestões 23 e 24 (diagnóstico do runtime e health check), 26 e 27 (resultado por item e presença em tempo de execução) e 30 a 36 (eventos operacionais, de pareamento e de estado de chat, timer de mensagens temporárias, convites, canais e mensagem que não chegou) já foram feitas (§1). As de whatsmeow vêm do levantamento em [`docs/WHATSMEOW-CAPABILITIES.md`](docs/WHATSMEOW-CAPABILITIES.md).
 
 | # | Sugestão | Por quê | Esforço | Recomendação |
 |---|---|---|---|---|
 | 25 | **Métricas Prometheus** (instâncias conectadas, reconexões, eventos entregues/falhos, conexões do pool) | Observar uso prolongado e alertar antes de a instância cair | M | ◐ |
-| 26 | **Resultado por item nas operações em lote** (participantes de grupo já foi feito; falta `subscribe` com lista de números, como pediu o #146) | Evita "success" que esconde falha parcial | P | ◐ |
-| 27 | **Reativar o agendador de presença quando `alwaysOnline` é ligado em tempo de execução** | Hoje ele só nasce no evento `Connected`; ligar depois não tem efeito até reconectar | P | ◐ |
 | 28 | **Remover contato via API** | Impossível hoje: o encoder de app state do whatsmeow só gera `SET` (conferido no código). Detalhes e outros limites duros em `docs/WHATSMEOW-CAPABILITIES.md` §2 | — | ✖ (depende da lib) |
 | 29 | **Regenerar o swagger sem regressão** (o `swag init` reescreve ~1.000 linhas e remove as rotas de licença) | Documentação da API desatualizada (`/group/description`, `/group/settings`, novos endpoints) | M | ◐ |
+| 37 | **Erros de URL de mídia como 400** (hoje um 404 ou arquivo grande demais em `/send/media` responde 500) | Distingue erro do chamador de erro do servidor; pede separar os dois tipos em todos os fluxos de envio | P | ◐ |
+| 38 | **Atualização parcial em `POST /user/privacy`** (hoje o handler exige todos os campos) | Mudar só "visto por último" sem reenviar o resto | P | ◐ |
+| 39 | **Enquetes no modo SQLite** (a tabela `poll_votes` usa `TEXT[]`, só Postgres) | Hoje `/send/pollVote` e os resultados não funcionam sem Postgres | M | ◐ |
+| 40 | **Remover código morto** apontado pelo `staticcheck` (`convertToWebP`, `stringPointer`, `sectionsToString`, dois campos do repositório de instâncias, uma atribuição no `Connect`) | Manutenção | P | ◐ |
+| 41 | **`webhookUrl: ""` limpar o webhook** | Só depois de corrigir o manager embutido, que envia `""` em toda reconexão (o código-fonte dele não está no repositório, só o `dist`) | M | ✖ por ora |
 
 ## 4. Documentação pendente
 
 - Os endpoints novos (incluindo `/chat/disappearing`, `/group/inviteinfo`, `/newsletter/*` e `/message/rerequest`), `POST /group/settings` e `quoted.text` estão no wiki; falta o swagger (item 29), que ainda não descreve nada disso.
-- Documentar o comportamento de `/chat/archive` (usa `chat`, não `number`) e o status "TODO: not working" das rotas de archive.
+- `/chat/*` usa o campo `chat` (não `number`). As rotas deixaram de ser "not working" no PR #17; falta só refletir isso no wiki (`/chat/mute` ganhou `duration`, `/message/subscribe` aceita lista, `/instance/connect` aceita `"disabled"` no `webhookUrl`, `/instance/runtimes` traz o bloco `webhook`).
 - Botões e listas em conta pessoal: já registrado em `api-interactive.md`; revisar quando houver validação em aparelho.
 - README: instruções de Windows (PRs #201/#202 são um começo, mas duplicam o bloco "Setup").
