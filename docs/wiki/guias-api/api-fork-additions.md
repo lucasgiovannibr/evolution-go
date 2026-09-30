@@ -346,3 +346,20 @@ Cada URL de destino tem uma fila limitada; os eventos saem por poucos trabalhado
 ## Apagar uma instância
 
 `DELETE /instance/delete/{id}` agora também remove do banco de autenticação o dispositivo pareado (chaves, contatos em cache, mapa de LID) e os votos de enquete da instância. Se a instância não estava conectada, o WhatsApp não é avisado: a sessão continua listada em "aparelhos conectados" no celular e precisa ser removida por lá.
+
+## Demais eventos do whatsmeow
+
+Passam a ser publicados (antes só apareciam como "Unhandled event" no log):
+
+| Assinatura | Evento | `data` |
+|---|---|---|
+| `CONTACT` | `Blocklist` | `action`, `dhash`, `prevDhash`, `changes` (`jid`, `action`). `action: "modify"` sem `changes` significa buscar a lista de novo em `GET /user/blocklist` |
+| `CONTACT` | `PrivacySettings` | `settings` (valores novos) e `changed` (`groupAdd`, `lastSeen`, `status`, `profile`, `readReceipts`, `online`, `callAdd`, `messages`, `defense`, `stickers`) |
+| `CONTACT` | `BusinessName` | `jid`, `oldBusinessName`, `newBusinessName` (e `messageId`/`chat` se a mudança foi vista numa mensagem) |
+| `CALL` | `CallPreAccept`, `CallTransport` | `from`, `timestamp`, `callCreator`, `callCreatorAlt`, `callId`, `groupJid`, `remotePlatform`, `remoteVersion` |
+| `CALL` | `CallReject` | os mesmos campos, sem `remote*` |
+| `CALL` | `UnknownCallEvent` | `tag` e `attrs` do nó que a lib não reconheceu |
+| `MESSAGE` | `MediaRetry` | `messageId`, `chat`, `sender`, `fromMe`, `timestamp`, `hasCiphertext`, `errorCode` (quando houver). O remetente precisa subir a mídia de novo; o texto cifrado não é publicado |
+| `NEWSLETTER` | `NewsletterLiveUpdate` | `jid`, `time`, `messages` |
+| `NEWSLETTER` | `NewsletterMuteChange` | `id`, `mute` |
+| `CONNECTION` | `OfflineSyncPreview` | `total`, `messages`, `notifications`, `receipts`, `appDataChanges` (o que está na fila offline ao conectar) |

@@ -2392,6 +2392,27 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		doWebhook = true
 		postMap["event"] = name
 		postMap["data"] = data
+	case *events.Blocklist, *events.PrivacySettings, *events.BusinessName,
+		*events.CallPreAccept, *events.CallTransport, *events.CallReject, *events.UnknownCallEvent,
+		*events.MediaRetry, *events.NewsletterLiveUpdate, *events.NewsletterMuteChange,
+		*events.OfflineSyncPreview, *events.RotateADVSecret, *events.ManualLoginReconnect:
+		name, data, publish, _ := remainingEventData(rawEvt)
+		switch e := rawEvt.(type) {
+		case *events.RotateADVSecret:
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] The session's ADV secret was rotated by WhatsApp", mycli.userID)
+		case *events.ManualLoginReconnect:
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] ManualLoginReconnect received: this project keeps login auto-reconnect on, so this is unexpected", mycli.userID)
+		case *events.OfflineSyncPreview:
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Offline sync preview: %d items waiting (%d messages, %d notifications, %d receipts, %d app data changes)", mycli.userID, e.Total, e.Messages, e.Notifications, e.Receipts, e.AppDataChanges)
+		case *events.MediaRetry:
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] The sender has to upload media of message %s again (media retry)", mycli.userID, e.MessageID)
+		}
+		if !publish {
+			return
+		}
+		doWebhook = true
+		postMap["event"] = name
+		postMap["data"] = data
 	case *events.ConnectFailure:
 		doWebhook = true
 		postMap["event"] = "ConnectFailure"
@@ -2697,7 +2718,7 @@ func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueN
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
 		}
-	case "UndecryptableMessage":
+	case "UndecryptableMessage", "MediaRetry":
 		if contains(subscriptions, "MESSAGE") {
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
@@ -2712,12 +2733,12 @@ func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueN
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
 		}
-	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency":
+	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency", "CallPreAccept", "CallReject", "CallTransport", "UnknownCallEvent":
 		if contains(subscriptions, "CALL") {
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
 		}
-	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored", "ReachoutTimelock", "StreamError", "ClientOutdated", "CATRefreshError":
+	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored", "ReachoutTimelock", "StreamError", "ClientOutdated", "CATRefreshError", "OfflineSyncPreview":
 		if contains(subscriptions, "CONNECTION") {
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
@@ -2727,7 +2748,7 @@ func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueN
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
 		}
-	case "Contact", "PushName":
+	case "Contact", "PushName", "Blocklist", "PrivacySettings", "BusinessName":
 		if contains(subscriptions, "CONTACT") {
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
@@ -2747,7 +2768,7 @@ func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueN
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
 		}
-	case "NewsletterJoin", "NewsletterLeave":
+	case "NewsletterJoin", "NewsletterLeave", "NewsletterLiveUpdate", "NewsletterMuteChange":
 		if contains(subscriptions, "NEWSLETTER") {
 			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
 			w.sendToQueueOrWebhook(instance, queueName, jsonData)
@@ -2975,7 +2996,7 @@ func getExtensionFromMimeType(mimeType string) string {
 // silently never published (issue #193). Keep a single source of truth here.
 func globalEventTypeFor(eventType string) string {
 	switch eventType {
-	case "Message", "UndecryptableMessage":
+	case "Message", "UndecryptableMessage", "MediaRetry":
 		return "MESSAGE"
 	case "SendMessage":
 		return "SEND_MESSAGE"
@@ -2987,13 +3008,13 @@ func globalEventTypeFor(eventType string) string {
 		return "HISTORY_SYNC"
 	case "ChatPresence", "Archive", "Mute", "Pin", "Star", "MarkChatAsRead", "ClearChat", "DeleteChat", "DeleteForMe", "UnarchiveChatsSetting", "UserStatusMute":
 		return "CHAT_PRESENCE"
-	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency":
+	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency", "CallPreAccept", "CallReject", "CallTransport", "UnknownCallEvent":
 		return "CALL"
-	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored", "ReachoutTimelock", "StreamError", "ClientOutdated", "CATRefreshError":
+	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored", "ReachoutTimelock", "StreamError", "ClientOutdated", "CATRefreshError", "OfflineSyncPreview":
 		return "CONNECTION"
 	case "LabelEdit", "LabelAssociationChat", "LabelAssociationMessage":
 		return "LABEL"
-	case "Contact", "PushName":
+	case "Contact", "PushName", "Blocklist", "PrivacySettings", "BusinessName":
 		return "CONTACT"
 	case "Picture":
 		return "PICTURE"
@@ -3001,7 +3022,7 @@ func globalEventTypeFor(eventType string) string {
 		return "USER_ABOUT"
 	case "GroupInfo", "JoinedGroup":
 		return "GROUP"
-	case "NewsletterJoin", "NewsletterLeave":
+	case "NewsletterJoin", "NewsletterLeave", "NewsletterLiveUpdate", "NewsletterMuteChange":
 		return "NEWSLETTER"
 	case "QRCode", "QRTimeout", "QRSuccess", "PasskeyRequest", "PasskeyConfirmation", "PasskeyError", "PairError", "QRScannedWithoutMultidevice":
 		return "QRCODE"
