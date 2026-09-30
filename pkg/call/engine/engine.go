@@ -71,6 +71,27 @@ type AudioSource interface {
 	Close() error
 }
 
+// VideoSink consumes the peer's video: one H.264 access unit per call, Annex-B (start
+// code prefixed NAL units). The library only carries video, it neither decodes nor
+// encodes it. Like the audio sink it is called from the library's goroutine and must
+// not block; the library closes it when the call ends. A sink that also has
+// SetOrientation(int) is told the display rotation, in clockwise quarter turns.
+type VideoSink interface {
+	WriteVideo(accessUnit []byte) error
+	Close() error
+}
+
+// VideoState is what the peer told us about its video during the call.
+type VideoState struct {
+	// Active: the peer's camera is on.
+	Active bool `json:"active"`
+	// Upgrade: the peer asks to turn an audio call into a video call (answer with
+	// the "accept" video action).
+	Upgrade bool `json:"upgrade"`
+	// Orientation is the peer's device rotation in clockwise quarter turns (0..3).
+	Orientation int `json:"orientation"`
+}
+
 // Call is what the rest of the code may do with a live call. The library's call
 // satisfies it through libCall; tests use fakes.
 type Call interface {
@@ -89,6 +110,24 @@ type Call interface {
 	// the audio sent to the peer. Each replaces the previous one.
 	Receive(sink AudioSink)
 	Play(src AudioSource)
+
+	// Video. ReceiveVideo attaches the sink for the peer's video (nil detaches).
+	// SendVideo sends one Annex-B access unit; duration is the time until the next
+	// frame (it advances the RTP clock), zero for the library's default. OnVideoState
+	// and OnVideoKeyframeRequest replace the previous callback, like OnEnd: the Manager
+	// owns them. A keyframe request means WhatsApp lost part of our video: the next
+	// access unit sent must be an IDR.
+	ReceiveVideo(sink VideoSink)
+	SendVideo(accessUnit []byte, duration time.Duration) error
+	OnVideoState(fn func(VideoState))
+	OnVideoKeyframeRequest(fn func())
+	StartVideo() error
+	AcceptVideo() error
+	StopVideo() error
+	SetVideoEnabled(enabled bool) error
+	SetVideoOrientation(orientation int) error
+	IsSendingVideo() bool
+	IsReceivingVideo() bool
 }
 
 // libCall adapts the library's call to Call. The embedded *meowcaller.Call already
@@ -106,6 +145,24 @@ func (c libCall) Receive(sink AudioSink) {
 }
 
 func (c libCall) Play(src AudioSource) { c.Call.Play(src) }
+
+func (c libCall) ReceiveVideo(sink VideoSink) {
+	if sink == nil {
+		c.Call.ReceiveVideo(nil)
+		return
+	}
+	c.Call.ReceiveVideo(sink)
+}
+
+func (c libCall) SendVideo(accessUnit []byte, duration time.Duration) error {
+	return c.Call.SendVideoWithDuration(accessUnit, duration)
+}
+
+func (c libCall) OnVideoState(fn func(VideoState)) {
+	c.Call.OnVideoState(func(v meowcaller.VideoState) {
+		fn(VideoState{Active: v.Active, Upgrade: v.Upgrade, Orientation: v.Orientation})
+	})
+}
 
 func (c libCall) Phase() Phase {
 	switch c.State() {
@@ -157,7 +214,7 @@ type runtime struct {
 	status Status
 	log    Logger
 	// dial places a call through the library; nil when there is no library client.
-	dial func(ctx context.Context, target string) (Call, error)
+	dial func(ctx context.Context, target string, opts DialOptions) (Call, error)
 }
 
 const (
@@ -255,8 +312,8 @@ func (m *Manager) Attach(instanceID string, cli *whatsmeow.Client, proxied bool,
 		rt.client = meowcaller.NewClient(cli, meowcaller.WithLogger(zerolog.New(probe).Level(zerolog.InfoLevel)))
 		rt.client.OnIncomingCall(func(c *meowcaller.Call) { m.onIncoming(instanceID, libCall{c}) })
 		client := rt.client
-		rt.dial = func(ctx context.Context, target string) (Call, error) {
-			c, err := client.Call(ctx, target)
+		rt.dial = func(ctx context.Context, target string, opts DialOptions) (Call, error) {
+			c, err := client.CallWithOptions(ctx, target, meowcaller.CallOptions{Video: opts.Video})
 			if err != nil {
 				return nil, err
 			}

@@ -26,8 +26,10 @@ type CallService interface {
 	AnswerCall(data *AnswerCallStruct, instance *instance_model.Instance) (call_engine.Info, error)
 	HangupCall(data *HangupCallStruct, instance *instance_model.Instance) error
 	// IssueStreamTicket creates the one-time ticket that opens the audio stream of a call.
-	IssueStreamTicket(instance *instance_model.Instance, callID string) (StreamTicket, error)
-	// DialCall places an outgoing audio call.
+	IssueStreamTicket(instance *instance_model.Instance, callID string, video bool) (StreamTicket, error)
+	// VideoCall does one video action (start, accept, stop, enable, disable, orientation).
+	VideoCall(instance *instance_model.Instance, data *VideoCallStruct) (call_engine.Info, error)
+	// DialCall places an outgoing call.
 	DialCall(ctx context.Context, data *DialCallStruct, instance *instance_model.Instance) (DialResult, error)
 }
 
@@ -39,9 +41,11 @@ type DialCallStruct struct {
 	// Number is a phone number or a user JID. The number-validation middleware turns a
 	// phone number into a JID before this is read.
 	Number string `json:"number"`
-	// Stream also returns the ticket that opens the audio stream, so it can be
-	// connected before the callee picks up and says hello.
+	// Stream also returns the ticket that opens the stream, so it can be connected
+	// before the callee picks up and says hello.
 	Stream bool `json:"stream"`
+	// Video places a video call. With Stream, the stream carries the video too.
+	Video bool `json:"video"`
 }
 
 // DialResult is the answer of POST /call/dial: the call, and its stream ticket when one
@@ -64,6 +68,19 @@ type HangupCallStruct struct {
 
 type StreamTicketStruct struct {
 	CallID string `json:"callId"`
+	// Video makes the stream carry the call's video besides its audio.
+	Video bool `json:"video"`
+}
+
+// VideoCallStruct is the body of POST /call/video.
+type VideoCallStruct struct {
+	CallID string `json:"callId"`
+	// Action is one of: start (ask the peer to turn the call into a video call),
+	// accept (accept the peer's request), stop, enable, disable, orientation.
+	Action string `json:"action"`
+	// Orientation is how the camera is rotated, in clockwise quarter turns (0..3); only
+	// read by the "orientation" action.
+	Orientation int `json:"orientation"`
 }
 
 // StreamTicket is the answer of POST /call/stream-ticket: open a WebSocket to Path
@@ -213,7 +230,7 @@ func (c *callService) DialCall(ctx context.Context, data *DialCallStruct, instan
 		return DialResult{}, err
 	}
 
-	t, err := engine.Dial(ctx, instance.Id, target)
+	t, err := engine.Dial(ctx, instance.Id, target, call_engine.DialOptions{Video: data.Video})
 	if err != nil {
 		logger.LogError("[%s] error dialing call: %v", instance.Id, err)
 		return DialResult{}, err
@@ -221,7 +238,7 @@ func (c *callService) DialCall(ctx context.Context, data *DialCallStruct, instan
 	result := DialResult{Info: t.Info()}
 
 	if data.Stream {
-		ticket, err := c.IssueStreamTicket(instance, result.CallID)
+		ticket, err := c.IssueStreamTicket(instance, result.CallID, data.Video)
 		if err != nil {
 			// The caller asked for a stream it cannot have: do not leave the call ringing.
 			_, _ = engine.Hangup(instance.Id, result.CallID)
@@ -232,7 +249,20 @@ func (c *callService) DialCall(ctx context.Context, data *DialCallStruct, instan
 	return result, nil
 }
 
-func (c *callService) IssueStreamTicket(instance *instance_model.Instance, callID string) (StreamTicket, error) {
+func (c *callService) VideoCall(instance *instance_model.Instance, data *VideoCallStruct) (call_engine.Info, error) {
+	engine, err := c.engine(instance)
+	if err != nil {
+		return call_engine.Info{}, err
+	}
+	t, err := engine.Video(instance.Id, data.CallID, call_engine.VideoAction(data.Action), data.Orientation)
+	if err != nil {
+		logger.LogError("[%s] error on video %q of call %s: %v", instance.Id, data.Action, data.CallID, err)
+		return call_engine.Info{}, err
+	}
+	return t.Info(), nil
+}
+
+func (c *callService) IssueStreamTicket(instance *instance_model.Instance, callID string, video bool) (StreamTicket, error) {
 	engine, err := c.engine(instance)
 	if err != nil {
 		return StreamTicket{}, err
@@ -240,7 +270,7 @@ func (c *callService) IssueStreamTicket(instance *instance_model.Instance, callI
 	if _, ok := engine.Get(instance.Id, callID); !ok {
 		return StreamTicket{}, call_engine.ErrCallNotFound
 	}
-	token, ttl, err := c.tickets.Issue(instance.Id, callID)
+	token, ttl, err := c.tickets.Issue(instance.Id, callID, video)
 	if err != nil {
 		return StreamTicket{}, err
 	}

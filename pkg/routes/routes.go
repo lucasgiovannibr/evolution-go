@@ -227,6 +227,7 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 			routes.POST("/dial", r.jidValidationMiddleware.ValidateNumberField(), r.callHandler.DialCall)
 			routes.POST("/hangup", r.callHandler.HangupCall)
 			routes.POST("/stream-ticket", r.callHandler.StreamTicket)
+			routes.POST("/video", r.callHandler.VideoCall)
 		}
 	}
 	routes = eng.Group("/community")

@@ -26,7 +26,12 @@ type Info struct {
 	Phase     Phase     `json:"phase"`
 	Video     bool      `json:"video"`
 	StartedAt time.Time `json:"startedAt"`
-	// Stream describes the audio stream of the call; absent when none ever attached.
+	// VideoSending / VideoReceiving: this side sends video / the peer's video arrives.
+	VideoSending   bool `json:"videoSending"`
+	VideoReceiving bool `json:"videoReceiving"`
+	// PeerVideo is the last video state the peer reported; absent until it reports one.
+	PeerVideo *VideoState `json:"peerVideo,omitempty"`
+	// Stream describes the stream of the call; absent when none ever attached.
 	Stream *StreamInfo `json:"stream,omitempty"`
 }
 
@@ -50,6 +55,10 @@ type Tracked struct {
 	stats    *StreamStats // of the last audio stream that attached
 	attached bool         // an audio stream is attached right now
 	grace    *time.Timer  // hangs the call up when its stream does not come back
+
+	peerVideo    *VideoState      // the last one the peer reported
+	onVideoState func(VideoState) // of the attached stream
+	onKeyframe   func()           // of the attached stream
 }
 
 // Call is the underlying call.
@@ -73,8 +82,15 @@ func (t *Tracked) Info() Info {
 		Phase:     t.call.Phase(),
 		Video:     t.call.IsVideo(),
 		StartedAt: t.startedAt,
+
+		VideoSending:   t.call.IsSendingVideo(),
+		VideoReceiving: t.call.IsReceivingVideo(),
 	}
 	t.mu.Lock()
+	if t.peerVideo != nil {
+		v := *t.peerVideo
+		info.PeerVideo = &v
+	}
 	if t.stats != nil {
 		info.Stream = &StreamInfo{
 			Attached:          t.attached,
@@ -82,6 +98,12 @@ func (t *Tracked) Info() Info {
 			FromClient:        t.stats.FromClient.Load(),
 			DroppedToClient:   t.stats.DroppedToClient.Load(),
 			DroppedFromClient: t.stats.DroppedFromClient.Load(),
+
+			VideoToClient:          t.stats.VideoToClient.Load(),
+			VideoFromClient:        t.stats.VideoFromClient.Load(),
+			VideoDroppedToClient:   t.stats.VideoDroppedToClient.Load(),
+			VideoDroppedFromClient: t.stats.VideoDroppedFromClient.Load(),
+			KeyframeRequests:       t.stats.KeyframeRequests.Load(),
 		}
 	}
 	t.mu.Unlock()
@@ -130,6 +152,8 @@ func (m *Manager) Track(instanceID string, c Call, dir Direction) (*Tracked, err
 	// Registered after the call is in the map, so an end that arrives right away finds
 	// something to remove.
 	c.OnReady(func() { m.notify(instanceID, "CallReady", t.eventData()) })
+	c.OnVideoState(func(v VideoState) { m.videoStateChanged(instanceID, t, v) })
+	c.OnVideoKeyframeRequest(t.keyframeRequested)
 	c.OnEnd(func(reason string) { m.finish(instanceID, t, reason) })
 	if c.Phase() == PhaseEnded {
 		m.finish(instanceID, t, "ended")

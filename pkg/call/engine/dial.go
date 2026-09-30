@@ -17,11 +17,17 @@ var (
 	ErrDialFailed = errors.New("could not place the call")
 )
 
+// DialOptions say what kind of call to place.
+type DialOptions struct {
+	// Video places a video call: both directions carry video from the start.
+	Video bool
+}
+
 // DialFunc places a call to target. The library's is the default; Options.Dial
 // replaces it in tests.
-type DialFunc func(ctx context.Context, instanceID, target string) (Call, error)
+type DialFunc func(ctx context.Context, instanceID, target string, opts DialOptions) (Call, error)
 
-// Dial places an outgoing audio call and follows it like any other. The Tracked
+// Dial places an outgoing call and follows it like any other. The Tracked
 // returned is in the calling phase: it rings on the peer's phone, and its audio can be
 // streamed right away.
 //
@@ -29,7 +35,7 @@ type DialFunc func(ctx context.Context, instanceID, target string) (Call, error)
 // its own: an instance may place Options.DialsPerMinute calls a minute, whether or not
 // they succeed (a failed attempt still talks to WhatsApp), and never more than
 // Options.MaxConcurrent at a time.
-func (m *Manager) Dial(ctx context.Context, instanceID, target string) (*Tracked, error) {
+func (m *Manager) Dial(ctx context.Context, instanceID, target string, opts DialOptions) (*Tracked, error) {
 	m.mu.RLock()
 	rt := m.runtimes[instanceID]
 	open := len(m.calls[instanceID])
@@ -47,9 +53,11 @@ func (m *Manager) Dial(ctx context.Context, instanceID, target string) (*Tracked
 
 	dial := rt.dial
 	if m.opts.Dial != nil {
-		dial = func(ctx context.Context, target string) (Call, error) { return m.opts.Dial(ctx, instanceID, target) }
+		dial = func(ctx context.Context, target string, opts DialOptions) (Call, error) {
+			return m.opts.Dial(ctx, instanceID, target, opts)
+		}
 	}
-	c, err := dial(ctx, target)
+	c, err := dial(ctx, target, opts)
 	if err != nil {
 		return nil, fmt.Errorf("%w: %v", ErrDialFailed, err)
 	}

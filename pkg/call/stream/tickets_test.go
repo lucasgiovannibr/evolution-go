@@ -14,7 +14,7 @@ func newTestTickets() (*Tickets, *time.Time) {
 
 func TestATicketWorksOnceForItsCall(t *testing.T) {
 	tickets, _ := newTestTickets()
-	token, ttl, err := tickets.Issue("inst", "C1")
+	token, ttl, err := tickets.Issue("inst", "C1", false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,43 +22,43 @@ func TestATicketWorksOnceForItsCall(t *testing.T) {
 		t.Fatalf("token=%q ttl=%v", token, ttl)
 	}
 
-	if instance, ok := tickets.Redeem(token, "C1"); !ok || instance != "inst" {
-		t.Fatalf("Redeem = %q, %v", instance, ok)
+	if instance, video, ok := tickets.Redeem(token, "C1"); !ok || instance != "inst" || video {
+		t.Fatalf("Redeem = %q, %v, %v", instance, video, ok)
 	}
-	if _, ok := tickets.Redeem(token, "C1"); ok {
+	if _, _, ok := tickets.Redeem(token, "C1"); ok {
 		t.Fatal("a ticket worked twice")
 	}
 }
 
 func TestATicketIsBoundToOneCall(t *testing.T) {
 	tickets, _ := newTestTickets()
-	token, _, _ := tickets.Issue("inst", "C1")
+	token, _, _ := tickets.Issue("inst", "C1", false)
 
-	if _, ok := tickets.Redeem(token, "C2"); ok {
+	if _, _, ok := tickets.Redeem(token, "C2"); ok {
 		t.Fatal("a ticket opened another call")
 	}
 	// the wrong attempt spent it: a guess cannot be retried with the right call
-	if _, ok := tickets.Redeem(token, "C1"); ok {
+	if _, _, ok := tickets.Redeem(token, "C1"); ok {
 		t.Fatal("a ticket survived a failed attempt")
 	}
 }
 
 func TestATicketExpires(t *testing.T) {
 	tickets, now := newTestTickets()
-	token, _, _ := tickets.Issue("inst", "C1")
+	token, _, _ := tickets.Issue("inst", "C1", false)
 
 	*now = now.Add(TicketTTL)
 
-	if _, ok := tickets.Redeem(token, "C1"); ok {
+	if _, _, ok := tickets.Redeem(token, "C1"); ok {
 		t.Fatal("an expired ticket worked")
 	}
 }
 
 func TestUnknownAndEmptyTicketsAreRefused(t *testing.T) {
 	tickets, _ := newTestTickets()
-	tickets.Issue("inst", "C1")
+	tickets.Issue("inst", "C1", false)
 	for _, token := range []string{"", "nope", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"} {
-		if _, ok := tickets.Redeem(token, "C1"); ok {
+		if _, _, ok := tickets.Redeem(token, "C1"); ok {
 			t.Fatalf("ticket %q worked", token)
 		}
 	}
@@ -68,7 +68,7 @@ func TestTicketsAreDistinct(t *testing.T) {
 	tickets, _ := newTestTickets()
 	seen := map[string]bool{}
 	for i := 0; i < 50; i++ {
-		token, _, err := tickets.Issue("inst", "C1")
+		token, _, err := tickets.Issue("inst", "C1", false)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -82,17 +82,30 @@ func TestTicketsAreDistinct(t *testing.T) {
 func TestThePendingTicketsAreBounded(t *testing.T) {
 	tickets, now := newTestTickets()
 	for i := 0; i < maxTickets; i++ {
-		if _, _, err := tickets.Issue("inst", "C1"); err != nil {
+		if _, _, err := tickets.Issue("inst", "C1", false); err != nil {
 			t.Fatalf("ticket %d: %v", i, err)
 		}
 	}
-	if _, _, err := tickets.Issue("inst", "C1"); err != ErrTooManyTickets {
+	if _, _, err := tickets.Issue("inst", "C1", false); err != ErrTooManyTickets {
 		t.Fatalf("err = %v, want ErrTooManyTickets", err)
 	}
 
 	// the expired ones make room again
 	*now = now.Add(TicketTTL)
-	if _, _, err := tickets.Issue("inst", "C1"); err != nil {
+	if _, _, err := tickets.Issue("inst", "C1", false); err != nil {
 		t.Fatalf("expired tickets must be reclaimed: %v", err)
+	}
+}
+
+func TestATicketRemembersWhetherItAsksForVideo(t *testing.T) {
+	tickets, _ := newTestTickets()
+	withVideo, _, _ := tickets.Issue("inst", "C1", true)
+	withoutVideo, _, _ := tickets.Issue("inst", "C1", false)
+
+	if _, video, ok := tickets.Redeem(withVideo, "C1"); !ok || !video {
+		t.Fatalf("video = %v, ok = %v", video, ok)
+	}
+	if _, video, ok := tickets.Redeem(withoutVideo, "C1"); !ok || video {
+		t.Fatalf("video = %v, ok = %v", video, ok)
 	}
 }

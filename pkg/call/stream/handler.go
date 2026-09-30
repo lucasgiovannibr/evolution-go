@@ -20,9 +20,13 @@ const (
 	pongWait   = 60 * time.Second
 	pingPeriod = 20 * time.Second
 
-	// A second of audio is 32 kB, 43 kB in base64; this leaves room for a few seconds
-	// per message and no more.
-	maxMessageBytes = 256 * 1024
+	// A second of audio is 43 kB in base64, and a keyframe of a 1080p stream a few
+	// hundred kilobytes; this leaves room for both and no more.
+	maxMessageBytes = 1 << 20
+
+	// controlQueue is how many events (video state, keyframe requests) wait for the
+	// socket writer. They are rare; a client so slow that this fills up loses them.
+	controlQueue = 16
 )
 
 // Config is what the stream needs from the configuration.
@@ -40,31 +44,47 @@ type Config struct {
 //
 // Server to client:
 //
-//	{"event":"start", "callId", "sampleRate":16000, "channels":1, "encoding":"audio/pcm-s16le", "frameMs":60, ...}
-//	{"event":"media", "track":"inbound", "seq":N, "payload":"<base64 pcm>"}   the peer's audio
+//	{"event":"start", "callId", "sampleRate":16000, "channels":1, "encoding":"audio/pcm-s16le", "frameMs":60,
+//	                  "direction", "video":<the call has video>, "videoStream":<video messages will follow>}
+//	{"event":"media", "track":"inbound", "seq":N, "payload":"<base64 pcm>"}            the peer's audio
+//	{"event":"video", "track":"inbound", "seq":N, "keyframe":bool, "orientation":0..3,
+//	                  "payload":"<base64 H.264 access unit, Annex-B>"}                  the peer's video
+//	{"event":"video_state", "active", "upgrade", "orientation"}                         the peer's camera or upgrade request
+//	{"event":"keyframe_request"}                                                        the next video you send must be an IDR
 //	{"event":"error", "code", "message"}
-//	{"event":"stop",  "reason"}                                                the call ended
+//	{"event":"stop",  "reason"}                                                         the call ended
 //
 // Client to server:
 //
-//	{"event":"media", "payload":"<base64 pcm>"}   audio for the peer, any chunk size
-//	{"event":"clear"}                             drop the audio queued for the peer
-//	{"event":"stop"}                              close the stream (the call is kept for a while)
+//	{"event":"media", "payload":"<base64 pcm>"}     audio for the peer, any chunk size
+//	{"event":"video", "payload":"<base64 access unit>"}   one H.264 access unit for the peer (video streams only)
+//	{"event":"clear"}                               drop the audio queued for the peer
+//	{"event":"stop"}                                close the stream (the call is kept for a while)
+//
+// Video is H.264 in Annex-B framing, one access unit (one picture) per message, with
+// the SPS and PPS in front of every keyframe. Send a keyframe first and again whenever
+// a keyframe_request arrives. Video is only delivered on streams whose ticket asked for
+// it; on the others "video" messages are ignored with an error.
 type message struct {
-	Event      string `json:"event"`
-	CallID     string `json:"callId,omitempty"`
-	Track      string `json:"track,omitempty"`
-	Seq        uint64 `json:"seq,omitempty"`
-	Payload    string `json:"payload,omitempty"`
-	SampleRate int    `json:"sampleRate,omitempty"`
-	Channels   int    `json:"channels,omitempty"`
-	Encoding   string `json:"encoding,omitempty"`
-	FrameMs    int    `json:"frameMs,omitempty"`
-	Direction  string `json:"direction,omitempty"`
-	Video      *bool  `json:"video,omitempty"`
-	Reason     string `json:"reason,omitempty"`
-	Code       string `json:"code,omitempty"`
-	Message    string `json:"message,omitempty"`
+	Event       string `json:"event"`
+	CallID      string `json:"callId,omitempty"`
+	Track       string `json:"track,omitempty"`
+	Seq         uint64 `json:"seq,omitempty"`
+	Payload     string `json:"payload,omitempty"`
+	SampleRate  int    `json:"sampleRate,omitempty"`
+	Channels    int    `json:"channels,omitempty"`
+	Encoding    string `json:"encoding,omitempty"`
+	FrameMs     int    `json:"frameMs,omitempty"`
+	Direction   string `json:"direction,omitempty"`
+	Video       *bool  `json:"video,omitempty"`
+	VideoStream *bool  `json:"videoStream,omitempty"`
+	Keyframe    *bool  `json:"keyframe,omitempty"`
+	Active      *bool  `json:"active,omitempty"`
+	Upgrade     *bool  `json:"upgrade,omitempty"`
+	Orientation *int   `json:"orientation,omitempty"`
+	Reason      string `json:"reason,omitempty"`
+	Code        string `json:"code,omitempty"`
+	Message     string `json:"message,omitempty"`
 }
 
 type handler struct {
@@ -109,7 +129,7 @@ func (h *handler) checkOrigin(r *http.Request) bool {
 func (h *handler) serve(c *gin.Context) {
 	callID := c.Param("callId")
 
-	instanceID, ok := h.tickets.Redeem(c.Query("ticket"), callID)
+	instanceID, video, ok := h.tickets.Redeem(c.Query("ticket"), callID)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired ticket"})
 		return
@@ -123,7 +143,7 @@ func (h *handler) serve(c *gin.Context) {
 	if err != nil {
 		return // Upgrade already answered
 	}
-	(&session{engine: h.engine, conn: conn, instanceID: instanceID, callID: callID}).run()
+	(&session{engine: h.engine, conn: conn, instanceID: instanceID, callID: callID, video: video}).run()
 }
 
 // session is one open socket attached to one call.
@@ -132,10 +152,14 @@ type session struct {
 	conn       *websocket.Conn
 	instanceID string
 	callID     string
+	video      bool // the ticket asked for video
 
 	stats  call_engine.StreamStats
 	bridge *bridge
+	vin    *videoIn  // nil on a stream without video
+	vout   *videoOut // nil on a stream without video
 	call   *call_engine.Tracked
+	ctrl   chan message
 
 	writeMu   sync.Mutex
 	quit      chan struct{}
@@ -162,13 +186,43 @@ func (s *session) sendError(code, text string) {
 
 func (s *session) stop() { s.quitOnce.Do(func() { close(s.quit) }) }
 
+// emit queues an event for the writer. It is called from the library's goroutine, so it
+// never blocks: an event the client is too slow to take is lost.
+func (s *session) emit(m message) {
+	select {
+	case s.ctrl <- m:
+	default:
+	}
+}
+
+func (s *session) videoState(v call_engine.VideoState) {
+	s.emit(message{Event: "video_state", Active: &v.Active, Upgrade: &v.Upgrade, Orientation: &v.Orientation})
+}
+
+func (s *session) keyframeRequest() {
+	if s.video {
+		s.emit(message{Event: "keyframe_request"})
+	}
+}
+
 func (s *session) run() {
 	defer s.conn.Close()
 	s.quit = make(chan struct{})
 	s.errorSent = map[string]bool{}
+	s.ctrl = make(chan message, controlQueue)
 	s.bridge = newBridge(&s.stats)
 
-	call, detach, err := s.engine.AttachStream(s.instanceID, s.callID, s.bridge, s.bridge, &s.stats)
+	ep := call_engine.Endpoints{
+		Sink: s.bridge, Source: s.bridge,
+		OnVideoState:      s.videoState,
+		OnKeyframeRequest: s.keyframeRequest,
+	}
+	if s.video {
+		s.vin = newVideoIn(&s.stats)
+		ep.Video = s.vin
+	}
+
+	call, detach, err := s.engine.AttachStream(s.instanceID, s.callID, ep, &s.stats)
 	if err != nil {
 		code := "call_not_found"
 		if errors.Is(err, call_engine.ErrStreamBusy) {
@@ -180,14 +234,17 @@ func (s *session) run() {
 	}
 	defer detach()
 	s.call = call
+	if s.video {
+		s.vout = newVideoOut(func(au []byte, d time.Duration) error { return call.Call().SendVideo(au, d) }, &s.stats)
+	}
 
 	info := call.Info()
-	video := info.Video
+	video, videoStream := info.Video, s.video
 	if err := s.send(message{
 		Event: "start", CallID: s.callID,
 		SampleRate: call_engine.SampleRate, Channels: 1, Encoding: "audio/pcm-s16le",
 		FrameMs:   call_engine.FrameSamples * 1000 / call_engine.SampleRate,
-		Direction: string(info.Direction), Video: &video,
+		Direction: string(info.Direction), Video: &video, VideoStream: &videoStream,
 	}); err != nil {
 		return
 	}
@@ -221,17 +278,48 @@ func (s *session) sendFrame(seq *uint64, frame []float32) error {
 	return err
 }
 
-// writeLoop is the only writer of the socket besides sendError: the peer's audio, the
-// keepalive pings and the end of the call.
+func (s *session) sendVideo(seq *uint64, f videoFrame) error {
+	*seq++
+	err := s.send(message{
+		Event: "video", Track: "inbound", Seq: *seq,
+		Keyframe: &f.keyframe, Orientation: &f.orientation,
+		Payload: base64.StdEncoding.EncodeToString(f.data),
+	})
+	if err == nil {
+		s.stats.VideoToClient.Add(1)
+	}
+	return err
+}
+
+// writeLoop is the only writer of the socket besides sendError: the peer's audio and
+// video, the events, the keepalive pings and the end of the call.
 func (s *session) writeLoop() {
 	ping := time.NewTicker(pingPeriod)
 	defer ping.Stop()
 
-	var seq uint64
+	// a nil channel never becomes ready: audio-only streams have no video to wait for
+	var video <-chan videoFrame
+	if s.vin != nil {
+		video = s.vin.frames
+	}
+
+	var seq, videoSeq uint64
 	for {
 		select {
 		case frame := <-s.bridge.toClient:
 			if err := s.sendFrame(&seq, frame); err != nil {
+				s.conn.Close()
+				return
+			}
+
+		case f := <-video:
+			if err := s.sendVideo(&videoSeq, f); err != nil {
+				s.conn.Close()
+				return
+			}
+
+		case m := <-s.ctrl:
+			if err := s.send(m); err != nil {
 				s.conn.Close()
 				return
 			}
@@ -303,11 +391,36 @@ func (s *session) readLoop() {
 			if s.stats.DroppedFromClient.Load() != before {
 				s.sendError("outbound_overflow", "too much audio is queued for the peer; it is being dropped")
 			}
+		case "video":
+			s.clientVideo(m)
 		case "clear":
 			s.bridge.Clear()
 		case "stop":
 			return
 		}
 		// Unknown events are ignored, so the protocol can grow without breaking clients.
+	}
+}
+
+func (s *session) clientVideo(m message) {
+	if s.vout == nil {
+		s.sendError("video_not_enabled", "this stream was opened without video: ask for it with {\"video\": true} when requesting the ticket")
+		return
+	}
+	if m.Track != "" && m.Track != "outbound" {
+		return
+	}
+	au, err := base64.StdEncoding.DecodeString(m.Payload)
+	if err != nil {
+		s.sendError("bad_payload", "payload must be base64 of one H.264 access unit in Annex-B framing")
+		return
+	}
+	switch err := s.vout.Send(au); {
+	case err == nil:
+	case errors.Is(err, ErrNotAnnexB), errors.Is(err, ErrAccessUnitTooLarge):
+		s.sendError("bad_video", err.Error())
+	default:
+		// normal for a client that starts a little early; the stats count every one
+		s.sendError("video_not_ready", "the call is not sending video yet ("+err.Error()+"); start it with POST /call/video or wait for the peer to accept")
 	}
 }
