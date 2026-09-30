@@ -3368,6 +3368,7 @@ func NewWhatsmeowService(
 	svc.callEngine = call_engine.NewManager(call_engine.Options{
 		MaxConcurrent: config.CallMaxConcurrent,
 		RingTimeout:   time.Duration(config.CallRingTimeout) * time.Second,
+		StreamGrace:   time.Duration(config.CallStreamGrace) * time.Second,
 		Notify:        svc.publishCallEvent,
 	})
 	return svc

@@ -26,6 +26,8 @@ type Info struct {
 	Phase     Phase     `json:"phase"`
 	Video     bool      `json:"video"`
 	StartedAt time.Time `json:"startedAt"`
+	// Stream describes the audio stream of the call; absent when none ever attached.
+	Stream *StreamInfo `json:"stream,omitempty"`
 }
 
 // Tracked is a call the Manager follows from its start until it ends, whoever ends it
@@ -39,9 +41,15 @@ type Tracked struct {
 	done    chan struct{}
 	endOnce sync.Once
 
+	// act serialises answer/hangup so two requests cannot both act on the same phase.
+	act sync.Mutex
+
 	mu       sync.Mutex
 	override string // reason to report instead of the library's, when this project ended the call
 	reason   string
+	stats    *StreamStats // of the last audio stream that attached
+	attached bool         // an audio stream is attached right now
+	grace    *time.Timer  // hangs the call up when its stream does not come back
 }
 
 // Call is the underlying call.
@@ -58,7 +66,7 @@ func (t *Tracked) Reason() string {
 }
 
 func (t *Tracked) Info() Info {
-	return Info{
+	info := Info{
 		CallID:    t.call.ID(),
 		Peer:      t.call.Peer().String(),
 		Direction: t.direction,
@@ -66,6 +74,18 @@ func (t *Tracked) Info() Info {
 		Video:     t.call.IsVideo(),
 		StartedAt: t.startedAt,
 	}
+	t.mu.Lock()
+	if t.stats != nil {
+		info.Stream = &StreamInfo{
+			Attached:          t.attached,
+			ToClient:          t.stats.ToClient.Load(),
+			FromClient:        t.stats.FromClient.Load(),
+			DroppedToClient:   t.stats.DroppedToClient.Load(),
+			DroppedFromClient: t.stats.DroppedFromClient.Load(),
+		}
+	}
+	t.mu.Unlock()
+	return info
 }
 
 func (t *Tracked) eventData() map[string]interface{} {
@@ -200,6 +220,9 @@ func (m *Manager) finish(instanceID string, t *Tracked, libReason string) {
 			reason = t.override
 		}
 		t.reason = reason
+		if t.grace != nil {
+			t.grace.Stop()
+		}
 		t.mu.Unlock()
 		close(t.done)
 

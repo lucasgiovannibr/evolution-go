@@ -25,6 +25,7 @@ import (
 
 	call_handler "github.com/evolution-foundation/evolution-go/pkg/call/handler"
 	call_service "github.com/evolution-foundation/evolution-go/pkg/call/service"
+	call_stream "github.com/evolution-foundation/evolution-go/pkg/call/stream"
 	chat_handler "github.com/evolution-foundation/evolution-go/pkg/chat/handler"
 	chat_service "github.com/evolution-foundation/evolution-go/pkg/chat/service"
 	community_handler "github.com/evolution-foundation/evolution-go/pkg/community/handler"
@@ -195,7 +196,8 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	messageService := message_service.NewMessageService(clientPointer, messageRepository, whatsmeowService, loggerWrapper)
 	chatService := chat_service.NewChatService(clientPointer, whatsmeowService, loggerWrapper)
 	groupService := group_service.NewGroupService(clientPointer, whatsmeowService, loggerWrapper)
-	callService := call_service.NewCallService(clientPointer, whatsmeowService, loggerWrapper)
+	callTickets := call_stream.NewTickets()
+	callService := call_service.NewCallService(clientPointer, whatsmeowService, callTickets, loggerWrapper)
 	communityService := community_service.NewCommunityService(clientPointer, whatsmeowService, loggerWrapper)
 	labelService := label_service.NewLabelService(clientPointer, whatsmeowService, labelRepository, loggerWrapper)
 	newsletterService := newsletter_service.NewNewsletterService(clientPointer, whatsmeowService, loggerWrapper)
@@ -227,6 +229,10 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	// Passkey ceremony routes — PUBLIC (called by the browser extension from the
 	// web.whatsapp.com origin, gated only by an opaque ephemeral token).
 	passkey_handler.RegisterRoutes(r, whatsmeowService)
+
+	// Audio stream of calls — authorised by a one-time ticket instead of the apikey
+	// header, because a browser cannot set that header on a WebSocket.
+	call_stream.RegisterRoutes(r, whatsmeowService.CallEngine(), callTickets, call_stream.Config{AllowedOrigins: config.CallStreamOrigins})
 
 	routes.NewRouter(
 		auth_middleware.NewMiddleware(config, instanceService),

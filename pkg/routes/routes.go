@@ -221,6 +221,10 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 		{
 			routes.POST("/reject", r.jidValidationMiddleware.ValidateNumberField(), r.callHandler.RejectCall)
 			routes.GET("/active", r.callHandler.ActiveCalls)
+			routes.GET("/:callId", r.callHandler.GetCall)
+			routes.POST("/answer", r.callHandler.AnswerCall)
+			routes.POST("/hangup", r.callHandler.HangupCall)
+			routes.POST("/stream-ticket", r.callHandler.StreamTicket)
 		}
 	}
 	routes = eng.Group("/community")

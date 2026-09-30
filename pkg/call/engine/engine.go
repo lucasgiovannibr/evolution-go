@@ -46,6 +46,30 @@ const (
 	PhaseOther      Phase = "other" // idle or waiting room: nothing this project acts on
 )
 
+// The audio format of every call: 16 kHz mono, in frames of 60 ms. Taken from the
+// library so a change there cannot go unnoticed.
+const (
+	SampleRate   = meowcaller.SampleRate
+	FrameSamples = meowcaller.FrameSamples
+)
+
+// AudioSink consumes the peer's audio: 16 kHz mono float32 frames, normally 960
+// samples (60 ms) but the decoder may hand over more than one frame at a time. The
+// library calls it from its receive goroutine, so it must not block, and closes it
+// when the call ends.
+type AudioSink interface {
+	WriteFrame(frame []float32) error
+	Close() error
+}
+
+// AudioSource yields the audio to send. The library asks for a frame every 60 ms from
+// its send loop, so ReadFrame must not block: nil frame and nil error means "nothing
+// yet, send silence", and any error (io.EOF included) ends the source.
+type AudioSource interface {
+	ReadFrame() ([]float32, error)
+	Close() error
+}
+
 // Call is what the rest of the code may do with a live call. The library's call
 // satisfies it through libCall; tests use fakes.
 type Call interface {
@@ -60,6 +84,10 @@ type Call interface {
 	// The Manager owns them; everything else waits on Tracked.Done().
 	OnReady(fn func())
 	OnEnd(fn func(reason string))
+	// Receive attaches the sink for the peer's audio (nil detaches), Play the source of
+	// the audio sent to the peer. Each replaces the previous one.
+	Receive(sink AudioSink)
+	Play(src AudioSource)
 }
 
 // libCall adapts the library's call to Call. The embedded *meowcaller.Call already
@@ -67,6 +95,16 @@ type Call interface {
 type libCall struct{ *meowcaller.Call }
 
 var _ Call = libCall{}
+
+func (c libCall) Receive(sink AudioSink) {
+	if sink == nil {
+		c.Call.Receive(nil)
+		return
+	}
+	c.Call.Receive(sink)
+}
+
+func (c libCall) Play(src AudioSource) { c.Call.Play(src) }
 
 func (c libCall) Phase() Phase {
 	switch c.State() {
@@ -126,6 +164,8 @@ const (
 	// It is longer than WhatsApp's own ring time, so it only catches calls whose end
 	// never arrived.
 	DefaultRingTimeout = 90 * time.Second
+	// DefaultStreamGrace is how long a call without an audio stream is kept.
+	DefaultStreamGrace = 10 * time.Second
 )
 
 // Notifier publishes a call lifecycle event of an instance (CallReady, CallEnded).
@@ -135,7 +175,10 @@ type Notifier func(instanceID, event string, data map[string]interface{})
 type Options struct {
 	MaxConcurrent int
 	RingTimeout   time.Duration
-	Notify        Notifier
+	// StreamGrace is how long a running call waits for its audio stream to come back
+	// before it is hung up.
+	StreamGrace time.Duration
+	Notify      Notifier
 }
 
 // Manager keeps one engine per instance and the calls each one has. Build it with
@@ -155,6 +198,9 @@ func NewManager(opts Options) *Manager {
 	}
 	if opts.RingTimeout <= 0 {
 		opts.RingTimeout = DefaultRingTimeout
+	}
+	if opts.StreamGrace <= 0 {
+		opts.StreamGrace = DefaultStreamGrace
 	}
 	return &Manager{
 		opts:     opts,

@@ -23,16 +23,43 @@ type fakeCall struct {
 	rejected int
 	hungUp   int
 	netErr   error
+	answered int
+	ansErr   error
+	sink     AudioSink
+	src      AudioSource
 }
 
 func newFake(id string) *fakeCall { return &fakeCall{id: id, phase: PhaseRinging} }
 
-func (f *fakeCall) ID() string        { return f.id }
-func (f *fakeCall) IsVideo() bool     { return f.video }
-func (f *fakeCall) Peer() types.JID   { return types.NewJID("5511999990000", types.DefaultUserServer) }
-func (f *fakeCall) Answer() error     { return nil }
-func (f *fakeCall) Phase() Phase      { f.mu.Lock(); defer f.mu.Unlock(); return f.phase }
-func (f *fakeCall) OnReady(fn func()) { f.mu.Lock(); f.onReady = fn; f.mu.Unlock() }
+func (f *fakeCall) ID() string      { return f.id }
+func (f *fakeCall) IsVideo() bool   { return f.video }
+func (f *fakeCall) Peer() types.JID { return types.NewJID("5511999990000", types.DefaultUserServer) }
+func (f *fakeCall) Answer() error {
+	f.mu.Lock()
+	f.answered++
+	f.phase = PhaseConnecting
+	f.mu.Unlock()
+	return f.answerErr()
+}
+
+func (f *fakeCall) answerErr() error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.ansErr
+}
+
+func (f *fakeCall) Receive(sink AudioSink) { f.mu.Lock(); f.sink = sink; f.mu.Unlock() }
+func (f *fakeCall) Play(src AudioSource)   { f.mu.Lock(); f.src = src; f.mu.Unlock() }
+
+func (f *fakeCall) attached() (AudioSink, AudioSource) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.sink, f.src
+}
+
+func (f *fakeCall) unusedAnswer() error { return nil }
+func (f *fakeCall) Phase() Phase        { f.mu.Lock(); defer f.mu.Unlock(); return f.phase }
+func (f *fakeCall) OnReady(fn func())   { f.mu.Lock(); f.onReady = fn; f.mu.Unlock() }
 func (f *fakeCall) OnEnd(fn func(string)) {
 	f.mu.Lock()
 	f.onEnd = fn
