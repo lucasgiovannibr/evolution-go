@@ -19,8 +19,10 @@ Video: --video also carries the call's video. What the peer sends is written to
 <name>.h264 (play it with `ffplay file.h264`). --video-in FILE sends that H.264 file
 (Annex-B, see below) to the peer at --fps; it starts over from its first keyframe
 whenever WhatsApp asks for one. With --dial, --video places a video call; on an audio
-call, --video-in asks the peer to upgrade to video. A peer's upgrade request is
-accepted automatically.
+call, --video-in turns the video on after the call is up: --video-mode start (default)
+sends the upgrade request of older WhatsApp versions, --video-mode enable just turns
+the camera on, which is what current WhatsApp does. A peer's upgrade request is accepted
+automatically; a peer that simply turns its camera on needs nothing.
 
     python call-stream-test.py --apikey TOKEN --echo
     python call-stream-test.py --apikey TOKEN --dial 5511999990000 --tone 3
@@ -180,8 +182,11 @@ async def main(args):
         async def send_video(units):
             await asyncio.sleep(2)  # let the call come up
             if not start.get("video"):
-                print("the call is audio only: asking the peer to upgrade to video")
-                control("start")
+                if args.video_mode == "enable":
+                    print("the call is audio only: turning the camera on")
+                else:
+                    print("the call is audio only: asking the peer to upgrade to video")
+                control(args.video_mode)
                 await asyncio.sleep(3)
             i, sent = 0, 0
             while True:
@@ -224,7 +229,7 @@ async def main(args):
                 elif event == "keyframe_request":
                     restart.set()
                 elif event == "video_state":
-                    print("peer video state:", {k: msg.get(k) for k in ("active", "upgrade", "orientation")})
+                    print("peer video state:", {k: msg.get(k) for k in ("state", "active", "upgrade", "orientation")})
                     if msg.get("upgrade"):
                         control("accept")
                 elif event == "stop":
@@ -272,6 +277,9 @@ if __name__ == "__main__":
     p.add_argument("--tone", type=float, default=0, metavar="SECONDS", help="play a 440 Hz tone")
     p.add_argument("--video", action="store_true", help="carry the call's video too (with --dial: place a video call)")
     p.add_argument("--video-in", metavar="FILE", help="send this Annex-B H.264 file as video (implies --video)")
+    p.add_argument("--video-mode", choices=("start", "enable"), default="start",
+                   help="how --video-in begins on an audio call: ask the peer to upgrade (start) "
+                        "or just turn the camera on (enable)")
     p.add_argument("--fps", type=float, default=15, help="pictures per second of --video-in")
     try:
         asyncio.run(main(p.parse_args()))

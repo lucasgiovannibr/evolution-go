@@ -30,6 +30,7 @@ import (
 	"time"
 
 	"github.com/purpshell/meowcaller"
+	"github.com/purpshell/meowcaller/signaling"
 	"github.com/rs/zerolog"
 	"go.mau.fi/whatsmeow"
 	"go.mau.fi/whatsmeow/types"
@@ -90,6 +91,52 @@ type VideoState struct {
 	Upgrade bool `json:"upgrade"`
 	// Orientation is the peer's device rotation in clockwise quarter turns (0..3).
 	Orientation int `json:"orientation"`
+	// State is what the peer actually signalled, see the VideoState* constants. Active
+	// and Upgrade alone cannot tell the peer accepting our upgrade from it turning its
+	// camera off: both leave them false.
+	State string `json:"state"`
+}
+
+// What the peer signalled about its video (VideoState.State).
+const (
+	// VideoStateEnabled: the peer's camera is on. Nobody asks or answers: in current
+	// WhatsApp a side simply turns its camera on.
+	VideoStateEnabled = "enabled"
+	// VideoStateDisabled: the peer muted its camera; the video may come back.
+	VideoStateDisabled = "disabled"
+	// VideoStateStopped: the peer stopped sending video.
+	VideoStateStopped = "stopped"
+	// VideoStateUpgradeRequest: the peer asks to turn the call into a video call.
+	VideoStateUpgradeRequest = "upgrade_request"
+	// VideoStateUpgradeAccepted: the peer accepted the upgrade we asked for.
+	VideoStateUpgradeAccepted = "upgrade_accepted"
+	// VideoStateUpgradeRejected: the peer refused the upgrade we asked for.
+	VideoStateUpgradeRejected = "upgrade_rejected"
+	// VideoStateUpgradeCancelled: the peer took back its own upgrade request.
+	VideoStateUpgradeCancelled = "upgrade_cancelled"
+	// VideoStateUnknown: a state this code does not know; the call carries on.
+	VideoStateUnknown = "unknown"
+)
+
+// videoStateName names the library's raw video state.
+func videoStateName(raw int) string {
+	switch raw {
+	case signaling.VideoStateEnabled:
+		return VideoStateEnabled
+	case signaling.VideoStateDisabled:
+		return VideoStateDisabled
+	case signaling.VideoStateStopped:
+		return VideoStateStopped
+	case signaling.VideoStateUpgradeRequest, signaling.VideoStateUpgradeRequestV2:
+		return VideoStateUpgradeRequest
+	case signaling.VideoStateUpgradeAccept:
+		return VideoStateUpgradeAccepted
+	case signaling.VideoStateUpgradeReject:
+		return VideoStateUpgradeRejected
+	case signaling.VideoStateUpgradeCancel:
+		return VideoStateUpgradeCancelled
+	}
+	return VideoStateUnknown
 }
 
 // Call is what the rest of the code may do with a live call. The library's call
@@ -160,7 +207,7 @@ func (c libCall) SendVideo(accessUnit []byte, duration time.Duration) error {
 
 func (c libCall) OnVideoState(fn func(VideoState)) {
 	c.Call.OnVideoState(func(v meowcaller.VideoState) {
-		fn(VideoState{Active: v.Active, Upgrade: v.Upgrade, Orientation: v.Orientation})
+		fn(VideoState{Active: v.Active, Upgrade: v.Upgrade, Orientation: v.Orientation, State: videoStateName(v.Raw)})
 	})
 }
 

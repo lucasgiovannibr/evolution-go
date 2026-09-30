@@ -49,7 +49,9 @@ type Config struct {
 //	{"event":"media", "track":"inbound", "seq":N, "payload":"<base64 pcm>"}            the peer's audio
 //	{"event":"video", "track":"inbound", "seq":N, "keyframe":bool, "orientation":0..3,
 //	                  "payload":"<base64 H.264 access unit, Annex-B>"}                  the peer's video
-//	{"event":"video_state", "active", "upgrade", "orientation"}                         the peer's camera or upgrade request
+//	{"event":"video_state", "active", "upgrade", "orientation", "state"}                the peer's camera or upgrade request;
+//	                  "state" is enabled, disabled, stopped, upgrade_request, upgrade_accepted,
+//	                  upgrade_rejected, upgrade_cancelled or unknown
 //	{"event":"keyframe_request"}                                                        the next video you send must be an IDR
 //	{"event":"error", "code", "message"}
 //	{"event":"stop",  "reason"}                                                         the call ended
@@ -82,6 +84,7 @@ type message struct {
 	Active      *bool  `json:"active,omitempty"`
 	Upgrade     *bool  `json:"upgrade,omitempty"`
 	Orientation *int   `json:"orientation,omitempty"`
+	State       string `json:"state,omitempty"`
 	Reason      string `json:"reason,omitempty"`
 	Code        string `json:"code,omitempty"`
 	Message     string `json:"message,omitempty"`
@@ -196,7 +199,7 @@ func (s *session) emit(m message) {
 }
 
 func (s *session) videoState(v call_engine.VideoState) {
-	s.emit(message{Event: "video_state", Active: &v.Active, Upgrade: &v.Upgrade, Orientation: &v.Orientation})
+	s.emit(message{Event: "video_state", Active: &v.Active, Upgrade: &v.Upgrade, Orientation: &v.Orientation, State: v.State})
 }
 
 func (s *session) keyframeRequest() {
