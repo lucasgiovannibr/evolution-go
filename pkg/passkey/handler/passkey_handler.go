@@ -13,6 +13,7 @@ package handler
 import (
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	"github.com/gin-gonic/gin"
 	"go.mau.fi/whatsmeow/types"
@@ -118,12 +119,12 @@ func (h *PasskeyHandler) SubmitResponse(c *gin.Context) {
 	// base64url-unpadded, which matches types.WebAuthnResponse's json tags.
 	var resp types.WebAuthnResponse
 	if err := c.ShouldBindJSON(&resp); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(c, err)
 		return
 	}
 
 	if err := h.whatsmeowService.SubmitPasskeyResponse(instanceID, &resp); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(c, err)
 		return
 	}
 
@@ -162,7 +163,7 @@ func (h *PasskeyHandler) Confirm(c *gin.Context) {
 	}
 
 	if err := h.whatsmeowService.ConfirmPasskey(instanceID); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(c, err)
 		return
 	}
 

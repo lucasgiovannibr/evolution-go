@@ -3,6 +3,7 @@ package label_handler
 import (
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	label_service "github.com/evolution-foundation/evolution-go/pkg/label/service"
 	"github.com/gin-gonic/gin"
@@ -44,7 +45,7 @@ func (l *labelHandler) ChatLabel(ctx *gin.Context) {
 	var data *label_service.ChatLabelStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -60,7 +61,7 @@ func (l *labelHandler) ChatLabel(ctx *gin.Context) {
 
 	err = l.labelService.ChatLabel(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -90,7 +91,7 @@ func (l *labelHandler) MessageLabel(ctx *gin.Context) {
 	var data *label_service.MessageLabelStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -111,7 +112,7 @@ func (l *labelHandler) MessageLabel(ctx *gin.Context) {
 
 	err = l.labelService.MessageLabel(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -141,7 +142,7 @@ func (l *labelHandler) EditLabel(ctx *gin.Context) {
 	var data *label_service.EditLabelStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -157,7 +158,7 @@ func (l *labelHandler) EditLabel(ctx *gin.Context) {
 
 	err = l.labelService.EditLabel(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -187,7 +188,7 @@ func (l *labelHandler) ChatUnlabel(ctx *gin.Context) {
 	var data *label_service.ChatLabelStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -203,7 +204,7 @@ func (l *labelHandler) ChatUnlabel(ctx *gin.Context) {
 
 	err = l.labelService.ChatUnlabel(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -233,7 +234,7 @@ func (l *labelHandler) MessageUnlabel(ctx *gin.Context) {
 	var data *label_service.MessageLabelStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -254,7 +255,7 @@ func (l *labelHandler) MessageUnlabel(ctx *gin.Context) {
 
 	err = l.labelService.MessageUnlabel(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -281,7 +282,7 @@ func (l *labelHandler) GetLabels(ctx *gin.Context) {
 
 	labels, err := l.labelService.GetLabels(instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 

@@ -7,6 +7,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	send_service "github.com/evolution-foundation/evolution-go/pkg/sendMessage/service"
 	"github.com/gin-gonic/gin"
@@ -55,7 +56,7 @@ func (s *sendHandler) SendText(ctx *gin.Context) {
 	var data *send_service.TextStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -71,7 +72,7 @@ func (s *sendHandler) SendText(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendText(data, instance)
 	if err != nil {
-		respondSendError(ctx, err)
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -101,7 +102,7 @@ func (s *sendHandler) SendLink(ctx *gin.Context) {
 	var data *send_service.LinkStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -117,7 +118,7 @@ func (s *sendHandler) SendLink(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendLink(data, instance)
 	if err != nil {
-		respondSendError(ctx, err)
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -231,7 +232,7 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 		// Pass fileBytes to the send service
 		message, err := s.sendMessageService.SendMediaFile(data, fileBytes, instance)
 		if err != nil {
-			respondSendError(ctx, err)
+			apierror.Respond(ctx, err)
 			return
 		}
 
@@ -241,7 +242,7 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 
 		err := ctx.ShouldBindBodyWithJSON(&data)
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			apierror.BadRequest(ctx, err)
 			return
 		}
 
@@ -271,13 +272,13 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 			}
 			message, err = s.sendMessageService.SendMediaFile(data, fileBytes, instance)
 			if err != nil {
-				respondSendError(ctx, err)
+				apierror.Respond(ctx, err)
 				return
 			}
 		} else {
 			message, err = s.sendMessageService.SendMediaUrl(data, instance)
 			if err != nil {
-				respondSendError(ctx, err)
+				apierror.Respond(ctx, err)
 				return
 			}
 		}
@@ -309,7 +310,7 @@ func (s *sendHandler) SendPoll(ctx *gin.Context) {
 	var data *send_service.PollStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -319,13 +320,13 @@ func (s *sendHandler) SendPoll(ctx *gin.Context) {
 	}
 
 	if err := data.ValidatePoll(); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
 	message, err := s.sendMessageService.SendPoll(data, instance)
 	if err != nil {
-		respondSendError(ctx, err)
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -354,7 +355,7 @@ func (s *sendHandler) SendPollVote(ctx *gin.Context) {
 
 	var data *send_service.PollVoteStruct
 	if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -369,7 +370,7 @@ func (s *sendHandler) SendPollVote(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendPollVote(data, instance)
 	if err != nil {
-		respondSendError(ctx, err)
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -399,7 +400,7 @@ func (s *sendHandler) SendSticker(ctx *gin.Context) {
 	var data *send_service.StickerStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -415,7 +416,7 @@ func (s *sendHandler) SendSticker(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendSticker(data, instance)
 	if err != nil {
-		respondSendError(ctx, err)
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -445,7 +446,7 @@ func (s *sendHandler) SendLocation(ctx *gin.Context) {
 	var data *send_service.LocationStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -455,13 +456,13 @@ func (s *sendHandler) SendLocation(ctx *gin.Context) {
 	}
 
 	if err := data.Validate(); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
 	message, err := s.sendMessageService.SendLocation(data, instance)
 	if err != nil {
-		respondSendError(ctx, err)
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -491,7 +492,7 @@ func (s *sendHandler) SendContact(ctx *gin.Context) {
 	var data *send_service.ContactStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -512,7 +513,7 @@ func (s *sendHandler) SendContact(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendContact(data, instance)
 	if err != nil {
-		respondSendError(ctx, err)
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -553,7 +554,7 @@ func (s *sendHandler) SendButton(ctx *gin.Context) {
 	var data *send_service.ButtonStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -579,7 +580,7 @@ func (s *sendHandler) SendButton(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendButton(data, instance)
 	if err != nil {
-		respondSendError(ctx, err)
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -615,7 +616,7 @@ func (s *sendHandler) SendList(ctx *gin.Context) {
 	var data *send_service.ListStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -646,7 +647,7 @@ func (s *sendHandler) SendList(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendList(data, instance)
 	if err != nil {
-		respondSendError(ctx, err)
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -691,7 +692,7 @@ func (s *sendHandler) SendCarousel(ctx *gin.Context) {
 	var data *send_service.CarouselStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -707,7 +708,7 @@ func (s *sendHandler) SendCarousel(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendCarousel(data, instance)
 	if err != nil {
-		respondSendError(ctx, err)
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -737,7 +738,7 @@ func (s *sendHandler) SendStatusText(ctx *gin.Context) {
 	data := new(send_service.StatusTextStruct)
 	err := ctx.ShouldBindBodyWithJSON(data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -748,7 +749,7 @@ func (s *sendHandler) SendStatusText(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendStatusText(data, instance)
 	if err != nil {
-		respondSendError(ctx, err)
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -824,7 +825,7 @@ func (s *sendHandler) SendStatusMedia(ctx *gin.Context) {
 
 		message, err := s.sendMessageService.SendStatusMediaFile(data, fileBytes, instance)
 		if err != nil {
-			respondSendError(ctx, err)
+			apierror.Respond(ctx, err)
 			return
 		}
 
@@ -834,7 +835,7 @@ func (s *sendHandler) SendStatusMedia(ctx *gin.Context) {
 
 	err := ctx.ShouldBindBodyWithJSON(data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -850,7 +851,7 @@ func (s *sendHandler) SendStatusMedia(ctx *gin.Context) {
 
 	message, err := s.sendMessageService.SendStatusMediaUrl(data, instance)
 	if err != nil {
-		respondSendError(ctx, err)
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -863,15 +864,4 @@ func NewSendHandler(
 	return &sendHandler{
 		sendMessageService: sendMessageService,
 	}
-}
-
-// respondSendError answers a failed send: 429 with Retry-After when the instance is over its
-// send limit (see send_service.ErrSendThrottled), 500 with the message for anything else.
-func respondSendError(ctx *gin.Context, err error) {
-	if t, ok := send_service.AsThrottled(err); ok {
-		ctx.Header("Retry-After", strconv.Itoa(t.RetryAfterSeconds()))
-		ctx.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
-		return
-	}
-	ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 }

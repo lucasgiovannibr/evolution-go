@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	call_engine "github.com/evolution-foundation/evolution-go/pkg/call/engine"
 	call_service "github.com/evolution-foundation/evolution-go/pkg/call/service"
 	call_stream "github.com/evolution-foundation/evolution-go/pkg/call/stream"
@@ -50,13 +51,13 @@ func (g *callHandler) RejectCall(ctx *gin.Context) {
 	var data *call_service.RejectCallStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
 	err = g.callService.RejectCall(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 

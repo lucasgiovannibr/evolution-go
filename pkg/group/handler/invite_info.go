@@ -3,6 +3,7 @@ package group_handler
 import (
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	group_service "github.com/evolution-foundation/evolution-go/pkg/group/service"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/gin-gonic/gin"
@@ -28,7 +29,7 @@ func (g *groupHandler) GetInviteInfo(ctx *gin.Context) {
 
 	var data *group_service.GroupInviteStruct
 	if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 	if data.Code == "" {
@@ -38,7 +39,7 @@ func (g *groupHandler) GetInviteInfo(ctx *gin.Context) {
 
 	info, err := g.groupService.GetInviteInfo(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -65,7 +66,7 @@ func (g *groupHandler) JoinGroupInvite(ctx *gin.Context) {
 
 	var data *group_service.GroupInviteStruct
 	if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 	if data.Code == "" {
@@ -78,7 +79,7 @@ func (g *groupHandler) JoinGroupInvite(ctx *gin.Context) {
 	}
 
 	if err := g.groupService.JoinGroupInvite(data, instance); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 

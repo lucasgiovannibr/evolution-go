@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	user_service "github.com/evolution-foundation/evolution-go/pkg/user/service"
 	"github.com/gin-gonic/gin"
@@ -51,7 +52,7 @@ func (u *userHandler) GetUserDevices(ctx *gin.Context) {
 		Number interface{} `json:"number"`
 	}
 	if err := ctx.ShouldBindBodyWithJSON(&raw); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 	data := &user_service.DevicesStruct{}

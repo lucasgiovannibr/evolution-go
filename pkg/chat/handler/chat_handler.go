@@ -3,6 +3,7 @@ package chat_handler
 import (
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	chat_service "github.com/evolution-foundation/evolution-go/pkg/chat/service"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/gin-gonic/gin"
@@ -47,7 +48,7 @@ func (c *chatHandler) ChatPin(ctx *gin.Context) {
 	var data *chat_service.BodyStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -92,7 +93,7 @@ func (c *chatHandler) ChatUnpin(ctx *gin.Context) {
 	var data *chat_service.BodyStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -137,7 +138,7 @@ func (c *chatHandler) ChatArchive(ctx *gin.Context) {
 	var data *chat_service.BodyStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -182,7 +183,7 @@ func (c *chatHandler) ChatUnarchive(ctx *gin.Context) {
 	var data *chat_service.BodyStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -227,7 +228,7 @@ func (c *chatHandler) ChatMute(ctx *gin.Context) {
 	var data *chat_service.BodyStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -272,7 +273,7 @@ func (c *chatHandler) ChatUnmute(ctx *gin.Context) {
 	var data *chat_service.BodyStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -317,13 +318,13 @@ func (c *chatHandler) HistorySyncRequest(ctx *gin.Context) {
 	var data *chat_service.HistorySyncRequestStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
 	resp, err := c.chatService.HistorySyncRequest(ctx.Request.Context(), data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 

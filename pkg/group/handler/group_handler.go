@@ -3,6 +3,7 @@ package group_handler
 import (
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	group_service "github.com/evolution-foundation/evolution-go/pkg/group/service"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/gin-gonic/gin"
@@ -51,7 +52,7 @@ func (g *groupHandler) ListGroups(ctx *gin.Context) {
 
 	resp, err := g.groupService.ListGroups(instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -81,7 +82,7 @@ func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
 	var data *group_service.GetGroupInfoStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -92,7 +93,7 @@ func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
 
 	resp, err := g.groupService.GetGroupInfo(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -122,7 +123,7 @@ func (g *groupHandler) GetGroupInviteLink(ctx *gin.Context) {
 	var data *group_service.GetGroupInviteLinkStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -133,7 +134,7 @@ func (g *groupHandler) GetGroupInviteLink(ctx *gin.Context) {
 
 	resp, err := g.groupService.GetGroupInviteLink(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -163,7 +164,7 @@ func (g *groupHandler) SetGroupPhoto(ctx *gin.Context) {
 	var data *group_service.SetGroupPhotoStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -179,7 +180,7 @@ func (g *groupHandler) SetGroupPhoto(ctx *gin.Context) {
 
 	resp, err := g.groupService.SetGroupPhoto(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -209,7 +210,7 @@ func (g *groupHandler) SetGroupName(ctx *gin.Context) {
 	var data *group_service.SetGroupNameStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -225,7 +226,7 @@ func (g *groupHandler) SetGroupName(ctx *gin.Context) {
 
 	err = g.groupService.SetGroupName(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -255,7 +256,7 @@ func (g *groupHandler) SetGroupDescription(ctx *gin.Context) {
 	var data *group_service.SetGroupDescriptionStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -269,7 +270,7 @@ func (g *groupHandler) SetGroupDescription(ctx *gin.Context) {
 
 	err = g.groupService.SetGroupDescription(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -299,7 +300,7 @@ func (g *groupHandler) CreateGroup(ctx *gin.Context) {
 	var data *group_service.CreateGroupStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -315,7 +316,7 @@ func (g *groupHandler) CreateGroup(ctx *gin.Context) {
 
 	group, err := g.groupService.CreateGroup(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -345,7 +346,7 @@ func (g *groupHandler) UpdateParticipant(ctx *gin.Context) {
 	var data *group_service.AddParticipantStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -366,7 +367,7 @@ func (g *groupHandler) UpdateParticipant(ctx *gin.Context) {
 
 	results, err := g.groupService.UpdateParticipant(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -402,7 +403,7 @@ func (g *groupHandler) GetMyGroups(ctx *gin.Context) {
 
 	groups, err := g.groupService.GetMyGroups(instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -432,7 +433,7 @@ func (g *groupHandler) JoinGroupLink(ctx *gin.Context) {
 	var data *group_service.JoinGroupStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -443,7 +444,7 @@ func (g *groupHandler) JoinGroupLink(ctx *gin.Context) {
 
 	err = g.groupService.JoinGroupLink(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -473,7 +474,7 @@ func (g *groupHandler) LeaveGroup(ctx *gin.Context) {
 	var data *group_service.LeaveGroupStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -484,7 +485,7 @@ func (g *groupHandler) LeaveGroup(ctx *gin.Context) {
 
 	err = g.groupService.LeaveGroup(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -514,7 +515,7 @@ func (g *groupHandler) UpdateGroupSettings(ctx *gin.Context) {
 	var data *group_service.UpdateGroupSettingsStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -530,7 +531,7 @@ func (g *groupHandler) UpdateGroupSettings(ctx *gin.Context) {
 
 	err = g.groupService.UpdateGroupSettings(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -559,7 +560,7 @@ func (g *groupHandler) GetGroupRequests(ctx *gin.Context) {
 
 	var data *group_service.GetGroupRequestParticipantsStruct
 	if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -570,7 +571,7 @@ func (g *groupHandler) GetGroupRequests(ctx *gin.Context) {
 
 	requests, err := g.groupService.GetGroupRequestParticipants(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -599,7 +600,7 @@ func (g *groupHandler) UpdateGroupRequests(ctx *gin.Context) {
 
 	var data *group_service.UpdateGroupRequestParticipantsStruct
 	if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -618,7 +619,7 @@ func (g *groupHandler) UpdateGroupRequests(ctx *gin.Context) {
 
 	results, err := g.groupService.UpdateGroupRequestParticipants(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	user_service "github.com/evolution-foundation/evolution-go/pkg/user/service"
 	"github.com/gin-gonic/gin"
@@ -23,7 +24,7 @@ func writeUserWAError(ctx *gin.Context, err error) {
 	var invalidNumber *user_service.InvalidNumberError
 	switch {
 	case errors.As(err, &invalidNumber):
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 	case errors.Is(err, whatsmeow.ErrIQRateOverLimit):
 		ctx.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
 	case errors.Is(err, whatsmeow.ErrIQTimedOut),
@@ -31,7 +32,7 @@ func writeUserWAError(ctx *gin.Context, err error) {
 		errors.Is(err, context.Canceled):
 		ctx.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
 	default:
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 	}
 }
 
@@ -82,7 +83,7 @@ func (u *userHandler) GetUser(ctx *gin.Context) {
 	var data *user_service.CheckUserStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -128,7 +129,7 @@ func (u *userHandler) CheckUser(ctx *gin.Context) {
 	var data *user_service.CheckUserStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -176,7 +177,7 @@ func (u *userHandler) GetAvatar(ctx *gin.Context) {
 	var data *user_service.GetAvatarStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -219,7 +220,7 @@ func (u *userHandler) GetContacts(ctx *gin.Context) {
 
 	contacts, err := u.userService.GetContacts(instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -246,7 +247,7 @@ func (u *userHandler) GetPrivacy(ctx *gin.Context) {
 
 	privacy, err := u.userService.GetPrivacy(instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -275,7 +276,7 @@ func (u *userHandler) SetPrivacy(ctx *gin.Context) {
 	var data *user_service.PrivacyStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -316,7 +317,7 @@ func (u *userHandler) SetPrivacy(ctx *gin.Context) {
 
 	privacy, err := u.userService.SetPrivacy(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -346,7 +347,7 @@ func (u *userHandler) BlockContact(ctx *gin.Context) {
 	var data *user_service.BlockStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -362,7 +363,7 @@ func (u *userHandler) BlockContact(ctx *gin.Context) {
 
 	resp, err := u.userService.BlockContact(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -392,7 +393,7 @@ func (u *userHandler) UnblockContact(ctx *gin.Context) {
 	var data *user_service.BlockStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -408,7 +409,7 @@ func (u *userHandler) UnblockContact(ctx *gin.Context) {
 
 	resp, err := u.userService.UnlockContact(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -435,7 +436,7 @@ func (u *userHandler) GetBlockList(ctx *gin.Context) {
 
 	resp, err := u.userService.GetBlockList(instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -465,7 +466,7 @@ func (u *userHandler) SetProfilePicture(ctx *gin.Context) {
 	var data *user_service.SetProfilePictureStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -476,7 +477,7 @@ func (u *userHandler) SetProfilePicture(ctx *gin.Context) {
 
 	resp, err := u.userService.SetProfilePicture(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -513,7 +514,7 @@ func (u *userHandler) SetProfileName(ctx *gin.Context) {
 	var data *user_service.SetProfileNameStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -524,7 +525,7 @@ func (u *userHandler) SetProfileName(ctx *gin.Context) {
 
 	resp, err := u.userService.SetProfileName(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -561,7 +562,7 @@ func (u *userHandler) SetProfileStatus(ctx *gin.Context) {
 	var data *user_service.SetProfileStatusStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -572,7 +573,7 @@ func (u *userHandler) SetProfileStatus(ctx *gin.Context) {
 
 	resp, err := u.userService.SetProfileStatus(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -609,7 +610,7 @@ func (u *userHandler) ResolveLid(ctx *gin.Context) {
 	var data *user_service.ResolveLidStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -620,7 +621,7 @@ func (u *userHandler) ResolveLid(ctx *gin.Context) {
 
 	resp, err := u.userService.ResolveLid(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
