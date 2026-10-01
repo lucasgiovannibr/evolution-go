@@ -282,11 +282,10 @@ func (mycli *MyClient) persistMessageAsync(message message_model.Message) {
 		return
 	}
 
-	go func() {
-		if err := mycli.messageRepository.InsertMessage(message); err != nil {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to persist message %s: %v", mycli.userID, message.MessageID, err)
-		}
-	}()
+	// The repository batches the writes of every instance (and never blocks this handler).
+	if !mycli.messageRepository.QueueMessage(message) {
+		mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Message %s was not persisted: the write queue is full or closed", mycli.userID, message.MessageID)
+	}
 }
 
 type ClientData struct {

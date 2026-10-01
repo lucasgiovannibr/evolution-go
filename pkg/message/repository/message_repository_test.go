@@ -41,40 +41,29 @@ func TestInsertMessagePreservesReferralOnStatusUpdate(t *testing.T) {
 	referral := json.RawMessage(`{"ctwaClid":"abc123","showAdAttribution":true}`)
 
 	initial := message_model.Message{
-		MessageID: "msg-1",
-		Timestamp: "2026-05-09 10:00:00",
-		Status:    "Received",
-		Source:    "1551999999999",
-		Referral:  referral,
+		InstanceID: "inst-1",
+		MessageID:  "msg-1",
+		Timestamp:  "2026-05-09 10:00:00",
+		Status:     "Received",
+		Source:     "1551999999999",
+		Referral:   referral,
 	}
 
 	if err := repo.InsertMessage(initial); err != nil {
 		t.Fatalf("insert initial message: %v", err)
 	}
 
-	initialSQL := logBuffer.String()
-	if !strings.Contains(initialSQL, `"referral"="excluded"."referral"`) {
-		t.Fatalf("expected initial upsert SQL to update referral, got %q", initialSQL)
+	sqlText := logBuffer.String()
+	// A message without a referral must not erase the stored one, and one with a referral
+	// must be able to set it.
+	if !strings.Contains(sqlText, `"referral"=COALESCE(excluded.referral, messages.referral)`) {
+		t.Fatalf("expected upsert to keep the stored referral, got %q", sqlText)
 	}
-
-	logBuffer.Reset()
-
-	updated := message_model.Message{
-		MessageID: "msg-1",
-		Timestamp: "2026-05-09 10:05:00",
-		Status:    "Read",
-		Source:    "1551999999999",
+	if !strings.Contains(sqlText, `"timestamp"=excluded.timestamp`) || !strings.Contains(sqlText, `"status"=excluded.status`) {
+		t.Fatalf("expected upsert to keep core columns, got %q", sqlText)
 	}
-
-	if err := repo.InsertMessage(updated); err != nil {
-		t.Fatalf("insert updated message: %v", err)
-	}
-
-	updatedSQL := logBuffer.String()
-	if strings.Contains(updatedSQL, `"referral"="excluded"."referral"`) {
-		t.Fatalf("expected updated upsert SQL to omit referral update, got %q", updatedSQL)
-	}
-	if !strings.Contains(updatedSQL, `"timestamp"="excluded"."timestamp","status"="excluded"."status","source"="excluded"."source"`) {
-		t.Fatalf("expected updated upsert SQL to keep core columns, got %q", updatedSQL)
+	// The status only moves forward.
+	if !strings.Contains(sqlText, `WHERE CASE messages.status`) || !strings.Contains(sqlText, `<= CASE excluded.status`) {
+		t.Fatalf("expected the upsert to be guarded by the status rank, got %q", sqlText)
 	}
 }
