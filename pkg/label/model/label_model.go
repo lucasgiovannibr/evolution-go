@@ -7,7 +7,7 @@ import (
 
 type Label struct {
 	Id           string `json:"id" gorm:"type:uuid;primaryKey"`
-	InstanceID   string `json:"instance_id" gorm:"type:uuid"`
+	InstanceID   string `json:"instance_id" gorm:"type:uuid;index"`
 	LabelID      string `json:"label_id"`
 	LabelName    string `json:"label_name"`
 	LabelColor   string `json:"label_color"`
