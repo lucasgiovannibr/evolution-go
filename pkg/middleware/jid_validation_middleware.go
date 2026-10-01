@@ -1,6 +1,7 @@
 package auth_middleware
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,7 +29,7 @@ func isJSONRequest(c *gin.Context) bool {
 // openBody reads the body and prepares it for in-place editing of the given top-level
 // fields. On failure it answers 400 itself and returns false.
 func openBody(c *gin.Context, keys ...string) (*bodyEditor, bool) {
-	body, err := io.ReadAll(c.Request.Body)
+	body, err := readBody(c.Request)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
 		c.Abort()
@@ -44,10 +45,30 @@ func openBody(c *gin.Context, keys ...string) (*bodyEditor, bool) {
 	return editor, true
 }
 
-// finish hands the (possibly rewritten) body to the next handler.
+// readBody reads the whole body. When its length is announced the buffer is allocated once,
+// with a little room for the edits (io.ReadAll grows by doubling: reading 100 MB that way
+// allocates about twice that).
+func readBody(r *http.Request) ([]byte, error) {
+	n := r.ContentLength
+	if n <= 0 {
+		return io.ReadAll(r.Body)
+	}
+	slack := 8<<10 + int(n/512)
+	buf := make([]byte, n, int(n)+slack)
+	if _, err := io.ReadFull(r.Body, buf); err != nil {
+		return nil, err
+	}
+	return buf, nil
+}
+
+// finish hands the (possibly rewritten) body to the next handler. It is also stored where
+// gin keeps the body for ShouldBindBodyWithJSON, so the handler does not read it a second
+// time (and grow another buffer) to bind it.
 func finish(c *gin.Context, editor *bodyEditor) {
-	c.Request.Body = io.NopCloser(editor.reader())
-	c.Request.ContentLength = editor.size()
+	body := editor.apply()
+	c.Set(gin.BodyBytesKey, body)
+	c.Request.Body = io.NopCloser(bytes.NewReader(body))
+	c.Request.ContentLength = int64(len(body))
 	c.Next()
 }
 
