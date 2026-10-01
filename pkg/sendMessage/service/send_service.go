@@ -60,6 +60,8 @@ type sendService struct {
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	config           *config.Config
 	loggerWrapper    *logger_wrapper.LoggerManager
+	// existsCache remembers the "is this number on WhatsApp" check (nil = off).
+	existsCache *userExistsCache
 }
 
 type SendDataStruct struct {
@@ -578,25 +580,29 @@ func (s *sendService) validateAndCheckUserExists(phone string, formatJid *bool, 
 		return types.NewJID("", types.DefaultUserServer), fmt.Errorf("failed to connect client: %v", err)
 	}
 
-	// Use CheckUser approach: formatJid=false by default
-	formatJidForCheck := false
+	// The answer is remembered (see userExistsCache): a send used to cost one usync query,
+	// two when the first said no, every single time.
+	remoteJID, found, err := s.existsCache.lookup(instance.Id, phone, func() (string, bool, error) {
+		// Use CheckUser approach: formatJid=false by default
+		jid, ok, err := s.checkSingleUserExists(client, phone, false, instance.Id)
+		if err != nil {
+			return "", false, err
+		}
 
-	// First attempt with formatJid=false
-	remoteJID, found, err := s.checkSingleUserExists(client, phone, formatJidForCheck, instance.Id)
+		// If not found with formatJid=false, try with formatJid=true as fallback
+		if !ok {
+			s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] User not found with formatJid=false, trying with formatJid=true", instance.Id)
+			jidRetry, okRetry, errRetry := s.checkSingleUserExists(client, phone, true, instance.Id)
+			if errRetry == nil && okRetry {
+				return jidRetry, true, nil
+			}
+		}
+		return jid, ok, nil
+	})
 	if err != nil {
 		s.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Failed to check user existence: %v", instance.Id, err)
 		// Continue with sending even if check fails (network issues, etc.)
 		return validateMessageFields(phone, formatJid, messageID, participant)
-	}
-
-	// If not found with formatJid=false, try with formatJid=true as fallback
-	if !found {
-		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] User not found with formatJid=false, trying with formatJid=true", instance.Id)
-		remoteJIDRetry, foundRetry, errRetry := s.checkSingleUserExists(client, phone, true, instance.Id)
-		if errRetry == nil && foundRetry {
-			remoteJID = remoteJIDRetry
-			found = foundRetry
-		}
 	}
 
 	if !found {
@@ -3423,5 +3429,6 @@ func NewSendService(
 		whatsmeowService: whatsmeowService,
 		config:           config,
 		loggerWrapper:    loggerWrapper,
+		existsCache:      newUserExistsCache(config.CheckUserCacheTTL),
 	}
 }
