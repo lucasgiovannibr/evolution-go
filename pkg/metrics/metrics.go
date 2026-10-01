@@ -59,6 +59,12 @@ var (
 		Help: "Sends refused with 429 because the instance was over its send limit.",
 	})
 
+	// MediaPending is the number of received messages with media waiting for a worker.
+	MediaPending = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "evolution_media_pending",
+		Help: "Received messages with media waiting for a media worker.",
+	})
+
 	// MessageBatchSize is how many messages each database write carried.
 	MessageBatchSize = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "evolution_message_batch_size",
@@ -71,7 +77,7 @@ func init() {
 	Registry.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		httpRequests, httpDuration, httpInFlight, Events, MessagesDropped, MessageBatchSize, SendThrottled,
+		httpRequests, httpDuration, httpInFlight, Events, MessagesDropped, MessageBatchSize, SendThrottled, MediaPending,
 	)
 }
 

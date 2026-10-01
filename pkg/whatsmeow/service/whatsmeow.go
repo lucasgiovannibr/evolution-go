@@ -1257,7 +1257,8 @@ func (mycli *MyClient) teardownQR(reason string, forceLogout bool) {
 	}
 }
 
-func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
+// handleEvent processes one event (see myEventHandler for how events get here).
+func (mycli *MyClient) handleEvent(rawEvt interface{}) {
 	mycli.lastEventAt.Store(time.Now().UnixNano())
 	eventType := strings.TrimPrefix(fmt.Sprintf("%T", rawEvt), "*events.")
 	mycli.lastEventType.Store(eventType)
