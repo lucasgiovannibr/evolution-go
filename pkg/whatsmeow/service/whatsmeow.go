@@ -164,7 +164,7 @@ type MyClient struct {
 	lastUndecryptReconnect atomic.Int64 // unix nanoseconds
 	passkeyCeremony        *ceremony.Store
 	appStateRecoveryMu     sync.Mutex
-	appStateRecovery   map[appstate.WAPatchName]appStateRecoveryAttempt
+	appStateRecovery       map[appstate.WAPatchName]appStateRecoveryAttempt
 }
 
 type appStateRecoveryAttempt struct {
@@ -1199,8 +1199,8 @@ func (mycli *MyClient) teardownQR(reason string, forceLogout bool) {
 		data["forceLogout"] = forceLogout
 	}
 	postMap := map[string]interface{}{
-		"event":         "QRTimeout",
-		"data":          data,
+		"event":        "QRTimeout",
+		"data":         data,
 		"instanceId":   instanceID,
 		"instanceName": mycli.Instance.Name,
 	}
@@ -2035,11 +2035,12 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 
 		if mycli.config.DatabaseSaveMessages {
 			message := message_model.Message{
-				MessageID: evt.Info.ID,
-				Timestamp: evt.Info.Timestamp.Format("2006-01-02 15:04:05"),
-				Status:    "Received",
-				Source:    evt.Info.Chat.ToNonAD().User,
-				Referral:  referral,
+				InstanceID: mycli.userID,
+				MessageID:  evt.Info.ID,
+				Timestamp:  evt.Info.Timestamp.Format("2006-01-02 15:04:05"),
+				Status:     "Received",
+				Source:     evt.Info.Chat.ToNonAD().User,
+				Referral:   referral,
 			}
 
 			mycli.persistMessageAsync(message)
@@ -2168,6 +2169,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 
 					var message message_model.Message
 
+					message.InstanceID = mycli.userID
 					message.MessageID = v
 					message.Timestamp = evt.Timestamp.Format("2006-01-02 15:04:05")
 					message.Status = "Read"
@@ -2185,6 +2187,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 
 			var message message_model.Message
 
+			message.InstanceID = mycli.userID
 			message.MessageID = evt.MessageIDs[0]
 			message.Timestamp = evt.Timestamp.Format("2006-01-02 15:04:05")
 			message.Status = "Delivered"
