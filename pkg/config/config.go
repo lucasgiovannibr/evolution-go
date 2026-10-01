@@ -52,6 +52,14 @@ type Config struct {
 	ProxyHost            string
 	ProxyFailClosed      bool
 	PprofEnabled         bool
+	// CorsOrigins are the browser origins allowed to call the API (CORS_ORIGINS, comma
+	// separated). Empty or "*" allows every origin.
+	CorsOrigins []string
+	// MaxBodyBytes bounds a request body (MAX_BODY_MB, default 4); routes that receive a
+	// file get MaxMediaBodyBytes (MAX_MEDIA_BODY_MB, default 150: 100 MB of media is
+	// ~134 MB as base64).
+	MaxBodyBytes      int64
+	MaxMediaBodyBytes int64
 	// WebhookIncludeToken keeps the instance API token ("instanceToken") in every event
 	// payload sent to webhooks, queues and websockets. The token is the credential of the
 	// instance, so every consumer of the events could use it: it is off unless
@@ -387,7 +395,17 @@ func Load() *Config {
 		logCompress = true // Default compression enabled
 	}
 
+	var corsOrigins []string
+	for _, origin := range strings.Split(os.Getenv(config_env.CORS_ORIGINS), ",") {
+		if origin = strings.TrimSpace(origin); origin != "" {
+			corsOrigins = append(corsOrigins, origin)
+		}
+	}
+
 	config := &Config{
+		CorsOrigins:          corsOrigins,
+		MaxBodyBytes:         envMB(config_env.MAX_BODY_MB, 4),
+		MaxMediaBodyBytes:    envMB(config_env.MAX_MEDIA_BODY_MB, 150),
 		PostgresAuthDB:       postgresAuthDB,
 		postgresUsersDB:      postgresUsersDB,
 		DatabaseSaveMessages: databaseSaveMessages == "true",
@@ -449,6 +467,15 @@ func Load() *Config {
 	}
 
 	return config
+}
+
+// envMB reads a size in megabytes from the environment and returns it in bytes; an
+// absent, invalid or non-positive value gives def.
+func envMB(name string, def int64) int64 {
+	if v, err := strconv.ParseInt(strings.TrimSpace(os.Getenv(name)), 10, 64); err == nil && v > 0 {
+		return v << 20
+	}
+	return def << 20
 }
 
 func loadMinioConfig(config *Config) {

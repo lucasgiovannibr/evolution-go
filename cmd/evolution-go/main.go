@@ -210,19 +210,15 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	r := gin.New()
 	r.Use(auth_middleware.AccessLog(), gin.Recovery())
 
-	// CORS middleware — must be before everything else
-	r.Use(func(c *gin.Context) {
-		c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
-		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
-		c.Writer.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
-		c.Writer.Header().Set("Access-Control-Allow-Headers", "Origin, Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Accept, Cache-Control, X-Requested-With, apikey, ApiKey")
-		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length")
-		if c.Request.Method == "OPTIONS" {
-			c.AbortWithStatus(200)
-			return
-		}
-		c.Next()
-	})
+	// Files above this size are kept on disk while a multipart body is parsed, not in memory.
+	r.MaxMultipartMemory = 8 << 20
+
+	// CORS middleware — must be before everything else (the only CORS handler: routes.go
+	// used to add the same headers a second time)
+	r.Use(auth_middleware.CORS(config.CorsOrigins))
+
+	// No request may make the process buffer an unbounded body.
+	r.Use(auth_middleware.LimitBody(config.MaxBodyBytes, config.MaxMediaBodyBytes))
 
 	r.Use(core.GateMiddleware(runtimeCtx))
 
@@ -392,6 +388,12 @@ func main() {
 		}
 	}
 
+	// Release mode unless the operator chose otherwise (GIN_MODE): debug mode prints every
+	// route at boot and adds work per request.
+	if os.Getenv(gin.EnvGinMode) == "" {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
 	cfg := config.Load()
 	if cfg.WebhookIncludeToken {
 		logger.LogWarn("[CONFIG] Events carry the instance token (\"instanceToken\"): every webhook, queue and websocket consumer can use it as the instance API key. Leave WEBHOOK_INCLUDE_TOKEN unset (false) unless an integration needs it")
@@ -470,9 +472,15 @@ func main() {
 
 	core.StartHeartbeat(heartbeatCtx, runtimeCtx, startTime)
 
+	// Without these a client could hold a connection forever by sending its headers or
+	// body one byte at a time. There is no WriteTimeout on purpose: sends with a typing
+	// delay, QR polling and the websockets answer for a long time.
 	srv := &http.Server{
-		Addr:    ":" + os.Getenv("SERVER_PORT"),
-		Handler: r,
+		Addr:              ":" + os.Getenv("SERVER_PORT"),
+		Handler:           r,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       15 * time.Minute, // a 100 MB upload over a slow link
+		IdleTimeout:       2 * time.Minute,
 	}
 
 	quit := make(chan os.Signal, 1)
