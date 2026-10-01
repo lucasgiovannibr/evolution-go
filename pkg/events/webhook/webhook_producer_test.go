@@ -19,7 +19,7 @@ func newTestProducer(t *testing.T, timeout time.Duration) *webhookProducer {
 	t.Helper()
 	cfg := &config.Config{LogDirectory: t.TempDir()}
 	return &webhookProducer{
-		loggerWrapper: logger_wrapper.NewLoggerManager(cfg),
+		loggerWrapper: logger_wrapper.NewLoggerManagerForTest(t, cfg),
 		httpClient:    &http.Client{Timeout: timeout},
 		maxEvents:     1000,
 		maxBytes:      64 << 20,

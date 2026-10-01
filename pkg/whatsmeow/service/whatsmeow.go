@@ -1981,7 +1981,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 
 						mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Uploading to S3/Minio - ID: %s, FileName: %s, Size: %d bytes", mycli.userID, evt.Info.ID, fileName, len(data))
 
-						mediaURL, err := mycli.mediaStorage.Store(context.Background(), data, fileName, mimeType)
+						mediaURL, err := mycli.mediaStorage.Store(context.Background(), mycli.userID, data, fileName, mimeType)
 						storageDuration := time.Since(storageStart)
 
 						if err != nil {
