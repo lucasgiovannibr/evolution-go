@@ -63,9 +63,9 @@ func explainInteractiveError(err error, messageType string) error {
 	if code == "" || messageType != "ListMessage" {
 		return err
 	}
-	return &apierror.Error{
+	return &listRefusal{&apierror.Error{
 		Status:  http.StatusBadGateway,
 		Code:    "whatsapp_rejected",
 		Message: "WhatsApp refused the list message (server error " + code + "): list messages are not accepted from linked-device sessions, even on WhatsApp Business accounts. Use /send/button (up to 3 reply buttons) or /send/carousel instead",
-	}
+	}}
 }

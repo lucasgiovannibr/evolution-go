@@ -595,7 +595,9 @@ func (s *sendHandler) SendButton(ctx *gin.Context) {
 // @Description Each section must contain one or more `rows`. When `rowId` is omitted, the server generates a fallback ID.
 // @Description When `buttonText` is empty, the server falls back to "Ver Menu".
 // @Description
-// @Description Uses legacy `ListMessage` format (no ViewOnceMessage wrapper) so it renders on iOS, Android and WhatsApp Web.
+// @Description WhatsApp refuses list messages from a linked-device session (Business accounts included). When that happens the list is sent as
+// @Description reply buttons (up to 9 rows, 3 buttons per message, each row id is the button id) and the response carries `Fallback: "buttons"` and `Parts`.
+// @Description Send `fallbackButtons: false` to get a 502 `whatsapp_rejected` instead.
 // @Tags Send Message
 // @Accept json
 // @Produce json

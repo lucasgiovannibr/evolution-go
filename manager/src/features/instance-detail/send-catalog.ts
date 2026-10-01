@@ -119,6 +119,41 @@ function presetKind(
   };
 }
 
+/** The list is refused by WhatsApp on linked devices; the server then sends it as reply buttons unless told not to. */
+function listKind(): KindDef {
+  const base = presetKind('list', {
+    id: 'list',
+    label: 'Lista',
+    description: 'Menu de seleção única com seções.',
+    first: 'list_short',
+    note: {
+      tone: 'warn',
+      text: 'O WhatsApp recusa listas em sessões de aparelho vinculado, mesmo em contas Business. Por isso o servidor envia a lista como botões de resposta (até 9 itens, 3 por mensagem); a resposta traz Fallback: "buttons".',
+    },
+  });
+  return {
+    ...base,
+    fields: [
+      ...base.fields,
+      {
+        key: 'onRefusal',
+        label: 'Se o WhatsApp recusar a lista',
+        control: 'select',
+        options: [
+          { value: 'buttons', label: 'Enviar como botões de resposta' },
+          { value: 'error', label: 'Devolver o erro (502)' },
+        ],
+      },
+    ],
+    defaults: { ...base.defaults, onRefusal: 'buttons' },
+    build: (number, v) => {
+      const body = base.build(number, v);
+      if (v.onRefusal === 'error') body.fallbackButtons = false;
+      return body;
+    },
+  };
+}
+
 export const KINDS: KindDef[] = [
   {
     id: 'text',
@@ -275,16 +310,7 @@ export const KINDS: KindDef[] = [
       text: 'Botões de resposta (até 3) e CTAs agrupados aparecem no celular e no WhatsApp Web. O Pix só aparece no celular.',
     },
   }),
-  presetKind('list', {
-    id: 'list',
-    label: 'Lista',
-    description: 'Menu de seleção única com seções.',
-    first: 'list',
-    note: {
-      tone: 'warn',
-      text: 'O WhatsApp recusa listas em sessões de aparelho vinculado, mesmo em contas Business (erro 405/479 em todos os formatos testados). O envio deve voltar com erro; botões e carrossel funcionam.',
-    },
-  }),
+  listKind(),
   presetKind('carousel', {
     id: 'carousel',
     label: 'Carrossel',

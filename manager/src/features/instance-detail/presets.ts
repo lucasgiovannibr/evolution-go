@@ -92,7 +92,7 @@ export const PRESETS: Preset[] = [
   {
     id: 'list',
     group: 'list',
-    label: 'Lista com seções',
+    label: 'Lista com seções (4 itens, 2 mensagens)',
     description: 'Menu de seleção única com duas seções (Planos e Suporte).',
     build: (number) => ({
       number,
@@ -113,6 +113,29 @@ export const PRESETS: Preset[] = [
           rows: [
             { title: 'Falar com atendente', description: 'Horário comercial', rowId: 'support_agent' },
             { title: 'Central de ajuda', description: 'Artigos e FAQ', rowId: 'support_kb' },
+          ],
+        },
+      ],
+    }),
+  },
+  {
+    id: 'list_short',
+    group: 'list',
+    label: 'Lista curta (3 itens, 1 mensagem)',
+    description: 'Três itens numa só seção: cabe em uma mensagem de botões.',
+    build: (number) => ({
+      number,
+      title: 'Teste - Lista curta',
+      description: 'Escolha um dos planos.',
+      buttonText: 'Ver opções',
+      footerText: FOOTER,
+      sections: [
+        {
+          title: 'Planos',
+          rows: [
+            { title: 'Plano Básico', description: 'R$ 29,90/mês', rowId: 'plan_basic' },
+            { title: 'Plano Pro', description: 'R$ 59,90/mês', rowId: 'plan_pro' },
+            { title: 'Plano Business', description: 'R$ 149,90/mês', rowId: 'plan_business' },
           ],
         },
       ],

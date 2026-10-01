@@ -347,6 +347,9 @@ type ListStruct struct {
 	FormatJid *bool `json:"formatJid,omitempty"`
 	// Quoted (reply-to) context.
 	Quoted QuotedStruct `json:"quoted,omitempty"`
+	// WhatsApp refuses list messages from a linked-device session. By default, when that happens the list
+	// is sent as reply buttons (up to 9 rows, 3 buttons per message); false answers 502 instead.
+	FallbackButtons *bool `json:"fallbackButtons,omitempty"`
 }
 
 // CarouselButtonStruct is a button attached to a single carousel card.
@@ -449,6 +452,10 @@ type MessageSendStruct struct {
 	Info               types.MessageInfo
 	Message            *waE2E.Message
 	MessageContextInfo *waE2E.ContextInfo
+	// Fallback is set when the message went out as something else than asked ("buttons" for a
+	// list WhatsApp refused); Parts is how many messages that took. Info is the first one.
+	Fallback string `json:",omitempty"`
+	Parts    int    `json:",omitempty"`
 }
 
 // The ways a send finds no usable connection. They are matched with errors.Is, not by
@@ -2407,6 +2414,10 @@ func (s *sendService) SendList(data *ListStruct, instance *instance_model.Instan
 	})
 
 	if err != nil {
+		var refused *listRefusal
+		if errors.As(err, &refused) && (data.FallbackButtons == nil || *data.FallbackButtons) {
+			return s.sendListAsButtons(data, instance, err)
+		}
 		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error sending list: %v", instance.Id, err)
 		return nil, err
 	}

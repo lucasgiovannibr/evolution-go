@@ -182,7 +182,12 @@ export function TabTest() {
 
   const send = useMutation({
     mutationFn: () => sendMessage(instance.token, kind, payload),
-    onSuccess: (r) => record({ label: def.label, ok: true, detail: r.messageId }),
+    onSuccess: (r) =>
+      record({
+        label: r.fallback === 'buttons' ? `${def.label} (enviada como botões, ${r.parts ?? 1} ${r.parts === 1 ? 'mensagem' : 'mensagens'})` : def.label,
+        ok: true,
+        detail: r.messageId,
+      }),
     onError: (e) => record({ label: def.label, ok: false, detail: failure(e) }),
   });
 

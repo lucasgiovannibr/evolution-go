@@ -66,6 +66,14 @@ describe('send catalog', () => {
     expect(kindOf('carousel').build(NUMBER, d.carousel)).toHaveProperty('cards');
   });
 
+  it('the list asks the server to answer the refusal as buttons, unless told to return the error', () => {
+    const list = kindOf('list');
+    const d = defaultsOf().list;
+    expect(d.onRefusal).toBe('buttons');
+    expect(list.build(NUMBER, d)).not.toHaveProperty('fallbackButtons');
+    expect(list.build(NUMBER, { ...d, onRefusal: 'error' })).toMatchObject({ fallbackButtons: false });
+  });
+
   it('the status has no recipient and asks for confirmation', () => {
     for (const id of ['status/text', 'status/media'] as const) {
       expect(kindOf(id).recipient).toBe(false);
