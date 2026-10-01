@@ -63,6 +63,9 @@ type WhatsmeowService interface {
 	ClearInstanceCache(instanceId string, token string) error
 	PurgeInstanceData(instanceId string, jid string) error
 	CallWebhook(instance *instance_model.Instance, queueName string, jsonData []byte)
+	// EventWanted reports whether anyone would receive the event for the instance, so the
+	// caller can skip building an expensive payload nobody gets.
+	EventWanted(instance *instance_model.Instance, eventType, chat string) bool
 	SendToGlobalQueues(event string, jsonData []byte, userId string)
 	ForceUpdateJid(instanceId string, number string) error
 	UpdateInstanceSettings(instanceId string) error
@@ -1244,6 +1247,8 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	postMap := make(map[string]interface{})
 	postMap["data"] = rawEvt
 	doWebhook := false
+	// eventChat is the chat of the event, for the subscription check at the end.
+	eventChat := ""
 
 	switch evt := rawEvt.(type) {
 	case *events.QR:
@@ -1650,6 +1655,12 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			return
 		}
 
+		// Nobody receives this event (no subscription, no output, no global queue): do not
+		// download its media, ask WhatsApp for the group or serialize it. Those are the
+		// costly parts of a message and used to run for every message regardless.
+		eventChat = evt.Info.Chat.String()
+		wantMessage := mycli.service.EventWanted(mycli.Instance, "Message", eventChat)
+
 		if postMap["data"] != nil {
 			jsonBytes, err := json.Marshal(postMap["data"])
 			if err != nil {
@@ -1775,7 +1786,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			dataMap["referral"] = referral
 		}
 
-		if mycli.config.WebhookFiles {
+		if mycli.config.WebhookFiles && wantMessage {
 			isMedia := false
 
 			img := evt.Message.GetImageMessage()
@@ -2002,7 +2013,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		}
 
 		isGroup := strings.HasSuffix(evt.Info.Chat.String(), "@g.us")
-		if isGroup {
+		if isGroup && wantMessage {
 			groupData, err := mycli.WAClient.GetGroupInfo(context.Background(), evt.Info.Chat)
 			if err == nil {
 				dataMap["groupData"] = groupData
@@ -2141,6 +2152,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	case *events.Receipt:
 		doWebhook = true
 		postMap["event"] = "Receipt"
+		eventChat = evt.Chat.String()
 
 		// se ignoreGroup for true e o chat for grupo retorna
 		if mycli.Instance.IgnoreGroups && strings.Contains(evt.Chat.String(), "@g.us") {
@@ -2631,6 +2643,12 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	}
 
 	if doWebhook {
+		// Serializing an event (a history sync, a message with its media) is the costly part;
+		// when nobody would receive it, do not.
+		if name, _ := postMap["event"].(string); name != "" && !mycli.service.EventWanted(mycli.Instance, name, eventChat) {
+			return
+		}
+
 		mycli.config.AddInstanceToken(postMap, mycli.token)
 		postMap["instanceId"] = mycli.userID
 		postMap["instanceName"] = mycli.Instance.Name
@@ -2666,178 +2684,21 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	}
 }
 
+// CallWebhook delivers an event to the outputs of the instance, if the instance subscribed
+// to it (see eventSubscribed).
 func (w *whatsmeowService) CallWebhook(instance *instance_model.Instance, queueName string, jsonData []byte) {
 	defer recoverAndLog(w.loggerWrapper, instance.Id, "CallWebhook")
-	var data map[string]interface{}
-	if err := json.Unmarshal(jsonData, &data); err != nil {
-		return
-	}
 
-	eventType, ok := data["event"].(string)
+	env, ok := readEnvelope(jsonData)
 	if !ok {
 		return
 	}
-
-	eventArray := strings.Split(instance.Events, ",")
-
-	var subscriptions []string
-
-	if len(eventArray) < 1 {
-		subscriptions = append(subscriptions, event_types.MESSAGE)
-		subscriptions = append(subscriptions, event_types.SEND_MESSAGE)
-	} else {
-		for _, arg := range eventArray {
-			if !event_types.IsEventType(arg) {
-				w.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Message type discarded: %s", instance.Id, arg)
-				continue
-			}
-			if !utils.Find(subscriptions, arg) {
-				subscriptions = append(subscriptions, arg)
-			}
-
-		}
-	}
-
-	if contains(subscriptions, "ALL") {
-		w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-		w.sendToQueueOrWebhook(instance, queueName, jsonData)
+	if !eventSubscribed(parseSubscriptions(instance.Events), env.Event, env.chat()) {
 		return
 	}
 
-	w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] subscriptions %s eventType %s", instance.Id, subscriptions, eventType)
-
-	switch eventType {
-	case "Message":
-		if contains(subscriptions, "MESSAGE") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		} else {
-			// Forward to GROUP/NEWSLETTER subscribers even without MESSAGE subscription
-			if dataMap, ok := data["data"].(map[string]interface{}); ok {
-				if infoMap, ok := dataMap["Info"].(map[string]interface{}); ok {
-					if chat, ok := infoMap["Chat"].(string); ok {
-						if strings.HasSuffix(chat, "@g.us") && contains(subscriptions, "GROUP") {
-							w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s (Group)", instance.Id, eventType)
-							w.sendToQueueOrWebhook(instance, queueName, jsonData)
-						} else if strings.HasSuffix(chat, "@newsletter") && contains(subscriptions, "NEWSLETTER") {
-							w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s (Newsletter)", instance.Id, eventType)
-							w.sendToQueueOrWebhook(instance, queueName, jsonData)
-						}
-					}
-				}
-			}
-		}
-	case "SendMessage":
-		if contains(subscriptions, "SEND_MESSAGE") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		} else {
-			if dataMap, ok := data["data"].(map[string]interface{}); ok {
-				if infoMap, ok := dataMap["Info"].(map[string]interface{}); ok {
-					if chat, ok := infoMap["Chat"].(string); ok {
-						if strings.HasSuffix(chat, "@g.us") && contains(subscriptions, "GROUP") {
-							w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s (Group)", instance.Id, eventType)
-							w.sendToQueueOrWebhook(instance, queueName, jsonData)
-						} else if strings.HasSuffix(chat, "@newsletter") && contains(subscriptions, "NEWSLETTER") {
-							w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s (Newsletter)", instance.Id, eventType)
-							w.sendToQueueOrWebhook(instance, queueName, jsonData)
-						}
-					}
-				}
-			}
-		}
-	case "Receipt":
-		if contains(subscriptions, "READ_RECEIPT") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		} else {
-			if dataMap, ok := data["data"].(map[string]interface{}); ok {
-				if chat, ok := dataMap["Chat"].(string); ok {
-					if strings.HasSuffix(chat, "@g.us") && contains(subscriptions, "GROUP") {
-						w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s (Group)", instance.Id, eventType)
-						w.sendToQueueOrWebhook(instance, queueName, jsonData)
-					} else if strings.HasSuffix(chat, "@newsletter") && contains(subscriptions, "NEWSLETTER") {
-						w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s (Newsletter)", instance.Id, eventType)
-						w.sendToQueueOrWebhook(instance, queueName, jsonData)
-					}
-				}
-			}
-		}
-	case "Presence":
-		if contains(subscriptions, "PRESENCE") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "UndecryptableMessage", "MediaRetry":
-		if contains(subscriptions, "MESSAGE") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "HistorySync":
-		if contains(subscriptions, "HISTORY_SYNC") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "ChatPresence", "Archive", "Mute", "Pin", "Star", "MarkChatAsRead", "ClearChat", "DeleteChat", "DeleteForMe", "UnarchiveChatsSetting", "UserStatusMute":
-		if contains(subscriptions, "CHAT_PRESENCE") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency", "CallPreAccept", "CallReject", "CallTransport", "UnknownCallEvent", "CallReady", "CallEnded", "CallVideoState":
-		if contains(subscriptions, "CALL") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored", "ReachoutTimelock", "StreamError", "ClientOutdated", "CATRefreshError", "OfflineSyncPreview":
-		if contains(subscriptions, "CONNECTION") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "LabelEdit", "LabelAssociationChat", "LabelAssociationMessage":
-		if contains(subscriptions, "LABEL") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "Contact", "PushName", "Blocklist", "PrivacySettings", "BusinessName":
-		if contains(subscriptions, "CONTACT") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "Picture":
-		if contains(subscriptions, "PICTURE") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "UserAbout":
-		if contains(subscriptions, "USER_ABOUT") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "GroupInfo", "JoinedGroup":
-		if contains(subscriptions, "GROUP") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "NewsletterJoin", "NewsletterLeave", "NewsletterLiveUpdate", "NewsletterMuteChange":
-		if contains(subscriptions, "NEWSLETTER") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	// Passkey* are part of the device-pairing flow (like QRCode), so they follow the QRCODE subscription (#105).
-	case "QRCode", "QRTimeout", "QRSuccess", "PasskeyRequest", "PasskeyConfirmation", "PasskeyError", "PairError", "QRScannedWithoutMultidevice":
-		if contains(subscriptions, "QRCODE") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-	case "ButtonClick":
-		if contains(subscriptions, "BUTTON_CLICK") || contains(subscriptions, "MESSAGE") {
-			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, eventType)
-			w.sendToQueueOrWebhook(instance, queueName, jsonData)
-		}
-
-	default:
-		return
-	}
+	w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Event received of type %s", instance.Id, env.Event)
+	w.sendToQueueOrWebhook(instance, queueName, jsonData)
 }
 
 func contains(subscriptions []string, event string) bool {
