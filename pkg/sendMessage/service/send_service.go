@@ -455,9 +455,9 @@ type MessageSendStruct struct {
 // chain) quietly stopped being retried. The texts are the ones the API has always returned.
 var (
 	// ErrNoActiveSession: the instance has no client, or it did not come up.
-	ErrNoActiveSession = errors.New("no active session found")
+	ErrNoActiveSession = utils.ErrNoActiveSession
 	// ErrClientDisconnected: the instance has a client whose socket is down.
-	ErrClientDisconnected = errors.New("client disconnected")
+	ErrClientDisconnected = utils.ErrClientDisconnected
 )
 
 // isDisconnectionError reports whether err means the connection was missing, which a
@@ -467,48 +467,7 @@ func isDisconnectionError(err error) bool {
 }
 
 func (s *sendService) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {
-	client := s.clientPointer.Get(instanceId)
-	s.loggerWrapper.GetLogger(instanceId).LogDebug("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
-
-	if client == nil {
-		s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] No client found, attempting to start new instance", instanceId)
-		err := s.whatsmeowService.StartInstance(instanceId)
-		if err != nil {
-			s.loggerWrapper.GetLogger(instanceId).LogError("[%s] Failed to start instance: %v", instanceId, err)
-			return nil, ErrNoActiveSession
-		}
-
-		s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting for the connection...", instanceId)
-		client = utils.WaitForClient(func() *whatsmeow.Client { return s.clientPointer.Get(instanceId) }, utils.InstanceStartTimeout)
-		s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
-			instanceId,
-			client != nil,
-			client != nil && client.IsConnected())
-
-		if client == nil || !client.IsConnected() {
-			s.loggerWrapper.GetLogger(instanceId).LogError("[%s] New client validation failed - Exists: %v, Connected: %v",
-				instanceId,
-				client != nil,
-				client != nil && client.IsConnected())
-			return nil, ErrNoActiveSession
-		}
-	} else if !client.IsConnected() {
-		s.loggerWrapper.GetLogger(instanceId).LogError("[%s] Existing client is disconnected - Connected status: %v",
-			instanceId,
-			client.IsConnected())
-		return nil, ErrClientDisconnected
-	}
-
-	// A socket without a paired device can never send. Failing here, with an error
-	// the retry wrappers do not treat as a disconnection, avoids the ~80s of nested
-	// reconnect/backoff cycles before "the store doesn't contain a device JID" (#77).
-	if client.Store == nil || client.Store.ID == nil {
-		s.loggerWrapper.GetLogger(instanceId).LogWarn("[%s] Client is connected but has no paired device", instanceId)
-		return nil, errors.New("instance is not logged in: pair the device (QR code or pairing code) first")
-	}
-
-	s.loggerWrapper.GetLogger(instanceId).LogDebug("[%s] Client successfully validated - Connected: %v", instanceId, client.IsConnected())
-	return client, nil
+	return utils.ClientProvider{Clients: s.clientPointer, Starter: s.whatsmeowService, Gate: true, RequirePaired: true}.Ensure(context.Background(), instanceId, s.loggerWrapper.GetLogger(instanceId))
 }
 
 // ensureClientConnectedWithRetry attempts to ensure client connection with automatic reconnection and retry

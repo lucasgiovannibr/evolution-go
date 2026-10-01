@@ -141,6 +141,11 @@ func (i *instanceRepository) UpdateConnectSettings(instanceId string, updates ma
 	return err
 }
 
+// DisconnectedByAPIReason is the disconnect_reason written by POST /instance/disconnect.
+// An instance that carries it is not started again by the next request that needs a client,
+// only by an explicit connect.
+const DisconnectedByAPIReason = "Disconnected by API"
+
 // ReconnectingReason is the disconnect_reason written while an instance is being
 // restarted by ReconnectClient.
 const ReconnectingReason = "Reconnecting"
