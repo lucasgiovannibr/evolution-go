@@ -24,9 +24,18 @@ jobs:
       nats:
         image: nats:2
         ports: ["4222:4222"]
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 20
     env:
       AMQP_TEST_URL: amqp://guest:guest@localhost:5672/
       NATS_TEST_URL: nats://localhost:4222
+      PG_TEST_DSN: postgres://postgres:postgres@localhost:5432/postgres?sslmode=disable
     steps:
       - uses: actions/checkout@v4
 

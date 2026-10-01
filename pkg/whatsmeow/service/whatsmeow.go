@@ -62,6 +62,9 @@ type WhatsmeowService interface {
 	// stored connection state is kept so the instances come back on the next start.
 	Shutdown(ctx context.Context)
 	StartInstance(instanceId string) error
+	// EnableInstanceLock makes the instances this process runs exclusive across replicas
+	// (see owner_lock.go). Call it before any instance is started.
+	EnableInstanceLock(db *sql.DB)
 	// CanAutoStart reports whether a request may start the instance by itself (nil) or why
 	// not: an instance disconnected through the API stays off until it is connected again.
 	CanAutoStart(instanceId string) error
@@ -124,6 +127,28 @@ type whatsmeowService struct {
 	loggerWrapper      *logger_wrapper.LoggerManager
 	passkeyCeremony    *ceremony.Store
 	callEngine         *call_engine.Manager
+	// owner decides which replica runs an instance; nil when INSTANCE_LOCK is off.
+	owner InstanceLocker
+}
+
+// EnableInstanceLock turns on the cross-replica ownership of instances on db.
+func (w *whatsmeowService) EnableInstanceLock(db *sql.DB) {
+	if db == nil || w.owner != nil {
+		return
+	}
+	w.owner = NewPostgresLocker(db, w.ownershipLost)
+	w.loggerWrapper.GetLogger("system").LogInfo("Instance ownership lock enabled (INSTANCE_LOCK=false turns it off)")
+}
+
+// ownershipLost stops an instance whose lock was lost and could not be taken back: another
+// replica runs it now.
+func (w *whatsmeowService) ownershipLost(instanceID string) {
+	w.loggerWrapper.GetLogger(instanceID).LogError("[%s] The instance is now owned by another replica: stopping it here", instanceID)
+	token := ""
+	if inst, err := w.instanceRepository.GetInstanceByID(instanceID); err == nil {
+		token = inst.Token
+	}
+	_ = w.ClearInstanceCache(instanceID, token)
 }
 
 type MyClient struct {
@@ -578,6 +603,22 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		})
 	}
 	defer release()
+
+	// One replica per instance (see owner_lock.go). The lock lives as long as the runtime.
+	if w.owner != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ok, err := w.owner.TryLock(ctx, cd.Instance.Id)
+		cancel()
+		if err != nil {
+			w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Could not take the instance lock, not starting: %v", cd.Instance.Id, err)
+			return
+		}
+		if !ok {
+			w.loggerWrapper.GetLogger(cd.Instance.Id).LogWarn("[%s] Another replica runs this instance, not starting it here", cd.Instance.Id)
+			return
+		}
+		defer w.owner.Unlock(cd.Instance.Id)
+	}
 
 	w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("Starting websocket connection to Whatsapp for user '%s'", cd.Instance.Id)
 
@@ -2773,6 +2814,16 @@ func (w whatsmeowService) StartInstance(instanceId string) error {
 	instance, err := w.instanceRepository.GetInstanceByID(instanceId)
 	if err != nil {
 		return err
+	}
+
+	// Say so right away when another replica runs it (StartClient would only log it).
+	if w.owner != nil && !runtimeActive(instanceId) {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		free, err := w.owner.Probe(ctx, instanceId)
+		cancel()
+		if err == nil && !free {
+			return fmt.Errorf("%w: %s", utils.ErrOwnedElsewhere, instanceId)
+		}
 	}
 
 	if instance.Proxy == "" && w.config.ProxyHost != "" && w.config.ProxyPort != "" && w.config.ProxyUsername != "" && w.config.ProxyPassword != "" {

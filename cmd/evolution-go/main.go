@@ -185,6 +185,10 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		natsProducer,
 		loggerWrapper,
 	)
+	// One replica per instance (Postgres advisory locks), unless INSTANCE_LOCK=false.
+	if os.Getenv("INSTANCE_LOCK") != "false" {
+		whatsmeowService.EnableInstanceLock(usersSQLDB(db))
+	}
 	instanceService := instance_service.NewInstanceService(
 		instanceRepository,
 		killChannel,
