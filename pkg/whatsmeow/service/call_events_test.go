@@ -19,7 +19,7 @@ func newCallEventService(t *testing.T, webhook *recordingProducer, instance *ins
 		webhookProducer: webhook,
 		myClientPointer: safemap.New[*MyClient](),
 	}
-	w.myClientPointer.Set(instance.Id, &MyClient{Instance: instance})
+	w.myClientPointer.Set(instance.Id, clientFor(instance))
 	return w
 }
 
@@ -47,7 +47,7 @@ func TestCallLifecycleEventsReachCallSubscribers(t *testing.T) {
 	waitForCount(t, webhook, 2)
 
 	other := &instance_model.Instance{Id: "b", Events: "MESSAGE", Webhook: "http://example.invalid/hook"}
-	w.myClientPointer.Set("b", &MyClient{Instance: other})
+	w.myClientPointer.Set("b", clientFor(other))
 	w.publishCallEvent("b", "CallEnded", data)
 	time.Sleep(100 * time.Millisecond)
 	if webhook.count() != 2 {
@@ -73,4 +73,11 @@ func TestPublishCallEventOfAnInstanceThatIsGone(t *testing.T) {
 	if webhook.count() != 0 {
 		t.Fatalf("published %d events for an unknown instance", webhook.count())
 	}
+}
+
+// clientFor is a MyClient that works with the given instance record.
+func clientFor(instance *instance_model.Instance) *MyClient {
+	c := &MyClient{}
+	c.setInst(instance)
+	return c
 }
