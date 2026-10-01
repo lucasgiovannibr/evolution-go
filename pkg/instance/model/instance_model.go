@@ -25,7 +25,7 @@ type Instance struct {
 	Events           string    `json:"events"`
 	OsName           string    `json:"os_name"`
 	Proxy            string    `json:"proxy"`
-	ClientName       string    `json:"client_name"`
+	ClientName       string    `json:"client_name" gorm:"index"`
 	CreatedAt        time.Time `json:"createdAt" gorm:"autoCreateTime"`
 
 	// Advanced Settings

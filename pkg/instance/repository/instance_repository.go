@@ -21,7 +21,7 @@ type InstanceRepository interface {
 	GetConnectedInstanceByID(instanceId string) (*instance_model.Instance, error)
 	GetInstanceByToken(token string) (*instance_model.Instance, error)
 	GetInstanceByName(name string) (*instance_model.Instance, error)
-	Update(*instance_model.Instance) error
+	MarkPaired(instanceId string, jid string) error
 	UpdateConnected(userId string, status bool, disconnectReason string) error
 	UpdateQrcode(userId string, qr string) error
 	UpdateProxy(userId string, proxy string) error
@@ -93,16 +93,29 @@ func (i *instanceRepository) GetConnectedInstanceByID(instanceId string) (*insta
 	return &instance, nil
 }
 
-func (i *instanceRepository) Update(instance *instance_model.Instance) error {
-	err := i.db.Save(&instance).Error
+// MarkPaired records a completed pairing: one statement that touches only the columns it
+// owns. It replaces Update, which saved the whole row it had read earlier and so wrote back
+// stale values of everything else (a QR code or connection state changed in between).
+func (i *instanceRepository) MarkPaired(instanceId string, jid string) error {
+	err := i.db.Model(&instance_model.Instance{}).Where("id = ?", instanceId).Updates(map[string]interface{}{
+		"qrcode":            "",
+		"connected":         true,
+		"disconnect_reason": "",
+		"jid":               jid,
+	}).Error
 	if err != nil {
-		logger.LogError("Error updating instance in DB: %v", err)
+		logger.LogError("Error marking instance as paired in DB: %v", err)
 	}
 	return err
 }
 
+// UpdateConnected is a single UPDATE (it used to be two chained ones: two round trips, and
+// a window where connected and disconnect_reason disagreed).
 func (i *instanceRepository) UpdateConnected(userId string, status bool, disconnectReason string) error {
-	return i.db.Model(&instance_model.Instance{}).Where("id = ?", userId).Update("connected", status).Update("disconnect_reason", disconnectReason).Error
+	return i.db.Model(&instance_model.Instance{}).Where("id = ?", userId).Updates(map[string]interface{}{
+		"connected":         status,
+		"disconnect_reason": disconnectReason,
+	}).Error
 }
 
 func (i *instanceRepository) UpdateQrcode(userId string, qr string) error {

@@ -345,7 +345,7 @@ func (i instances) Logout(instance *instance_model.Instance) (*instance_model.In
 		}
 
 		instance.Connected = false
-		err = i.instanceRepository.Update(instance)
+		err = i.instanceRepository.UpdateConnected(instance.Id, false, instance.DisconnectReason)
 		if err != nil {
 			return instance, err
 		}
@@ -689,7 +689,7 @@ func (i instances) SetProxy(id string, proxyConfig *ProxyConfig) error {
 	instance.Proxy = string(proxyJSON)
 
 	// Update instance in database
-	err = i.instanceRepository.Update(instance)
+	err = i.instanceRepository.UpdateProxy(id, instance.Proxy)
 	if err != nil {
 		i.loggerWrapper.GetLogger(id).LogError("[%s] Failed to update instance with proxy: %v", id, err)
 		return err
@@ -780,9 +780,7 @@ func (i instances) RemoveProxy(id string) error {
 		return err
 	}
 
-	instance.Proxy = ""
-
-	err = i.instanceRepository.Update(instance)
+	err = i.instanceRepository.UpdateProxy(id, "")
 	if err != nil {
 		return err
 	}

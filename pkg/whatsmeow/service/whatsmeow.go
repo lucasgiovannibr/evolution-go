@@ -1374,7 +1374,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			instance.Jid = mycli.WAClient.Store.ID.String()
 
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Attempting to update instance in DB (jid %s)", mycli.userID, instance.Jid)
-			err = mycli.instanceRepository.Update(instance)
+			err = mycli.instanceRepository.MarkPaired(instance.Id, instance.Jid)
 			if err != nil {
 				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.userID, err)
 			} else {
