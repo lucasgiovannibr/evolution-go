@@ -197,7 +197,7 @@ O WhatsApp recusou a versão do cliente. O projeto **descarta o cache da versão
 
 ## Eventos de pareamento e de estado de chat
 
-Eventos que o whatsmeow emitia e o projeto ignorava. Todos usam o mesmo envelope dos demais (`event`, `data`, `instanceId`, `instanceName`, `instanceToken`).
+Eventos que o whatsmeow emitia e o projeto ignorava. Todos usam o mesmo envelope dos demais (`event`, `data`, `instanceId`, `instanceName`; `instanceToken` só com `WEBHOOK_INCLUDE_TOKEN=true`).
 
 ### Falhas de pareamento (assinatura `QRCODE`)
 
@@ -399,3 +399,19 @@ Todas são somente leitura e têm limite de 10 s.
 ## Espera pela conexão
 
 Ao iniciar uma instância que não estava rodando, as rotas agora esperam a conexão em vez de dormir um tempo fixo: respondem assim que conecta, com limite de 10 s. Uma instância sem dispositivo pareado continua falhando na hora ("instance is not logged in"), e `GET /instance/qr` devolve o QR assim que ele existe.
+
+## Rodada de endurecimento (outubro de 2026)
+
+Mudanças de comportamento e novidades de operação; o texto completo está no [CHANGELOG](../../../CHANGELOG.md).
+
+- **Erros com `code`**: toda falha responde `{"error", "code"}` com o status do tipo de falha (`503` sem conexão, `409` instância não pareada / desconectada pela API / em outra réplica, `429` com `Retry-After`...). Veja [Códigos de Erro](../referencia/error-codes.md).
+- **Limite de envio por instância**: `SEND_MAX_CONCURRENT` (4) e `SEND_RATE_PER_MIN`; passar do limite por mais de `SEND_QUEUE_WAIT_SEC` (30) devolve `429 rate_limited` com `Retry-After`.
+- **`POST /user/check`** aceita até 100 números por chamada, e "este número está no WhatsApp" é lembrado por `CHECK_USER_CACHE_TTL_MIN` (12 h; 5 min quando não está). Os envios seguintes ao mesmo número não consultam o WhatsApp de novo.
+- **`POST /instance/disconnect`** desconecta de verdade e a instância só volta com `connect`/`reconnect`.
+- **Eventos sem `instanceToken`** por padrão (`WEBHOOK_INCLUDE_TOKEN=true` restaura).
+- **Senha do proxy** nunca volta nas respostas.
+- **Mídia recebida** é baixada por trabalhadores limitados (`MEDIA_WORKERS`): uma mensagem com vídeo grande não atrasa as seguintes da instância. A ordem de chegada ao webhook pode então diferir entre uma mídia e um texto posterior (`MEDIA_ORDERED=true` volta ao modo sequencial); os eventos trazem o timestamp.
+- **`GET /metrics`** (Prometheus, chave global) e `X-Request-ID` em toda resposta.
+- **`GET /instance/{id}/logs`** devolve as linhas mais novas primeiro.
+- **URLs recebidas só para endereços públicos** (`ALLOW_PRIVATE_URLS` libera as privadas), limite de corpo (`MAX_BODY_MB`/`MAX_MEDIA_BODY_MB`) e `CORS_ORIGINS`.
+- **Várias réplicas**: uma réplica por instância (`INSTANCE_LOCK`); parada ordenada com `stop_grace_period: 30s`.

@@ -372,7 +372,9 @@ curl "http://localhost:4000/instance/info/vendas" \
 
 ## Desconectar Instância
 
-Desconecta a instância mas mantém os dados.
+Desconecta a instância mas mantém os dados e a sessão pareada.
+
+A instância **fica desligada**: nenhuma outra requisição (envio, consulta...) a religa sozinha, elas respondem `409` com `code: instance_disconnected_by_user`. Para voltar, use `POST /instance/connect` (ou `POST /instance/reconnect`). Depois de reiniciar o servidor ela também não é restaurada por `CONNECT_ON_STARTUP`. (Antes desta versão o `disconnect` reiniciava o cliente e emitia um `LoggedOut` que não aconteceu.)
 
 ### Endpoint
 ```
@@ -515,7 +517,7 @@ curl -X DELETE "http://localhost:4000/instance/delete/vendas" \
 
 ## Configurar Proxy
 
-Configura proxy HTTP para a instância.
+Configura proxy HTTP para a instância. A senha do proxy **nunca é devolvida** pela API: as respostas de criar, listar e consultar instância trazem o proxy sem o campo `password`.
 
 ### Endpoint
 ```

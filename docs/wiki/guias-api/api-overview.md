@@ -60,10 +60,12 @@ curl -X POST http://localhost:4000/instance/create \
 
 ```json
 {
-  "error": "Instance not found",
-  "message": "A instância especificada não existe"
+  "error": "no active session found",
+  "code": "instance_not_connected"
 }
 ```
+
+`error` é o texto para humanos; `code` é estável e é o que o seu código deve testar. A lista completa está em [Códigos de Erro](../referencia/error-codes.md). Toda resposta traz o cabeçalho `X-Request-ID`.
 
 ## Códigos de Status HTTP
 
@@ -71,10 +73,17 @@ curl -X POST http://localhost:4000/instance/create \
 |--------|-------------|
 | 200 | OK - Requisição bem-sucedida |
 | 201 | Created - Recurso criado com sucesso |
-| 400 | Bad Request - Dados inválidos |
-| 401 | Unauthorized - API key inválida |
+| 400 | Bad Request - Dados inválidos (`invalid_request`) |
+| 401 | Unauthorized - API key inválida (`unauthorized`) |
+| 403 | Forbidden - Token de outra instância |
 | 404 | Not Found - Recurso não encontrado |
+| 409 | Conflict - Estado impede a operação (instância não pareada, desconectada pela API, em outra réplica) |
+| 413 | Payload Too Large - Corpo acima de `MAX_BODY_MB` |
+| 429 | Too Many Requests - Limite de envio da instância ou do WhatsApp; espere `Retry-After` segundos |
 | 500 | Internal Server Error - Erro no servidor |
+| 502 | Bad Gateway - O WhatsApp recusou a operação |
+| 503 | Service Unavailable - A instância não está conectada (tente de novo) |
+| 504 | Gateway Timeout - O WhatsApp não respondeu a tempo |
 
 ## Estrutura da API
 

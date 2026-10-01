@@ -381,6 +381,14 @@ funcionalidade/
 5. ABERTA/CONECTADA
 ```
 
+### Reconexão, desligamento e réplicas
+
+- **Queda de conexão**: o servidor reconecta sozinho (primeira tentativa imediata; depois 5 s, 10 s, 20 s... até 5 min, com jitter; uma conexão estável de 1 minuto zera a contagem). Um pedido de reconexão pela API não é espaçado.
+- **Disconnect pela API**: a instância fica desligada até um `connect` explícito; requisições que precisariam do cliente respondem `409 instance_disconnected_by_user` em vez de reconectar.
+- **Partida em massa** (`CONNECT_ON_STARTUP`): uma instância a cada ~300 ms.
+- **Parada do servidor**: os clientes são desconectados sem alterar o estado salvo, então as instâncias voltam no próximo start; as filas de webhook são esvaziadas até o prazo.
+- **Várias réplicas**: uma réplica por instância (lock consultivo do Postgres numa sessão dedicada). Se a réplica morre ou perde a conexão com o banco, o lock se solta; ao reconectar, ela retoma os seus e só abre mão de uma instância que outra réplica realmente assumiu.
+
 ### Ações Possíveis
 
 | Estado | O que Pode Fazer |

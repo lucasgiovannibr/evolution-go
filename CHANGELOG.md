@@ -23,6 +23,59 @@ and pull requests in `FORK-TRIAGE.md`.
 - **New database column** `instances.calls_enabled` (boolean, default false), added by
   the automatic migration at startup.
 
+- **Breaking changes of the hardening round** (PRs #38–#72; the project is not in production,
+  so the cleaner behaviour was chosen — read before upgrading):
+  - **Event payloads no longer carry `instanceToken`** (it is the instance's API key and
+    every consumer of the events could use it). `WEBHOOK_INCLUDE_TOKEN=true` brings it back
+    for an integration that still reads it.
+  - **`WADEBUG` and `LOGTYPE` are the real names now.** The code used to read `DEBUG_ENABLED`
+    and `LOG_TYPE` while every example and the docs said `WADEBUG`/`LOGTYPE`; the old names
+    stay as fallbacks. Debug lines are now written only with `LOG_LEVEL=debug` (they used to
+    be written always).
+  - **The server refuses to start with a published `GLOBAL_API_KEY`** (the values of the
+    examples, `change-me`...). `ALLOW_INSECURE_API_KEY=true` starts anyway, for local use.
+  - **Failed requests answer `{"error": "<text>", "code": "<code>"}`** and the status says
+    what kind of failure it is (503 not connected, 409 not paired / disconnected through the
+    API / running on another replica, 429 + `Retry-After`, 404, 504, 502, 400...). They used
+    to be a `500` for nearly everything. `error` is unchanged; the codes are listed in
+    `docs/wiki/referencia/error-codes.md`.
+  - **`POST /instance/disconnect` really disconnects.** It used to restart the client (and
+    emit a `LoggedOut` event that never happened). An instance disconnected through the API is
+    no longer started again by the next request that needs a client (`409
+    instance_disconnected_by_user`); `POST /instance/connect` starts it.
+  - **URLs supplied in requests may only point to public addresses** (media, stickers, link
+    previews, status): private networks, loopback and the cloud metadata endpoint are refused.
+    `ALLOW_PRIVATE_URLS=true` allows the private ones; webhooks may always target the internal
+    network.
+  - **The MinIO bucket is no longer made public.** Media is stored under
+    `evolution-go-medias/<instanceId>/` and served through presigned URLs
+    (`MINIO_URL_TTL_HOURS`, default and maximum 168); it is removed with the instance.
+    `MINIO_PUBLIC_BUCKET=true` restores the old public policy (it replaces the bucket's own).
+  - **The Docker image runs as a non-root user** (uid 10001), has a `HEALTHCHECK` and is based
+    on Alpine 3.24. The entrypoint fixes the ownership of an existing root-owned volume. Use
+    `stop_grace_period: 30s` (the compose examples do).
+  - **Request bodies are limited** (`MAX_BODY_MB`, default 4; routes that receive a file
+    `MAX_MEDIA_BODY_MB`, default 150) and CORS follows `CORS_ORIGINS` (empty or `*` allows every
+    origin).
+  - **The proxy password is no longer returned** by the instance endpoints.
+  - **The manager keeps its session in `sessionStorage`** (it ends with the tab; the old
+    `localStorage` entry is removed) and is served with a Content-Security-Policy.
+  - Messages table: `messages` gains `instance_id` and the unique key is now
+    `(instance_id, message_id)`; the migration drops the old `message_id` constraint (older
+    rows keep an empty `instance_id`). Indexes on `instances.client_name` and
+    `labels.instance_id`.
+- New optional environment variables (defaults in brackets):
+  `WEBHOOK_INCLUDE_TOKEN` (false), `ALLOW_INSECURE_API_KEY`, `ALLOW_PRIVATE_URLS`,
+  `CORS_ORIGINS`, `MAX_BODY_MB` (4), `MAX_MEDIA_BODY_MB` (150), `LOG_LEVEL` (info),
+  `LOG_KEEP_DELETED` (false), `CHECK_USER_CACHE_TTL_MIN` (720), `MINIO_PUBLIC_BUCKET` (false),
+  `MINIO_URL_TTL_HOURS` (168), `MAX_IMAGE_MEGAPIXELS` (50), `MAX_CONCURRENT_CONVERSIONS`
+  (max(2, CPUs/2)), `DB_MAX_OPEN_CONNS` (25), `DB_MAX_IDLE_CONNS` (10),
+  `DB_CONN_MAX_LIFETIME_MIN` (5), `DB_CONN_MAX_IDLE_MIN` (1), `SEND_MAX_CONCURRENT` (4),
+  `SEND_RATE_PER_MIN` (off), `SEND_QUEUE_WAIT_SEC` (30), `MEDIA_WORKERS` (4),
+  `MEDIA_WORKERS_PER_INSTANCE` (2), `MEDIA_ORDERED` (false), `STARTUP_STAGGER_MS` (300),
+  `RECONNECT_BACKOFF_BASE_SEC` (5), `RECONNECT_BACKOFF_MAX_SEC` (300), `INSTANCE_LOCK` (on).
+  The full table is in `docs/wiki/referencia/environment-variables.md`.
+
 ### Fixes
 - **Process crashes**: shared instance maps are now synchronized (`fatal error:
   concurrent map writes`); WebSocket writes are serialized per connection;
@@ -254,6 +307,72 @@ connection**). The media side uses the `purpshell/meowcaller` library, pinned to
   through several positions, and a portrait (360x640) picture filling the phone's screen
   (a landscape one is letterboxed). `docker/fork-test/call-stream-test.py` repeats it.
 - Guide, WebSocket protocol and examples: `docs/wiki/guias-api/api-call.md`.
+
+### Hardening and scale round (October 2026, PRs #38–#72)
+Result of a full analysis of the system (security, scalability, memory, send speed, error
+returns); every change below has tests, and the structural gains were measured.
+
+**Security**
+- Outbound HTTP policy enforced at the connection (SSRF): one client for media, stickers, link
+  previews and status; webhooks keep their own client. Decompression limits before decoding an
+  image (a crafted PNG bomb is refused) and ffmpeg/pdftoppm run behind a slot pool with timeout
+  and output caps.
+- Published API keys are refused at startup; access logs redact the query string; the log
+  directory of a deleted instance is removed; the proxy password never leaves the API.
+- `chai2010/webp` 1.4.0 (CVE-2023-4863 in the bundled libwebp, found by Trivy), pgx, x/image,
+  pion/dtls and others updated; `govulncheck` runs in CI and `go 1.26.8` is required.
+- Manager: session in `sessionStorage`, CSP (`script-src 'self'`, no framing, no `<base>`),
+  `X-Frame-Options`, `nosniff`, `Referrer-Policy`.
+
+**Speed and memory**
+- Send path: the "is this number on WhatsApp" lookup is cached (12 h, 5 min for negatives,
+  concurrent sends of one number share one query); `/user/check` accepts up to 100 numbers;
+  retries redo only the send, never the download or the conversion; the `SendMessage` event is
+  built after the API has answered and no longer downloads again the file just uploaded.
+- Receive path: events nobody subscribed to are not built (no media download, no group query,
+  no serialization: `CallWebhook` went from 21 MB to 440 B allocated per 20 MB event);
+  `GetGroupInfo` is cached for 2 minutes and invalidated by group events; messages with media are
+  processed by bounded workers (`MEDIA_WORKERS`) instead of blocking the handler.
+- Bodies are read once and edited in place (a 100 MB upload: 393 MB → 136 MB peak); the logger
+  writes from a goroutine per instance (2,965 → 1,106 ns/op on the logging goroutine).
+- Message persistence: one batching writer (queue 8192, batches of 200 / 250 ms) instead of a
+  goroutine per message; a late receipt can no longer turn a `Read` message back into
+  `Delivered`.
+
+**Reliability**
+- RabbitMQ publishes through one confirmed channel (confirmations are read, queues declared
+  once, no 4 s sleep in the send path); NATS keeps reconnecting; webhook, RabbitMQ, NATS and
+  WebSocket outputs are independent (one down no longer blocks the others).
+- Ordered shutdown: clients, message writer, webhook queues (drained until the deadline), WebSocket
+  subscribers (close frame), brokers; the stored `connected` state is kept so
+  `CONNECT_ON_STARTUP` restores the instances.
+- Automatic reconnection is paced (0, 5, 10, 20 s ... up to 5 min, jitter, reset after a stable
+  minute) and instances start one every ~300 ms; API-requested reconnects are not paced.
+- One replica per instance (Postgres advisory locks, `INSTANCE_LOCK`), so two replicas can no
+  longer run the same WhatsApp account.
+- Targeted database updates instead of full-row `Save` (a QR code or connection state changed
+  meanwhile was overwritten with stale values); one-statement `UpdateConnected`; configurable
+  pool.
+- Data races fixed (the instance record swapped while the handler reads it; whatsmeow's global
+  identity rewritten by every start).
+
+**API**
+- Per-instance send limit (`SEND_MAX_CONCURRENT`, `SEND_RATE_PER_MIN`) answering `429` with
+  `Retry-After`.
+- Typed errors with a stable `code` in every handler and middleware (see the upgrade notes).
+- `GET /metrics` (Prometheus, global key): HTTP traffic and latency, WhatsApp events, connected
+  instances, webhook queues, database pools, dropped messages, batch sizes, throttled sends,
+  media queue. `X-Request-ID` on every response and in the access log.
+- `GET /instance/{id}/logs` returns the newest lines first.
+
+**Engineering**
+- CI: gofmt, golangci-lint (govet, staticcheck SA*, ineffassign, unused), `go test -race` with
+  real RabbitMQ, NATS and Postgres service containers, manager typecheck/tests/build/`npm
+  audit`, Trivy on the image, dependabot.
+- `ensureClientConnected` (nine copies) is one `ClientProvider`; `handleEvent` went from ~1,300
+  to ~640 lines (received message, receipt, logged out, pair success, media, JID clean-up, quoted
+  context and button clicks are functions of their own).
+- Dead code removed; the test logger is closed when a test ends.
 
 ### Documentation
 - `docs/swagger.*` regenerated with swag v1.16.3 (`--parseDependency`; it had not been

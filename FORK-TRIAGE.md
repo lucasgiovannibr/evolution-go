@@ -225,6 +225,20 @@ Instância pareada e conectada por você; mensagens só para o seu próprio núm
 
 **Não testado**: proxy (por decisão sua), passkey (a conta não exigiu), botões/lista, ações de canal, `joininvite`, comunidades, eventos reais de estado de chat de outro aparelho e de mensagem indecifrável, receptor de webhook travado ou fila estourada, redes instáveis. **Uso prolongado**: medição de 48 h em andamento (amostra a cada 10 min: saúde, goroutines, memória, conexões do Postgres, reinícios, panics); ela reinicia a cada troca de imagem, e o último início foi às 00:28 UTC de 30/09.
 
+## 2.1 Rodada de endurecimento (outubro de 2026, PRs #38–#72 do fork)
+
+Não veio de issues do upstream: veio de uma análise completa do sistema (segurança, escalabilidade, memória, velocidade de envio, retorno de erros), com medição antes e depois. O texto completo está no [CHANGELOG](CHANGELOG.md) ("Hardening and scale round") e a documentação em `docs/wiki`.
+
+| Fase | PRs | O que mudou |
+|---|---|---|
+| 1 — higiene e correções rápidas | #38–#45 | dependências e `govulncheck`; token fora do payload; limites de corpo, CORS e timeouts do servidor; chave global fraca recusada; métricas e `X-Request-ID`; logs de instância apagada; `instance_id` em `messages`; produtores independentes; `WADEBUG`/`LOGTYPE` |
+| 2 — caminho de envio e recebimento | #46–#52 | cache do usync; eventos sem assinante não são montados; corpo lido uma vez e editado no lugar; logger assíncrono; cache de `GetGroupInfo`; retries sem refazer download |
+| 3 — rede e dados | #53–#60 | SSRF; MinIO sem política pública e por instância; limites de imagem e semáforo no ffmpeg; imagem sem root; senha do proxy fora das respostas; atualizações pontuais no banco e pool configurável; escritor de mensagens em lote |
+| 4 — escala e resiliência | #61–#67 | RabbitMQ/NATS robustos; parada ordenada, backoff de reconexão e partida escalonada; limite de envio com 429; corridas; mídia em trabalhadores; `disconnect` de verdade e `ClientProvider`; uma réplica por instância |
+| 5 — engenharia | #68–#72 | CI com gofmt, lint, manager e Trivy (achou o CVE-2023-4863 no webp); erros tipados com `code`; manager em `sessionStorage` e CSP; `handleEvent` de 1.300 para 640 linhas |
+
+Ficou de fora de propósito: o acoplamento da chave global com o mecanismo de licença (`pkg/core`, código ofuscado do upstream) e tudo que exige a conta real para validar (latência de `/send/*`, mídia recebida pelo caminho novo, `disconnect`, segunda réplica).
+
 ## 3. Botões e listas (#59 #71 #110 #170 #204) — não corrigido
 
 É o grupo mais reportado (5 issues). Não alterei o código porque não há como validar sem um aparelho — e, ao ler o código do whatsmeow, a hipótese "o bump resolve" **não se sustenta**:
@@ -257,10 +271,9 @@ Verificado: build, `go vet`, `go test -race`, boot com Postgres, imagem Docker (
 | Botões e lista (#59 #71 #110 #170 #204) | Só valida em aparelho; o whatsmeow novo **não** muda isso (§3). Limitação documentada no wiki |
 | Erro 463 em contatos frios (#50 #124) | Depende de observação prolongada com o whatsmeow novo |
 | Uso prolongado (horas/dias) | **Em andamento**: medição de 48 h com a instância ativa; só vale a partir da última troca de imagem, então convém não mexer no código até terminar |
-| PRs #145/#154/#197/#191/#192 | O ponto central (um runtime por instância, restauração no startup, goroutines órfãs) foi tratado de forma cirúrgica; o restante depende de decisão/teste ao vivo |
+| PRs #145/#154/#191/#192 (e #197, feito no PR #62 do fork) | O ponto central (um runtime por instância, restauração no startup, goroutines órfãs, backoff da reconexão) foi tratado de forma cirúrgica; o restante depende de decisão/teste ao vivo |
 | #32 (número fixo "not registered") | O whatsmeow novo corrige o parse do `IsOnWhatsApp`; reavaliar com um número fixo |
 | #69, #107 | Parecem comportamento do WhatsApp; sem causa no código |
-| Swagger | O `swag init` reescreve ~1.000 linhas e remove as rotas de licença |
 | Proxy real e passkey | Não testados |
 | Enquetes em SQLite | A tabela `poll_votes` usa `TEXT[]` (Postgres); no modo SQLite as enquetes não funcionam |
 
@@ -418,7 +431,7 @@ Legenda de PRs: **Aplicado** = mesclado (com adaptações ao `safemap`); **Reimp
 | [#194](https://github.com/evolution-foundation/evolution-go/pull/194) | fix(whatsmeow): create the sqlstore container once instead of on every StartC… | EcoosUP | ⏩ Superado | Leak de pool — coberto. |
 | [#195](https://github.com/evolution-foundation/evolution-go/pull/195) | fix(whatsmeow): Archive event panics before reaching the webhook | EcoosUP | ⏩ Superado | Panic Archive — coberto. |
 | [#196](https://github.com/evolution-foundation/evolution-go/pull/196) | fix(concurrency): guard the three shared maps with a mutex | EcoosUP | ✅ Aplicado | Mesclado: `safemap` para `clientPointer`/`myClientPointer`/`killChannel` (fim do `concurrent map writes`). |
-| [#197](https://github.com/evolution-foundation/evolution-go/pull/197) | fix(whatsmeow): back off the reconnect loop instead of spinning forever | EcoosUP | ⏸ Não aplicado | Backoff do loop de reconexão (até 30 min de espera). Decisão de produto; ver "Próximos passos". |
+| [#197](https://github.com/evolution-foundation/evolution-go/pull/197) | fix(whatsmeow): back off the reconnect loop instead of spinning forever | EcoosUP | ✅ Tratado de outro jeito | Backoff da reconexão automática implementado no fork (PR #62): 0, 5, 10, 20 s... até 5 min, com jitter, reset após 1 min estável e configurável (`RECONNECT_BACKOFF_BASE_SEC`/`MAX_SEC`); pedidos pela API não são espaçados. |
 | [#198](https://github.com/evolution-foundation/evolution-go/pull/198) | ci: run go build, vet and test on pull requests to develop | pastoriniMatheus | ✅ Reimplementado | CI (build/vet/test) — reescrito para `main` e com `-race`, em `.github/workflows/ci.yml`. |
 | [#199](https://github.com/evolution-foundation/evolution-go/pull/199) | fix: conecta ao WhatsApp corretamente (client outdated + vazamento de conexao… | intelektos | 🟡 Parcial | Aplicado: `store.SetWAVersion` (a versão buscada/configurada nunca chegava ao handshake). Container compartilhado já coberto. Corrida do QR e bump de lib não aplicados. |
 | [#200](https://github.com/evolution-foundation/evolution-go/pull/200) | fix: close leaked sqlstore container on client restart/reconnect | alexmagnoreis | ⏩ Superado | Leak de pool — coberto. |

@@ -122,8 +122,9 @@ Quando um evento ocorre no WhatsApp:
 
 1. **Webhook Global**: Se configurado via `WEBHOOK_URL`, todos os eventos são enviados para esta URL
 2. **Webhook por Instância**: Se configurado no `POST /instance/connect`, eventos daquela instância vão para a URL específica
-3. **Retry Automático**: Se a requisição falhar, o Evolution GO tenta novamente até 5 vezes
-4. **Intervalo**: 30 segundos entre cada tentativa
+3. **Fila por destino**: cada URL tem uma fila limitada (eventos e bytes) com poucos workers; se o receptor cai, o evento **mais antigo** é descartado ao encher a fila e a perda aparece em `GET /instance/runtimes` e em `/metrics`
+4. **Retry Automático**: até 5 tentativas por evento, com espera crescente (1 s, 5 s, 30 s, 2 min) e jitter; quando um evento esgota as tentativas o destino é tratado como fora do ar e os seguintes recebem uma tentativa cada, até um passar
+5. **Desligamento**: ao parar o servidor a fila é esvaziada até o prazo (15 s); um receptor fora do ar não segura o desligamento
 
 ### Requisição HTTP
 
@@ -220,10 +221,10 @@ Publica eventos em filas RabbitMQ (AMQP). Ideal para arquiteturas distribuídas 
 
 - **Filas duráveis**: Mensagens não se perdem mesmo após reinicialização do servidor
 - **Alta disponibilidade**: Replicação automática entre nós
-- **Retry automático**: 3 tentativas com intervalo crescente
-- **Confirmações de entrega**: Garantia de que a mensagem foi recebida
+- **Confirmações de publicação**: o servidor espera a confirmação do broker (até 15 s) antes de considerar o evento entregue; sem confirmação há 1 nova tentativa
+- **Um canal só**: as publicações usam um canal de longa duração e cada fila é declarada uma vez
 - **Heartbeat**: Monitoramento de conexão a cada 30 segundos
-- **Reconexão automática**: Reconecta automaticamente em caso de falha
+- **Reconexão automática**: depois de uma falha de conexão os eventos seguintes falham de imediato por 3 s, sem travar o envio
 
 ### Configuração
 
@@ -283,6 +284,8 @@ As filas RabbitMQ criadas pelo Evolution GO são configuradas com:
 - **Quorum queues**: Replicação automática para alta disponibilidade
 - **Durabilidade**: Mensagens persistem após restart do servidor
 - **Persistência**: Todas as mensagens são marcadas como persistentes
+
+> Os argumentos das filas não mudam entre versões de propósito: uma fila que já existe com outros argumentos rejeita a declaração. Fila sem consumidor cresce até o broker reagir; configure TTL ou limite por *policy* do RabbitMQ, não pelo Evolution GO.
 
 ### Consumindo Mensagens
 
@@ -373,6 +376,7 @@ Publica eventos em tópicos NATS. Ideal para comunicação em tempo real com lat
 - **Pub/Sub nativo**: Vários consumidores podem receber o mesmo evento
 - **Leve e rápido**: Menor overhead que RabbitMQ
 - **Clustering**: Suporte nativo a clusters distribuídos
+- **Reconexão**: se o NATS estiver fora do ar na partida o produtor continua tentando (com jitter) em vez de ficar desligado até o próximo restart
 
 ### Configuração
 
