@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	poll_model "github.com/evolution-foundation/evolution-go/pkg/poll/model"
 	poll_service "github.com/evolution-foundation/evolution-go/pkg/poll/service"
@@ -47,9 +48,7 @@ func (h *PollHandler) GetPollResults(c *gin.Context) {
 	instanceInterface, exists := c.Get("instance")
 	if !exists {
 		h.loggerWrapper.GetLogger("poll-handler").LogWarn("[POLL] Instance not found in context")
-		c.JSON(http.StatusUnauthorized, gin.H{
-			"error": "Authentication required",
-		})
+		apierror.Fail(c, http.StatusUnauthorized, "Authentication required")
 		return
 	}
 
@@ -61,9 +60,7 @@ func (h *PollHandler) GetPollResults(c *gin.Context) {
 	var instance Instance
 	if err := json.Unmarshal(instanceBytes, &instance); err != nil {
 		h.loggerWrapper.GetLogger("poll-handler").LogError("[POLL] Failed to parse instance: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to get instance information",
-		})
+		apierror.Fail(c, http.StatusInternalServerError, "Failed to get instance information")
 		return
 	}
 
@@ -72,9 +69,7 @@ func (h *PollHandler) GetPollResults(c *gin.Context) {
 	// Validações de segurança
 	if pollMessageID == "" {
 		h.loggerWrapper.GetLogger("poll-handler").LogWarn("[POLL] Missing pollMessageId")
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error": "pollMessageId is required",
-		})
+		apierror.Fail(c, http.StatusBadRequest, "pollMessageId is required")
 		return
 	}
 
@@ -84,13 +79,11 @@ func (h *PollHandler) GetPollResults(c *gin.Context) {
 	results, err := h.pollService.GetPollResults(c.Request.Context(), pollMessageID, instanceID)
 	if err != nil {
 		if errors.Is(err, poll_service.ErrStorageUnavailable) {
-			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+			apierror.Fail(c, http.StatusServiceUnavailable, err.Error())
 			return
 		}
 		h.loggerWrapper.GetLogger("poll-handler").LogError("[POLL] Error fetching results: %v", err)
-		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to fetch poll results",
-		})
+		apierror.Fail(c, http.StatusInternalServerError, "Failed to fetch poll results")
 		return
 	}
 

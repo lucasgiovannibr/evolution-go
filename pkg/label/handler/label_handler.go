@@ -38,7 +38,7 @@ func (l *labelHandler) ChatLabel(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -50,12 +50,12 @@ func (l *labelHandler) ChatLabel(ctx *gin.Context) {
 	}
 
 	if data.JID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "jid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "jid is required")
 		return
 	}
 
 	if data.LabelID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "label id is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "label id is required")
 		return
 	}
 
@@ -84,7 +84,7 @@ func (l *labelHandler) MessageLabel(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -96,17 +96,17 @@ func (l *labelHandler) MessageLabel(ctx *gin.Context) {
 	}
 
 	if data.JID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "jid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "jid is required")
 		return
 	}
 
 	if data.LabelID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "label id is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "label id is required")
 		return
 	}
 
 	if data.MessageID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "message id is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "message id is required")
 		return
 	}
 
@@ -135,7 +135,7 @@ func (l *labelHandler) EditLabel(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -147,12 +147,12 @@ func (l *labelHandler) EditLabel(ctx *gin.Context) {
 	}
 
 	if data.LabelID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "label id is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "label id is required")
 		return
 	}
 
 	if data.Name == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "name is required")
 		return
 	}
 
@@ -181,7 +181,7 @@ func (l *labelHandler) ChatUnlabel(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -193,12 +193,12 @@ func (l *labelHandler) ChatUnlabel(ctx *gin.Context) {
 	}
 
 	if data.JID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "jid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "jid is required")
 		return
 	}
 
 	if data.LabelID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "label id is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "label id is required")
 		return
 	}
 
@@ -227,7 +227,7 @@ func (l *labelHandler) MessageUnlabel(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -239,17 +239,17 @@ func (l *labelHandler) MessageUnlabel(ctx *gin.Context) {
 	}
 
 	if data.JID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "jid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "jid is required")
 		return
 	}
 
 	if data.LabelID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "label id is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "label id is required")
 		return
 	}
 
 	if data.MessageID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "message id is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "message id is required")
 		return
 	}
 
@@ -276,7 +276,7 @@ func (l *labelHandler) GetLabels(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 

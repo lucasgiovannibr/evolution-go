@@ -2,7 +2,7 @@ package label_service
 
 import (
 	"context"
-	"errors"
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
@@ -62,7 +62,7 @@ func (l *labelService) ChatLabel(data *ChatLabelStruct, instance *instance_model
 	jid, ok := utils.ParseJID(data.JID)
 	if !ok {
 		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error parse chat jid", instance.Id)
-		return errors.New("invalid jid")
+		return apierror.Invalid("invalid jid")
 	}
 	// The label patch is matched to the chat by its JID in the app-state index: no "+",
 	// and the LID the phone knows the chat by (see utils.AppStateChatJID).
@@ -90,7 +90,7 @@ func (l *labelService) MessageLabel(data *MessageLabelStruct, instance *instance
 	jid, ok := utils.ParseJID(data.JID)
 	if !ok {
 		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error parse chat jid", instance.Id)
-		return errors.New("invalid jid")
+		return apierror.Invalid("invalid jid")
 	}
 	// The label patch is matched to the chat by its JID in the app-state index: no "+",
 	// and the LID the phone knows the chat by (see utils.AppStateChatJID).
@@ -139,7 +139,7 @@ func (l *labelService) ChatUnlabel(data *ChatLabelStruct, instance *instance_mod
 	jid, ok := utils.ParseJID(data.JID)
 	if !ok {
 		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error parse chat jid", instance.Id)
-		return errors.New("invalid jid")
+		return apierror.Invalid("invalid jid")
 	}
 	// The label patch is matched to the chat by its JID in the app-state index: no "+",
 	// and the LID the phone knows the chat by (see utils.AppStateChatJID).
@@ -167,7 +167,7 @@ func (l *labelService) MessageUnlabel(data *MessageLabelStruct, instance *instan
 	jid, ok := utils.ParseJID(data.JID)
 	if !ok {
 		l.loggerWrapper.GetLogger(instance.Id).LogError("[%s] error parse chat jid", instance.Id)
-		return errors.New("invalid jid")
+		return apierror.Invalid("invalid jid")
 	}
 	// The label patch is matched to the chat by its JID in the app-state index: no "+",
 	// and the LID the phone knows the chat by (see utils.AppStateChatJID).

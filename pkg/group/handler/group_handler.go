@@ -46,7 +46,7 @@ func (g *groupHandler) ListGroups(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -75,7 +75,7 @@ func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -87,7 +87,7 @@ func (g *groupHandler) GetGroupInfo(ctx *gin.Context) {
 	}
 
 	if data.GroupJID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "groupJID is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "groupJID is required")
 		return
 	}
 
@@ -116,7 +116,7 @@ func (g *groupHandler) GetGroupInviteLink(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -128,7 +128,7 @@ func (g *groupHandler) GetGroupInviteLink(ctx *gin.Context) {
 	}
 
 	if data.GroupJID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "groupJID is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "groupJID is required")
 		return
 	}
 
@@ -157,7 +157,7 @@ func (g *groupHandler) SetGroupPhoto(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -169,12 +169,12 @@ func (g *groupHandler) SetGroupPhoto(ctx *gin.Context) {
 	}
 
 	if data.GroupJID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "groupJID is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "groupJID is required")
 		return
 	}
 
 	if data.Image == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "image is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "image is required")
 		return
 	}
 
@@ -203,7 +203,7 @@ func (g *groupHandler) SetGroupName(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -215,12 +215,12 @@ func (g *groupHandler) SetGroupName(ctx *gin.Context) {
 	}
 
 	if data.GroupJID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "groupJID is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "groupJID is required")
 		return
 	}
 
 	if data.Name == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "name is required")
 		return
 	}
 
@@ -249,7 +249,7 @@ func (g *groupHandler) SetGroupDescription(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -261,7 +261,7 @@ func (g *groupHandler) SetGroupDescription(ctx *gin.Context) {
 	}
 
 	if data.GroupJID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "groupJID is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "groupJID is required")
 		return
 	}
 
@@ -293,7 +293,7 @@ func (g *groupHandler) CreateGroup(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -305,12 +305,12 @@ func (g *groupHandler) CreateGroup(ctx *gin.Context) {
 	}
 
 	if data.GroupName == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "groupName is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "groupName is required")
 		return
 	}
 
 	if len(data.Participants) < 1 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "participants are required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "participants are required")
 		return
 	}
 
@@ -339,7 +339,7 @@ func (g *groupHandler) UpdateParticipant(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -351,17 +351,17 @@ func (g *groupHandler) UpdateParticipant(ctx *gin.Context) {
 	}
 
 	if data.GroupJID.String() == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "groupJid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "groupJid is required")
 		return
 	}
 
 	if data.Action == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "action is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "action is required")
 		return
 	}
 
 	if len(data.Participants) < 1 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "participants are required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "participants are required")
 		return
 	}
 
@@ -397,7 +397,7 @@ func (g *groupHandler) GetMyGroups(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -426,7 +426,7 @@ func (g *groupHandler) JoinGroupLink(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -438,7 +438,7 @@ func (g *groupHandler) JoinGroupLink(ctx *gin.Context) {
 	}
 
 	if data.Code == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "code is required")
 		return
 	}
 
@@ -467,7 +467,7 @@ func (g *groupHandler) LeaveGroup(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -479,7 +479,7 @@ func (g *groupHandler) LeaveGroup(ctx *gin.Context) {
 	}
 
 	if data.GroupJID.String() == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "groupJid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "groupJid is required")
 		return
 	}
 
@@ -508,7 +508,7 @@ func (g *groupHandler) UpdateGroupSettings(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -520,12 +520,12 @@ func (g *groupHandler) UpdateGroupSettings(ctx *gin.Context) {
 	}
 
 	if data.GroupJID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "groupJid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "groupJid is required")
 		return
 	}
 
 	if data.Action == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "action is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "action is required")
 		return
 	}
 
@@ -554,7 +554,7 @@ func (g *groupHandler) GetGroupRequests(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -565,7 +565,7 @@ func (g *groupHandler) GetGroupRequests(ctx *gin.Context) {
 	}
 
 	if data.GroupJID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "groupJid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "groupJid is required")
 		return
 	}
 
@@ -594,7 +594,7 @@ func (g *groupHandler) UpdateGroupRequests(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -605,15 +605,15 @@ func (g *groupHandler) UpdateGroupRequests(ctx *gin.Context) {
 	}
 
 	if data.GroupJID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "groupJid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "groupJid is required")
 		return
 	}
 	if data.Action == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "action is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "action is required")
 		return
 	}
 	if len(data.Participants) == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "participants is required and cannot be empty"})
+		apierror.Fail(ctx, http.StatusBadRequest, "participants is required and cannot be empty")
 		return
 	}
 

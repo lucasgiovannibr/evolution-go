@@ -49,7 +49,7 @@ func (s *sendHandler) SendText(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -61,12 +61,12 @@ func (s *sendHandler) SendText(ctx *gin.Context) {
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
 	if data.Text == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "message body is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "message body is required")
 		return
 	}
 
@@ -95,7 +95,7 @@ func (s *sendHandler) SendLink(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -107,12 +107,12 @@ func (s *sendHandler) SendLink(ctx *gin.Context) {
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
 	if data.Text == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "message body is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "message body is required")
 		return
 	}
 
@@ -141,7 +141,7 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -153,13 +153,13 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 		// Handle form-data
 		number := ctx.PostForm("number")
 		if number == "" {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+			apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 			return
 		}
 
 		mediaType := ctx.PostForm("type")
 		if mediaType == "" {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "media type is required"})
+			apierror.Fail(ctx, http.StatusBadRequest, "media type is required")
 			return
 		}
 
@@ -171,7 +171,7 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 		if delayStr != "" {
 			delay64, err := strconv.ParseInt(delayStr, 10, 32)
 			if err != nil {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid delay"})
+				apierror.Fail(ctx, http.StatusBadRequest, "invalid delay")
 				return
 			}
 			delay = int32(delay64)
@@ -198,20 +198,20 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 		// Get file
 		file, err := ctx.FormFile("file")
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
+			apierror.Fail(ctx, http.StatusBadRequest, "file is required")
 			return
 		}
 
 		// Open file
 		fileData, err := file.Open()
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "cannot open file"})
+			apierror.Fail(ctx, http.StatusInternalServerError, "cannot open file")
 			return
 		}
 		defer fileData.Close()
 		fileBytes, err := io.ReadAll(fileData)
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "cannot read file"})
+			apierror.Fail(ctx, http.StatusInternalServerError, "cannot read file")
 			return
 		}
 
@@ -247,17 +247,17 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 		}
 
 		if data.Number == "" {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+			apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 			return
 		}
 
 		if data.Url == "" {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "URL is required"})
+			apierror.Fail(ctx, http.StatusBadRequest, "URL is required")
 			return
 		}
 
 		if data.Type == "" {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "media type is required"})
+			apierror.Fail(ctx, http.StatusBadRequest, "media type is required")
 			return
 		}
 
@@ -267,7 +267,7 @@ func (s *sendHandler) SendMedia(ctx *gin.Context) {
 			// Treat as base64-encoded media
 			fileBytes, err := base64.StdEncoding.DecodeString(data.Url)
 			if err != nil {
-				ctx.JSON(http.StatusBadRequest, gin.H{"error": "invalid base64 encoding"})
+				apierror.Fail(ctx, http.StatusBadRequest, "invalid base64 encoding")
 				return
 			}
 			message, err = s.sendMessageService.SendMediaFile(data, fileBytes, instance)
@@ -303,7 +303,7 @@ func (s *sendHandler) SendPoll(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -315,7 +315,7 @@ func (s *sendHandler) SendPoll(ctx *gin.Context) {
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
@@ -349,7 +349,7 @@ func (s *sendHandler) SendPollVote(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -360,11 +360,11 @@ func (s *sendHandler) SendPollVote(ctx *gin.Context) {
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 	if data.PollMessageID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "pollMessageId is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "pollMessageId is required")
 		return
 	}
 
@@ -393,7 +393,7 @@ func (s *sendHandler) SendSticker(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -405,12 +405,12 @@ func (s *sendHandler) SendSticker(ctx *gin.Context) {
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
 	if data.Sticker == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "sticker is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "sticker is required")
 		return
 	}
 
@@ -439,7 +439,7 @@ func (s *sendHandler) SendLocation(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -451,7 +451,7 @@ func (s *sendHandler) SendLocation(ctx *gin.Context) {
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
@@ -485,7 +485,7 @@ func (s *sendHandler) SendContact(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -497,17 +497,17 @@ func (s *sendHandler) SendContact(ctx *gin.Context) {
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
 	if data.Vcard.Phone == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "contact phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "contact phone number is required")
 		return
 	}
 
 	if data.Vcard.FullName == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "contact full name is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "contact full name is required")
 		return
 	}
 
@@ -547,7 +547,7 @@ func (s *sendHandler) SendButton(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -559,22 +559,22 @@ func (s *sendHandler) SendButton(ctx *gin.Context) {
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
 	if data.Title == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "title is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "title is required")
 		return
 	}
 
 	if data.Description == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "description is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "description is required")
 		return
 	}
 
 	if data.Footer == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "footer is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "footer is required")
 		return
 	}
 
@@ -609,7 +609,7 @@ func (s *sendHandler) SendList(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -621,27 +621,27 @@ func (s *sendHandler) SendList(ctx *gin.Context) {
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
 	if data.Title == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "title is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "title is required")
 		return
 	}
 
 	if data.Description == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "description is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "description is required")
 		return
 	}
 
 	if data.FooterText == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "footer is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "footer is required")
 		return
 	}
 
 	if data.ButtonText == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "button text is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "button text is required")
 		return
 	}
 
@@ -685,7 +685,7 @@ func (s *sendHandler) SendCarousel(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -697,12 +697,12 @@ func (s *sendHandler) SendCarousel(ctx *gin.Context) {
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
 	if len(data.Cards) == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "at least one card is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "at least one card is required")
 		return
 	}
 
@@ -731,7 +731,7 @@ func (s *sendHandler) SendStatusText(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -743,7 +743,7 @@ func (s *sendHandler) SendStatusText(ctx *gin.Context) {
 	}
 
 	if data.Text == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "text is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "text is required")
 		return
 	}
 
@@ -776,7 +776,7 @@ func (s *sendHandler) SendStatusMedia(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -787,12 +787,12 @@ func (s *sendHandler) SendStatusMedia(ctx *gin.Context) {
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		mediaType := ctx.PostForm("type")
 		if mediaType == "" {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "media type is required"})
+			apierror.Fail(ctx, http.StatusBadRequest, "media type is required")
 			return
 		}
 
 		if mediaType != "image" && mediaType != "video" {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "type must be 'image' or 'video'"})
+			apierror.Fail(ctx, http.StatusBadRequest, "type must be 'image' or 'video'")
 			return
 		}
 
@@ -801,19 +801,19 @@ func (s *sendHandler) SendStatusMedia(ctx *gin.Context) {
 
 		file, err := ctx.FormFile("file")
 		if err != nil {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "file is required"})
+			apierror.Fail(ctx, http.StatusBadRequest, "file is required")
 			return
 		}
 
 		fileData, err := file.Open()
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "cannot open file"})
+			apierror.Fail(ctx, http.StatusInternalServerError, "cannot open file")
 			return
 		}
 		defer fileData.Close()
 		fileBytes, err := io.ReadAll(fileData)
 		if err != nil {
-			ctx.JSON(http.StatusInternalServerError, gin.H{"error": "cannot read file"})
+			apierror.Fail(ctx, http.StatusInternalServerError, "cannot read file")
 			return
 		}
 
@@ -840,12 +840,12 @@ func (s *sendHandler) SendStatusMedia(ctx *gin.Context) {
 	}
 
 	if data.Url == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "url is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "url is required")
 		return
 	}
 
 	if data.Type != "image" && data.Type != "video" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "type must be 'image' or 'video'"})
+		apierror.Fail(ctx, http.StatusBadRequest, "type must be 'image' or 'video'")
 		return
 	}
 

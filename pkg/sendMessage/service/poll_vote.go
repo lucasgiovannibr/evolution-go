@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	"go.mau.fi/whatsmeow"
@@ -34,7 +35,7 @@ type PollVoteStruct struct {
 // received or sent.
 func buildPollInfo(chat types.JID, pollID string, fromMe bool, participant string, own types.JID) (*types.MessageInfo, error) {
 	if pollID == "" {
-		return nil, errors.New("pollMessageId is required")
+		return nil, apierror.Invalid("pollMessageId is required")
 	}
 	isGroup := chat.Server == types.GroupServer
 
@@ -56,11 +57,11 @@ func buildPollInfo(chat types.JID, pollID string, fromMe bool, participant strin
 	case participant != "":
 		p, err := types.ParseJID(participant)
 		if err != nil {
-			return nil, fmt.Errorf("invalid participant: %w", err)
+			return nil, apierror.Invalid(fmt.Sprintf("invalid participant: %v", err))
 		}
 		info.Sender = p.ToNonAD()
 	case isGroup:
-		return nil, errors.New("participant (the poll author) is required for polls in groups")
+		return nil, apierror.Invalid("participant (the poll author) is required for polls in groups")
 	default:
 		info.Sender = chat.ToNonAD()
 	}
@@ -105,7 +106,7 @@ func (s *sendService) SendPollVote(data *PollVoteStruct, instance *instance_mode
 	}
 	if err != nil {
 		if errors.Is(err, whatsmeow.ErrOriginalMessageSecretNotFound) {
-			return nil, errors.New("poll not found: this instance has no stored secret for that poll (it must have sent or received it)")
+			return nil, apierror.NotFound("poll not found: this instance has no stored secret for that poll (it must have sent or received it)")
 		}
 		return nil, err
 	}

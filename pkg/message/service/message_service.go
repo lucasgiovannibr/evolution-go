@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"net/http"
 	"os"
@@ -112,7 +113,7 @@ func (m *messageService) React(data *ReactStruct, instance *instance_model.Insta
 	recipient, ok := utils.ParseJID(data.Number)
 	if !ok {
 		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return nil, errors.New("invalid phone number")
+		return nil, apierror.Invalid("invalid phone number")
 	}
 
 	// Strip the "+" that ParseJID/CreateJID adds. The recipient is used both as
@@ -124,7 +125,7 @@ func (m *messageService) React(data *ReactStruct, instance *instance_model.Insta
 
 	if data.Id == "" {
 		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Missing Id in Payload", instance.Id)
-		return nil, errors.New("missing id in payload")
+		return nil, apierror.Invalid("missing id in payload")
 	} else {
 		msgId = data.Id
 	}
@@ -203,7 +204,7 @@ func (m *messageService) ChatPresence(data *ChatPresenceStruct, instance *instan
 	recipient, ok := utils.ParseJID(data.Number)
 	if !ok {
 		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return "", errors.New("invalid phone number")
+		return "", apierror.Invalid("invalid phone number")
 	}
 
 	// chatstate (typing) is a RAW node sent without usync normalization, so it
@@ -285,7 +286,7 @@ func (m *messageService) MarkRead(data *MarkReadStruct, instance *instance_model
 	jid, ok := utils.ParseJID(data.Number)
 	if !ok {
 		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return "", errors.New("invalid phone number")
+		return "", apierror.Invalid("invalid phone number")
 	}
 
 	// Read receipts are RAW nodes (no usync) — strip the "+" so the receipt
@@ -312,7 +313,7 @@ func (m *messageService) MarkPlayed(data *MarkPlayedStruct, instance *instance_m
 	jid, ok := utils.ParseJID(data.Number)
 	if !ok {
 		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return "", errors.New("invalid phone number")
+		return "", apierror.Invalid("invalid phone number")
 	}
 
 	// Played receipts are RAW nodes (no usync) — strip the "+" so the receipt
@@ -348,7 +349,7 @@ func (m *messageService) DownloadMedia(data *DownloadMediaStruct, instance *inst
 	sticker := msg.GetStickerMessage()
 
 	if img == nil && audio == nil && document == nil && video == nil && sticker == nil {
-		return nil, "", errors.New("invalid media type")
+		return nil, "", apierror.Invalid("invalid media type")
 	}
 
 	userDirectory := fmt.Sprintf(`files/user_%s`, instance.Id)
@@ -441,7 +442,7 @@ func (m *messageService) DeleteMessageEveryone(data *MessageStruct, instance *in
 	recipient, ok := utils.ParseJID(data.Chat)
 	if !ok {
 		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return "", "", errors.New("invalid phone number")
+		return "", "", apierror.Invalid("invalid phone number")
 	}
 	// The chat JID lands inside the revoke's protocolMessage Key: with the "+"
 	// prefix CreateJID adds, receiving devices look up a chat that doesn't
@@ -473,7 +474,7 @@ func (m *messageService) EditMessage(data *EditMessageStruct, instance *instance
 	recipient, ok := utils.ParseJID(data.Chat)
 	if !ok {
 		m.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return "", "", errors.New("invalid phone number")
+		return "", "", apierror.Invalid("invalid phone number")
 	}
 	// Same as DeleteMessageEveryone: the JID lands inside the edit's
 	// protocolMessage Key, so the "+" prefix makes recipients ignore it.

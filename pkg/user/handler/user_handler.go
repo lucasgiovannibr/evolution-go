@@ -26,11 +26,11 @@ func writeUserWAError(ctx *gin.Context, err error) {
 	case errors.As(err, &invalidNumber):
 		apierror.BadRequest(ctx, err)
 	case errors.Is(err, whatsmeow.ErrIQRateOverLimit):
-		ctx.JSON(http.StatusTooManyRequests, gin.H{"error": err.Error()})
+		apierror.Fail(ctx, http.StatusTooManyRequests, err.Error())
 	case errors.Is(err, whatsmeow.ErrIQTimedOut),
 		errors.Is(err, context.DeadlineExceeded),
 		errors.Is(err, context.Canceled):
-		ctx.JSON(http.StatusGatewayTimeout, gin.H{"error": err.Error()})
+		apierror.Fail(ctx, http.StatusGatewayTimeout, err.Error())
 	default:
 		apierror.Respond(ctx, err)
 	}
@@ -76,7 +76,7 @@ func (u *userHandler) GetUser(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -88,12 +88,12 @@ func (u *userHandler) GetUser(ctx *gin.Context) {
 	}
 
 	if len(data.Number) < 1 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
 	if len(data.Number) > MaxNumbersPerQuery {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("at most %d numbers per request (got %d): split the list", MaxNumbersPerQuery, len(data.Number))})
+		apierror.Fail(ctx, http.StatusBadRequest, fmt.Sprintf("at most %d numbers per request (got %d): split the list", MaxNumbersPerQuery, len(data.Number)))
 		return
 	}
 
@@ -122,7 +122,7 @@ func (u *userHandler) CheckUser(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -134,12 +134,12 @@ func (u *userHandler) CheckUser(ctx *gin.Context) {
 	}
 
 	if len(data.Number) < 1 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
 	if len(data.Number) > MaxNumbersPerQuery {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("at most %d numbers per request (got %d): split the list", MaxNumbersPerQuery, len(data.Number))})
+		apierror.Fail(ctx, http.StatusBadRequest, fmt.Sprintf("at most %d numbers per request (got %d): split the list", MaxNumbersPerQuery, len(data.Number)))
 		return
 	}
 
@@ -170,7 +170,7 @@ func (u *userHandler) GetAvatar(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -182,12 +182,12 @@ func (u *userHandler) GetAvatar(ctx *gin.Context) {
 	}
 
 	if len(data.Number) < 1 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
@@ -214,7 +214,7 @@ func (u *userHandler) GetContacts(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -241,7 +241,7 @@ func (u *userHandler) GetPrivacy(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -269,7 +269,7 @@ func (u *userHandler) SetPrivacy(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -281,37 +281,37 @@ func (u *userHandler) SetPrivacy(ctx *gin.Context) {
 	}
 
 	if data.CallAdd == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "call add is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "call add is required")
 		return
 	}
 
 	if data.GroupAdd == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "group add is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "group add is required")
 		return
 	}
 
 	if data.LastSeen == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "last seen is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "last seen is required")
 		return
 	}
 
 	if data.Online == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "online is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "online is required")
 		return
 	}
 
 	if data.Profile == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "profile is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "profile is required")
 		return
 	}
 
 	if data.ReadReceipts == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "read receipts is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "read receipts is required")
 		return
 	}
 
 	if data.Status == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "status is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "status is required")
 		return
 	}
 
@@ -340,7 +340,7 @@ func (u *userHandler) BlockContact(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -352,12 +352,12 @@ func (u *userHandler) BlockContact(ctx *gin.Context) {
 	}
 
 	if len(data.Number) < 1 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
@@ -386,7 +386,7 @@ func (u *userHandler) UnblockContact(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -398,12 +398,12 @@ func (u *userHandler) UnblockContact(ctx *gin.Context) {
 	}
 
 	if len(data.Number) < 1 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
@@ -430,7 +430,7 @@ func (u *userHandler) GetBlockList(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -459,7 +459,7 @@ func (u *userHandler) SetProfilePicture(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -471,7 +471,7 @@ func (u *userHandler) SetProfilePicture(ctx *gin.Context) {
 	}
 
 	if data.Image == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "image is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "image is required")
 		return
 	}
 
@@ -482,7 +482,7 @@ func (u *userHandler) SetProfilePicture(ctx *gin.Context) {
 	}
 
 	if !resp {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set profile picture"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "failed to set profile picture")
 		return
 	}
 
@@ -507,7 +507,7 @@ func (u *userHandler) SetProfileName(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -519,7 +519,7 @@ func (u *userHandler) SetProfileName(ctx *gin.Context) {
 	}
 
 	if data.Name == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "name is required")
 		return
 	}
 
@@ -530,7 +530,7 @@ func (u *userHandler) SetProfileName(ctx *gin.Context) {
 	}
 
 	if !resp {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set profile name"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "failed to set profile name")
 		return
 	}
 
@@ -555,7 +555,7 @@ func (u *userHandler) SetProfileStatus(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -567,7 +567,7 @@ func (u *userHandler) SetProfileStatus(ctx *gin.Context) {
 	}
 
 	if data.Status == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "name is required")
 		return
 	}
 
@@ -578,7 +578,7 @@ func (u *userHandler) SetProfileStatus(ctx *gin.Context) {
 	}
 
 	if !resp {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "failed to set profile picture"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "failed to set profile picture")
 		return
 	}
 
@@ -603,7 +603,7 @@ func (u *userHandler) ResolveLid(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -615,7 +615,7 @@ func (u *userHandler) ResolveLid(ctx *gin.Context) {
 	}
 
 	if data.Lid == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "lid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "lid is required")
 		return
 	}
 

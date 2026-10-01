@@ -10,6 +10,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	call_engine "github.com/evolution-foundation/evolution-go/pkg/call/engine"
 	"github.com/gin-gonic/gin"
 	"github.com/gorilla/websocket"
@@ -140,11 +141,11 @@ func (h *handler) serve(c *gin.Context) {
 
 	instanceID, video, ok := h.tickets.Redeem(c.Query("ticket"), callID)
 	if !ok {
-		c.JSON(http.StatusUnauthorized, gin.H{"error": "invalid or expired ticket"})
+		apierror.Fail(c, http.StatusUnauthorized, "invalid or expired ticket")
 		return
 	}
 	if _, ok := h.engine.Get(instanceID, callID); !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": call_engine.ErrCallNotFound.Error()})
+		apierror.Fail(c, http.StatusNotFound, call_engine.ErrCallNotFound.Error())
 		return
 	}
 

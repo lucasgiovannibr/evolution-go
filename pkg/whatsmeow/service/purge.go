@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	"go.mau.fi/whatsmeow/store/sqlstore"
 )
@@ -50,7 +51,7 @@ func (w whatsmeowService) PurgeInstanceData(instanceID, jid string) error {
 func purgeDevice(ctx context.Context, container *sqlstore.Container, jid string) error {
 	parsed, ok := utils.ParseJID(jid)
 	if !ok {
-		return fmt.Errorf("invalid jid %q", jid)
+		return apierror.Invalid(fmt.Sprintf("invalid jid %q", jid))
 	}
 	device, err := container.GetDevice(ctx, parsed)
 	if err != nil {

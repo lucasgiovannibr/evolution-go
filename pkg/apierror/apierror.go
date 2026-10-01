@@ -49,6 +49,11 @@ func NotFound(message string) error {
 	return &Error{Status: http.StatusNotFound, Code: "not_found", Message: message}
 }
 
+// Conflict is a request that clashes with the current state (409).
+func Conflict(message string) error {
+	return &Error{Status: http.StatusConflict, Code: "conflict", Message: message}
+}
+
 // retryAfterer is implemented by errors that tell the client when to come back
 // (send_service.ErrSendThrottled).
 type retryAfterer interface{ RetryAfterSeconds() int }
@@ -132,4 +137,59 @@ func Respond(c *gin.Context, err error) {
 // errors handlers used to report with a bare status.
 func BadRequest(c *gin.Context, err error) {
 	c.JSON(http.StatusBadRequest, Body{Error: err.Error(), Code: "invalid_request"})
+}
+
+// codeForStatus is the code of a failure that only has a status (authentication, limits,
+// plain "not found" answers written by hand).
+func codeForStatus(status int) string {
+	switch status {
+	case http.StatusBadRequest:
+		return "invalid_request"
+	case http.StatusUnauthorized:
+		return "unauthorized"
+	case http.StatusForbidden:
+		return "forbidden"
+	case http.StatusNotFound:
+		return "not_found"
+	case http.StatusConflict:
+		return "conflict"
+	case http.StatusRequestEntityTooLarge:
+		return "payload_too_large"
+	case http.StatusTooManyRequests:
+		return "rate_limited"
+	case http.StatusServiceUnavailable:
+		return "unavailable"
+	case http.StatusGatewayTimeout:
+		return "timeout"
+	}
+	if status >= 500 {
+		return "internal_error"
+	}
+	return "error"
+}
+
+// Fail answers with a status and a message the handler wrote itself; the code follows the status.
+func Fail(c *gin.Context, status int, message string) {
+	c.JSON(status, Body{Error: message, Code: codeForStatus(status)})
+}
+
+// Abort is Fail for middleware: it also stops the request.
+func Abort(c *gin.Context, status int, message string) {
+	c.AbortWithStatusJSON(status, Body{Error: message, Code: codeForStatus(status)})
+}
+
+// RespondWith is Respond for handlers that derive a status of their own (a validation error
+// their service defines, a call state): a recognised error keeps its classification, any other
+// gets fallback, and the code follows that status.
+func RespondWith(c *gin.Context, err error, fallback int) {
+	status, code := Classify(err)
+	if status == http.StatusInternalServerError {
+		status, code = fallback, codeForStatus(fallback)
+	}
+	if r, ok := asRetryAfter(err); ok {
+		c.Header("Retry-After", strconv.Itoa(r.RetryAfterSeconds()))
+	} else if status == http.StatusTooManyRequests {
+		c.Header("Retry-After", "5")
+	}
+	c.JSON(status, Body{Error: err.Error(), Code: code})
 }

@@ -18,9 +18,9 @@ package user_service
 
 import (
 	"context"
-	"errors"
 	"strings"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	"go.mau.fi/whatsmeow/appstate"
@@ -53,7 +53,7 @@ func (u *userService) SaveContact(data *SaveContactStruct, instance *instance_mo
 	number := strings.TrimSpace(data.Number)
 	fullName := strings.TrimSpace(data.FullName)
 	if number == "" || fullName == "" {
-		return errors.New("phone and fullName are required")
+		return apierror.Invalid("phone and fullName are required")
 	}
 	firstName := strings.TrimSpace(data.FirstName)
 	if firstName == "" {
@@ -64,7 +64,7 @@ func (u *userService) SaveContact(data *SaveContactStruct, instance *instance_mo
 	// drop the "+" that CreateJID adds: the app-state index needs the plain user JID.
 	parsed, ok := utils.ParseJID(number)
 	if !ok || parsed.Server != types.DefaultUserServer {
-		return errors.New("invalid phone number")
+		return apierror.Invalid("invalid phone number")
 	}
 	jid := utils.CanonicalJID(parsed).ToNonAD()
 

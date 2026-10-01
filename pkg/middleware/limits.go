@@ -34,6 +34,7 @@ func LimitBody(defaultMax, mediaMax int64) gin.HandlerFunc {
 		if c.Request.ContentLength > limit {
 			c.AbortWithStatusJSON(http.StatusRequestEntityTooLarge, gin.H{
 				"error":    "request body too large",
+				"code":     "payload_too_large",
 				"maxBytes": limit,
 			})
 			return

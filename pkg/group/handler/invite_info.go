@@ -23,7 +23,7 @@ import (
 func (g *groupHandler) GetInviteInfo(ctx *gin.Context) {
 	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -33,7 +33,7 @@ func (g *groupHandler) GetInviteInfo(ctx *gin.Context) {
 		return
 	}
 	if data.Code == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "code is required")
 		return
 	}
 
@@ -60,7 +60,7 @@ func (g *groupHandler) GetInviteInfo(ctx *gin.Context) {
 func (g *groupHandler) JoinGroupInvite(ctx *gin.Context) {
 	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -70,11 +70,11 @@ func (g *groupHandler) JoinGroupInvite(ctx *gin.Context) {
 		return
 	}
 	if data.Code == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "code is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "code is required")
 		return
 	}
 	if data.GroupJID == "" || data.Inviter == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "groupJid and inviter are required (use /group/join for an invite link)"})
+		apierror.Fail(ctx, http.StatusBadRequest, "groupJid and inviter are required (use /group/join for an invite link)")
 		return
 	}
 

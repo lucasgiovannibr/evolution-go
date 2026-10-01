@@ -1,8 +1,8 @@
 package send_service
 
 import (
-	"errors"
 	"fmt"
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	"math"
 )
 
@@ -14,22 +14,22 @@ import (
 // missing; the coordinates are also range-checked, which was not done at all.
 func (l *LocationStruct) Validate() error {
 	if math.IsNaN(l.Latitude) || math.IsNaN(l.Longitude) || math.IsInf(l.Latitude, 0) || math.IsInf(l.Longitude, 0) {
-		return errors.New("latitude and longitude must be numbers")
+		return apierror.Invalid("latitude and longitude must be numbers")
 	}
 	if l.Latitude == 0 && l.Longitude == 0 {
-		return errors.New("latitude and longitude are required")
+		return apierror.Invalid("latitude and longitude are required")
 	}
 	if l.Latitude < -90 || l.Latitude > 90 {
-		return fmt.Errorf("latitude must be between -90 and 90, got %v", l.Latitude)
+		return apierror.Invalid(fmt.Sprintf("latitude must be between -90 and 90, got %v", l.Latitude))
 	}
 	if l.Longitude < -180 || l.Longitude > 180 {
-		return fmt.Errorf("longitude must be between -180 and 180, got %v", l.Longitude)
+		return apierror.Invalid(fmt.Sprintf("longitude must be between -180 and 180, got %v", l.Longitude))
 	}
 	if l.Address == "" {
-		return errors.New("address is required")
+		return apierror.Invalid("address is required")
 	}
 	if l.Name == "" {
-		return errors.New("name is required")
+		return apierror.Invalid("name is required")
 	}
 	return nil
 }

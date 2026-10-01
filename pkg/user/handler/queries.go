@@ -14,7 +14,7 @@ import (
 func instanceOf(ctx *gin.Context) (*instance_model.Instance, bool) {
 	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 	}
 	return instance, ok
 }
@@ -24,7 +24,7 @@ func instanceOf(ctx *gin.Context) (*instance_model.Instance, bool) {
 func writeQueryError(ctx *gin.Context, err error) {
 	var notFound *user_service.NotFoundError
 	if errors.As(err, &notFound) {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		apierror.Fail(ctx, http.StatusNotFound, err.Error())
 		return
 	}
 	writeUserWAError(ctx, err)
@@ -69,7 +69,7 @@ func (u *userHandler) GetUserDevices(ctx *gin.Context) {
 		}
 	}
 	if len(data.Number) == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
@@ -127,7 +127,7 @@ func (u *userHandler) GetBusinessProfile(ctx *gin.Context) {
 		if err != nil {
 			msg = err.Error()
 		}
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		apierror.Fail(ctx, http.StatusBadRequest, msg)
 		return
 	}
 

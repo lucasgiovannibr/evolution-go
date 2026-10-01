@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/gomessguii/logger"
@@ -31,14 +32,14 @@ func isJSONRequest(c *gin.Context) bool {
 func openBody(c *gin.Context, keys ...string) (*bodyEditor, bool) {
 	body, err := readBody(c.Request)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
+		apierror.Fail(c, http.StatusBadRequest, "Failed to read request body")
 		c.Abort()
 		return nil, false
 	}
 
 	editor, err := newBodyEditor(body, keys...)
 	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
+		apierror.Fail(c, http.StatusBadRequest, "Invalid JSON format")
 		c.Abort()
 		return nil, false
 	}
@@ -73,13 +74,13 @@ func finish(c *gin.Context, editor *bodyEditor) {
 }
 
 func badRequest(c *gin.Context, message string) {
-	c.JSON(http.StatusBadRequest, gin.H{"error": message})
+	apierror.Fail(c, http.StatusBadRequest, message)
 	c.Abort()
 }
 
 func failEdit(c *gin.Context, err error) {
 	logger.LogError("JID validation: failed to rewrite the request: %v", err)
-	c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process request"})
+	apierror.Fail(c, http.StatusInternalServerError, "Failed to process request")
 	c.Abort()
 }
 
@@ -146,16 +147,12 @@ func (m *JIDValidationMiddleware) validateFormFields(c *gin.Context, fieldNames 
 			// Validate the JID format
 			_, err := utils.CreateJID(value)
 			if err != nil {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"error": fmt.Sprintf("Invalid %s format: %s", fieldName, err.Error()),
-				})
+				apierror.Fail(c, http.StatusBadRequest, fmt.Sprintf("Invalid %s format: %s", fieldName, err.Error()))
 				c.Abort()
 				return
 			}
 		} else if fieldName == "number" { // number is typically required
-			c.JSON(http.StatusBadRequest, gin.H{
-				"error": fmt.Sprintf("%s is required and cannot be empty", fieldName),
-			})
+			apierror.Fail(c, http.StatusBadRequest, fmt.Sprintf("%s is required and cannot be empty", fieldName))
 			c.Abort()
 			return
 		}

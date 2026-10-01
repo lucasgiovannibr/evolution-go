@@ -29,7 +29,7 @@ func (u *userHandler) SaveContact(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -41,7 +41,7 @@ func (u *userHandler) SaveContact(ctx *gin.Context) {
 	}
 
 	if len(data.Number) < 1 || len(data.FullName) < 1 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone and fullName are required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone and fullName are required")
 		return
 	}
 
