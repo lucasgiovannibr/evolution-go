@@ -1,7 +1,6 @@
 package auth_middleware
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,14 +20,55 @@ func NewJIDValidationMiddleware() *JIDValidationMiddleware {
 	return &JIDValidationMiddleware{}
 }
 
+// isJSONRequest tells whether the middleware has a JSON body to look at.
+func isJSONRequest(c *gin.Context) bool {
+	return strings.Contains(c.ContentType(), "application/json")
+}
+
+// openBody reads the body and prepares it for in-place editing of the given top-level
+// fields. On failure it answers 400 itself and returns false.
+func openBody(c *gin.Context, keys ...string) (*bodyEditor, bool) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
+		c.Abort()
+		return nil, false
+	}
+
+	editor, err := newBodyEditor(body, keys...)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
+		c.Abort()
+		return nil, false
+	}
+	return editor, true
+}
+
+// finish hands the (possibly rewritten) body to the next handler.
+func finish(c *gin.Context, editor *bodyEditor) {
+	c.Request.Body = io.NopCloser(editor.reader())
+	c.Request.ContentLength = editor.size()
+	c.Next()
+}
+
+func badRequest(c *gin.Context, message string) {
+	c.JSON(http.StatusBadRequest, gin.H{"error": message})
+	c.Abort()
+}
+
+func failEdit(c *gin.Context, err error) {
+	logger.LogError("JID validation: failed to rewrite the request: %v", err)
+	c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process request"})
+	c.Abort()
+}
+
 // ValidateJIDFields validates and normalizes JID fields in request body
 func (m *JIDValidationMiddleware) ValidateJIDFields(fieldNames ...string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Only process JSON requests
-		contentType := c.ContentType()
-		if !strings.Contains(contentType, "application/json") {
+		if !isJSONRequest(c) {
 			// For multipart/form-data, validate form fields
-			if strings.Contains(contentType, "multipart/form-data") {
+			if strings.Contains(c.ContentType(), "multipart/form-data") {
 				m.validateFormFields(c, fieldNames...)
 				return
 			}
@@ -36,68 +76,44 @@ func (m *JIDValidationMiddleware) ValidateJIDFields(fieldNames ...string) gin.Ha
 			return
 		}
 
-		// Read the request body
-		body, err := io.ReadAll(c.Request.Body)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
-			c.Abort()
-			return
-		}
-
-		// Restore the request body for downstream handlers
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
-
-		// Parse JSON
-		var requestData map[string]interface{}
-		if err := json.Unmarshal(body, &requestData); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
-			c.Abort()
+		editor, ok := openBody(c, fieldNames...)
+		if !ok {
 			return
 		}
 
 		// Validate and normalize JID fields
-		modified := false
 		for _, fieldName := range fieldNames {
-			if value, exists := requestData[fieldName]; exists {
-				if strValue, ok := value.(string); ok && strValue != "" {
-					// Validate and normalize the JID
-					normalizedJID, err := utils.CreateJID(strValue)
-					if err != nil {
-						c.JSON(http.StatusBadRequest, gin.H{
-							"error": fmt.Sprintf("Invalid %s format: %s", fieldName, err.Error()),
-						})
-						c.Abort()
-						return
-					}
-
-					// Update the value if it was normalized
-					if normalizedJID != strValue {
-						requestData[fieldName] = normalizedJID
-						modified = true
-						logger.LogDebug("Normalized %s from %s to %s", fieldName, strValue, normalizedJID)
-					}
-				} else if strValue == "" {
-					c.JSON(http.StatusBadRequest, gin.H{
-						"error": fmt.Sprintf("%s is required and cannot be empty", fieldName),
-					})
-					c.Abort()
-					return
-				}
+			raw, exists := editor.raw(fieldName)
+			if !exists {
+				continue
 			}
-		}
 
-		// If we modified the request, update the body
-		if modified {
-			newBody, err := json.Marshal(requestData)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process request"})
-				c.Abort()
+			var value interface{}
+			_ = json.Unmarshal(raw, &value)
+			str, isString := value.(string)
+			if !isString || str == "" {
+				badRequest(c, fmt.Sprintf("%s is required and cannot be empty", fieldName))
 				return
 			}
-			c.Request.Body = io.NopCloser(bytes.NewBuffer(newBody))
+
+			// Validate and normalize the JID
+			normalizedJID, err := utils.CreateJID(str)
+			if err != nil {
+				badRequest(c, fmt.Sprintf("Invalid %s format: %s", fieldName, err.Error()))
+				return
+			}
+
+			// Update the value if it was normalized
+			if normalizedJID != str {
+				if err := editor.set(fieldName, normalizedJID); err != nil {
+					failEdit(c, err)
+					return
+				}
+				logger.LogDebug("Normalized %s from %s to %s", fieldName, str, normalizedJID)
+			}
 		}
 
-		c.Next()
+		finish(c, editor)
 	}
 }
 
@@ -126,15 +142,105 @@ func (m *JIDValidationMiddleware) validateFormFields(c *gin.Context, fieldNames 
 	c.Next()
 }
 
+// normalizeNumber validates the "number" field, a string or a list of strings, and
+// returns its normalized value (changed tells whether it differs from what was sent).
+// With format=false the numbers are only checked for being present, and kept as received.
+func normalizeNumber(raw json.RawMessage, format bool) (value interface{}, changed bool, errMessage string) {
+	var parsed interface{}
+	_ = json.Unmarshal(raw, &parsed)
+
+	switch v := parsed.(type) {
+	case []interface{}:
+		if len(v) == 0 {
+			return nil, false, "number array cannot be empty"
+		}
+		for i, item := range v {
+			str, isString := item.(string)
+			if !isString || str == "" {
+				return nil, false, fmt.Sprintf("number[%d] cannot be empty", i)
+			}
+			if !format {
+				continue
+			}
+			normalized, err := utils.CreateJID(str)
+			if err != nil {
+				return nil, false, fmt.Sprintf("Invalid number[%d] format: %s", i, err.Error())
+			}
+			if normalized != str {
+				v[i] = normalized
+				changed = true
+				logger.LogDebug("Normalized number[%d] from %s to %s", i, str, normalized)
+			}
+		}
+		return v, changed, ""
+
+	case string:
+		if v == "" {
+			return nil, false, "number is required and cannot be empty"
+		}
+		if !format {
+			return v, false, ""
+		}
+		normalized, err := utils.CreateJID(v)
+		if err != nil {
+			return nil, false, fmt.Sprintf("Invalid number format: %s", err.Error())
+		}
+		if normalized != v {
+			logger.LogDebug("Normalized number from %s to %s", v, normalized)
+			return normalized, true, ""
+		}
+		return v, false, ""
+	}
+	return nil, false, "number must be a string or array of strings"
+}
+
+// validateNumberBody is the body of ValidateNumberField and ValidateNumberFieldWithFormatJid.
+func validateNumberBody(c *gin.Context, honourFormatJid bool) {
+	keys := []string{"number"}
+	if honourFormatJid {
+		keys = append(keys, "formatJid")
+	}
+	editor, ok := openBody(c, keys...)
+	if !ok {
+		return
+	}
+
+	// Check FormatJid parameter (default is true)
+	format := true
+	if honourFormatJid {
+		if raw, exists := editor.raw("formatJid"); exists {
+			var flag bool
+			if json.Unmarshal(raw, &flag) == nil {
+				format = flag
+			}
+		}
+	}
+
+	if raw, exists := editor.raw("number"); exists {
+		value, changed, message := normalizeNumber(raw, format)
+		if message != "" {
+			badRequest(c, message)
+			return
+		}
+		if changed {
+			if err := editor.set("number", value); err != nil {
+				failEdit(c, err)
+				return
+			}
+		}
+	}
+
+	finish(c, editor)
+}
+
 // ValidateNumberField is a convenience method for the common "number" field
 // It handles both single strings and arrays of strings
 func (m *JIDValidationMiddleware) ValidateNumberField() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Only process JSON requests
-		contentType := c.ContentType()
-		if !strings.Contains(contentType, "application/json") {
+		if !isJSONRequest(c) {
 			// For multipart/form-data, validate form fields
-			if strings.Contains(contentType, "multipart/form-data") {
+			if strings.Contains(c.ContentType(), "multipart/form-data") {
 				m.validateFormFields(c, "number")
 				return
 			}
@@ -142,107 +248,7 @@ func (m *JIDValidationMiddleware) ValidateNumberField() gin.HandlerFunc {
 			return
 		}
 
-		// Read the request body
-		body, err := io.ReadAll(c.Request.Body)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
-			c.Abort()
-			return
-		}
-
-		// Restore the request body for downstream handlers
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
-
-		// Parse JSON
-		var requestData map[string]interface{}
-		if err := json.Unmarshal(body, &requestData); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
-			c.Abort()
-			return
-		}
-
-		// Validate and normalize number field (can be string or array)
-		modified := false
-		if value, exists := requestData["number"]; exists {
-			// Handle array of strings
-			if arrayValue, ok := value.([]interface{}); ok {
-				if len(arrayValue) == 0 {
-					c.JSON(http.StatusBadRequest, gin.H{
-						"error": "number array cannot be empty",
-					})
-					c.Abort()
-					return
-				}
-
-				for i, item := range arrayValue {
-					if strValue, ok := item.(string); ok && strValue != "" {
-						normalizedJID, err := utils.CreateJID(strValue)
-						if err != nil {
-							c.JSON(http.StatusBadRequest, gin.H{
-								"error": fmt.Sprintf("Invalid number[%d] format: %s", i, err.Error()),
-							})
-							c.Abort()
-							return
-						}
-
-						if normalizedJID != strValue {
-							arrayValue[i] = normalizedJID
-							modified = true
-							logger.LogDebug("Normalized number[%d] from %s to %s", i, strValue, normalizedJID)
-						}
-					} else if strValue == "" {
-						c.JSON(http.StatusBadRequest, gin.H{
-							"error": fmt.Sprintf("number[%d] cannot be empty", i),
-						})
-						c.Abort()
-						return
-					}
-				}
-			} else if strValue, ok := value.(string); ok {
-				// Handle single string
-				if strValue == "" {
-					c.JSON(http.StatusBadRequest, gin.H{
-						"error": "number is required and cannot be empty",
-					})
-					c.Abort()
-					return
-				}
-
-				normalizedJID, err := utils.CreateJID(strValue)
-				if err != nil {
-					c.JSON(http.StatusBadRequest, gin.H{
-						"error": fmt.Sprintf("Invalid number format: %s", err.Error()),
-					})
-					c.Abort()
-					return
-				}
-
-				if normalizedJID != strValue {
-					requestData["number"] = normalizedJID
-					modified = true
-					logger.LogDebug("Normalized number from %s to %s", strValue, normalizedJID)
-				}
-			} else {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"error": "number must be a string or array of strings",
-				})
-				c.Abort()
-				return
-			}
-		}
-
-		// If we modified the request, update the body
-		if modified {
-			newBody, err := json.Marshal(requestData)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process request"})
-				c.Abort()
-				return
-			}
-			c.Request.Body = io.NopCloser(bytes.NewBuffer(newBody))
-		}
-
-		c.Next()
+		validateNumberBody(c, false)
 	}
 }
 
@@ -250,69 +256,47 @@ func (m *JIDValidationMiddleware) ValidateNumberField() gin.HandlerFunc {
 func (m *JIDValidationMiddleware) ValidateMultipleNumbers(fieldName string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Only process JSON requests
-		contentType := c.ContentType()
-		if !strings.Contains(contentType, "application/json") {
+		if !isJSONRequest(c) {
 			c.Next()
 			return
 		}
 
-		// Read the request body
-		body, err := io.ReadAll(c.Request.Body)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
-			c.Abort()
-			return
-		}
-
-		// Restore the request body for downstream handlers
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
-
-		// Parse JSON
-		var requestData map[string]interface{}
-		if err := json.Unmarshal(body, &requestData); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
-			c.Abort()
+		editor, ok := openBody(c, fieldName)
+		if !ok {
 			return
 		}
 
 		// Validate array of numbers
-		if value, exists := requestData[fieldName]; exists {
-			modified := false
+		if raw, exists := editor.raw(fieldName); exists {
+			var value interface{}
+			_ = json.Unmarshal(raw, &value)
 
-			// Handle array of strings
-			if arrayValue, ok := value.([]interface{}); ok {
-				for i, item := range arrayValue {
-					if strValue, ok := item.(string); ok && strValue != "" {
-						normalizedJID, err := utils.CreateJID(strValue)
+			if items, isArray := value.([]interface{}); isArray {
+				modified := false
+				for i, item := range items {
+					if str, isString := item.(string); isString && str != "" {
+						normalized, err := utils.CreateJID(str)
 						if err != nil {
-							c.JSON(http.StatusBadRequest, gin.H{
-								"error": fmt.Sprintf("Invalid %s[%d] format: %s", fieldName, i, err.Error()),
-							})
-							c.Abort()
+							badRequest(c, fmt.Sprintf("Invalid %s[%d] format: %s", fieldName, i, err.Error()))
 							return
 						}
-
-						if normalizedJID != strValue {
-							arrayValue[i] = normalizedJID
+						if normalized != str {
+							items[i] = normalized
 							modified = true
 						}
 					}
 				}
-			}
 
-			// If we modified the request, update the body
-			if modified {
-				newBody, err := json.Marshal(requestData)
-				if err != nil {
-					c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process request"})
-					c.Abort()
-					return
+				if modified {
+					if err := editor.set(fieldName, items); err != nil {
+						failEdit(c, err)
+						return
+					}
 				}
-				c.Request.Body = io.NopCloser(bytes.NewBuffer(newBody))
 			}
 		}
 
-		c.Next()
+		finish(c, editor)
 	}
 }
 
@@ -322,129 +306,12 @@ func (m *JIDValidationMiddleware) ValidateMultipleNumbers(fieldName string) gin.
 func (m *JIDValidationMiddleware) ValidateNumberFieldWithFormatJid() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Only process JSON requests
-		contentType := c.ContentType()
-		if !strings.Contains(contentType, "application/json") {
+		if !isJSONRequest(c) {
 			c.Next()
 			return
 		}
 
-		// Read the request body
-		body, err := io.ReadAll(c.Request.Body)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
-			c.Abort()
-			return
-		}
-
-		// Restore the request body for downstream handlers
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
-
-		// Parse JSON
-		var requestData map[string]interface{}
-		if err := json.Unmarshal(body, &requestData); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
-			c.Abort()
-			return
-		}
-
-		// Check FormatJid parameter (default is true)
-		formatJid := true
-		if formatJidValue, exists := requestData["formatJid"]; exists {
-			if formatJidBool, ok := formatJidValue.(bool); ok {
-				formatJid = formatJidBool
-			}
-		}
-
-		// Validate and optionally normalize number field based on FormatJid
-		modified := false
-		if value, exists := requestData["number"]; exists {
-			// Handle array of strings
-			if arrayValue, ok := value.([]interface{}); ok {
-				if len(arrayValue) == 0 {
-					c.JSON(http.StatusBadRequest, gin.H{
-						"error": "number array cannot be empty",
-					})
-					c.Abort()
-					return
-				}
-
-				for i, item := range arrayValue {
-					if strValue, ok := item.(string); ok && strValue != "" {
-						// Only validate and normalize if FormatJid is true
-						if formatJid {
-							normalizedJID, err := utils.CreateJID(strValue)
-							if err != nil {
-								c.JSON(http.StatusBadRequest, gin.H{
-									"error": fmt.Sprintf("Invalid number[%d] format: %s", i, err.Error()),
-								})
-								c.Abort()
-								return
-							}
-
-							if normalizedJID != strValue {
-								arrayValue[i] = normalizedJID
-								modified = true
-								logger.LogDebug("Normalized number[%d] from %s to %s", i, strValue, normalizedJID)
-							}
-						}
-						// When formatJid is false, we accept numbers as received without validation
-					} else if strValue == "" {
-						c.JSON(http.StatusBadRequest, gin.H{
-							"error": fmt.Sprintf("number[%d] cannot be empty", i),
-						})
-						c.Abort()
-						return
-					}
-				}
-			} else if strValue, ok := value.(string); ok {
-				// Handle single string
-				if strValue == "" {
-					c.JSON(http.StatusBadRequest, gin.H{
-						"error": "number is required and cannot be empty",
-					})
-					c.Abort()
-					return
-				}
-
-				// Only validate and normalize if FormatJid is true
-				if formatJid {
-					normalizedJID, err := utils.CreateJID(strValue)
-					if err != nil {
-						c.JSON(http.StatusBadRequest, gin.H{
-							"error": fmt.Sprintf("Invalid number format: %s", err.Error()),
-						})
-						c.Abort()
-						return
-					}
-
-					if normalizedJID != strValue {
-						requestData["number"] = normalizedJID
-						modified = true
-						logger.LogDebug("Normalized number from %s to %s", strValue, normalizedJID)
-					}
-				}
-				// When formatJid is false, we accept numbers as received without validation
-			} else {
-				c.JSON(http.StatusBadRequest, gin.H{
-					"error": "number must be a string or array of strings",
-				})
-				c.Abort()
-				return
-			}
-		}
-
-		// If we modified the request, update the body
-		if modified {
-			newBody, err := json.Marshal(requestData)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process request"})
-				c.Abort()
-				return
-			}
-			c.Request.Body = io.NopCloser(bytes.NewBuffer(newBody))
-		}
-
-		c.Next()
+		validateNumberBody(c, true)
 	}
 }
 
@@ -452,82 +319,49 @@ func (m *JIDValidationMiddleware) ValidateNumberFieldWithFormatJid() gin.Handler
 func (m *JIDValidationMiddleware) ValidateContactFields() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		// Only process JSON requests
-		contentType := c.ContentType()
-		if !strings.Contains(contentType, "application/json") {
+		if !isJSONRequest(c) {
 			c.Next()
 			return
 		}
 
-		// Read the request body
-		body, err := io.ReadAll(c.Request.Body)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Failed to read request body"})
-			c.Abort()
+		editor, ok := openBody(c, "number", "vcard")
+		if !ok {
 			return
 		}
-
-		// Restore the request body for downstream handlers
-		c.Request.Body = io.NopCloser(bytes.NewBuffer(body))
-
-		// Parse JSON
-		var requestData map[string]interface{}
-		if err := json.Unmarshal(body, &requestData); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid JSON format"})
-			c.Abort()
-			return
-		}
-
-		modified := false
 
 		// Validate main number field
-		if value, exists := requestData["number"]; exists {
-			if strValue, ok := value.(string); ok && strValue != "" {
-				normalizedJID, err := utils.CreateJID(strValue)
+		if raw, exists := editor.raw("number"); exists {
+			var value interface{}
+			_ = json.Unmarshal(raw, &value)
+			if str, isString := value.(string); isString && str != "" {
+				normalized, err := utils.CreateJID(str)
 				if err != nil {
-					c.JSON(http.StatusBadRequest, gin.H{
-						"error": fmt.Sprintf("Invalid number format: %s", err.Error()),
-					})
-					c.Abort()
+					badRequest(c, fmt.Sprintf("Invalid number format: %s", err.Error()))
 					return
 				}
-
-				if normalizedJID != strValue {
-					requestData["number"] = normalizedJID
-					modified = true
-				}
-			}
-		}
-
-		// Validate vcard phone field if present
-		if vcardValue, exists := requestData["vcard"]; exists {
-			if vcardMap, ok := vcardValue.(map[string]interface{}); ok {
-				if phoneValue, phoneExists := vcardMap["phone"]; phoneExists {
-					if phoneStr, ok := phoneValue.(string); ok && phoneStr != "" {
-						// For vcard phone, we just validate format but don't necessarily convert to JID
-						_, err := utils.CreateJID(phoneStr)
-						if err != nil {
-							c.JSON(http.StatusBadRequest, gin.H{
-								"error": fmt.Sprintf("Invalid vcard phone format: %s", err.Error()),
-							})
-							c.Abort()
-							return
-						}
+				if normalized != str {
+					if err := editor.set("number", normalized); err != nil {
+						failEdit(c, err)
+						return
 					}
 				}
 			}
 		}
 
-		// If we modified the request, update the body
-		if modified {
-			newBody, err := json.Marshal(requestData)
-			if err != nil {
-				c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to process request"})
-				c.Abort()
-				return
+		// Validate vcard phone field if present. For vcard phone, we just validate format
+		// but don't convert to JID
+		if raw, exists := editor.raw("vcard"); exists {
+			var vcard map[string]interface{}
+			if json.Unmarshal(raw, &vcard) == nil {
+				if phone, isString := vcard["phone"].(string); isString && phone != "" {
+					if _, err := utils.CreateJID(phone); err != nil {
+						badRequest(c, fmt.Sprintf("Invalid vcard phone format: %s", err.Error()))
+						return
+					}
+				}
 			}
-			c.Request.Body = io.NopCloser(bytes.NewBuffer(newBody))
 		}
 
-		c.Next()
+		finish(c, editor)
 	}
 }
