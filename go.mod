@@ -4,7 +4,7 @@ go 1.26.8
 
 require (
 	github.com/DATA-DOG/go-sqlmock v1.5.2
-	github.com/chai2010/webp v1.1.1
+	github.com/chai2010/webp v1.4.0
 	github.com/gabriel-vasile/mimetype v1.4.5
 	github.com/gin-gonic/gin v1.10.0
 	github.com/gomessguii/logger v0.0.3
@@ -26,7 +26,6 @@ require (
 	github.com/vincent-petithory/dataurl v1.0.0
 	go.mau.fi/util v0.10.1
 	go.mau.fi/whatsmeow v0.0.0-20260929112325-8b41cfe6d9c4
-	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba
 	golang.org/x/image v0.45.0
 	golang.org/x/net v0.59.0
 	golang.org/x/sync v0.23.0
@@ -104,6 +103,7 @@ require (
 	go.mau.fi/libsignal v0.2.2 // indirect
 	golang.org/x/arch v0.10.0 // indirect
 	golang.org/x/crypto v0.57.0 // indirect
+	golang.org/x/exp v0.0.0-20260908205506-85c1c2202aba // indirect
 	golang.org/x/sys v0.48.0 // indirect
 	golang.org/x/text v0.42.0 // indirect
 	golang.org/x/tools v0.50.0 // indirect
