@@ -87,7 +87,7 @@ func init() {
 	}
 }
 
-func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext) *gin.Engine {
+func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext, messageRepository message_repository.MessageRepository) *gin.Engine {
 	killChannel := safemap.New[chan bool]()
 	clientPointer := safemap.New[*whatsmeow.Client]()
 
@@ -166,13 +166,12 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	}
 
 	instanceRepository := instance_repository.NewInstanceRepository(db)
-	messageRepository := message_repository.NewMessageRepository(db)
 	labelRepository := label_repository.NewLabelRepository(db)
 
 	whatsmeowService := whatsmeow_service.NewWhatsmeowService(
 		instanceRepository,
 		authDB,
-		message_repository.NewMessageRepository(db),
+		messageRepository,
 		labelRepository,
 		config,
 		killChannel,
@@ -480,7 +479,10 @@ func main() {
 		logger.LogInfo("RabbitMQ URL not configured, skipping RabbitMQ connection")
 	}
 
-	r := setupRouter(db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx)
+	// Owns the background writer that batches message persistence; closed on shutdown.
+	messageRepository := message_repository.NewMessageRepository(db)
+
+	r := setupRouter(db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx, messageRepository)
 
 	// Graceful shutdown with heartbeat
 	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
@@ -523,6 +525,10 @@ func main() {
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.LogError("[SHUTDOWN] Server forced to shutdown: %v", err)
 	}
+
+	// Write the messages still queued for the database (the HTTP server is already
+	// stopped and the clients are closing; nothing new should arrive).
+	messageRepository.Close()
 
 	// Write the log lines still queued for the disk.
 	logger_wrapper.CloseAll()

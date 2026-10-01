@@ -44,13 +44,27 @@ var (
 		Name: "evolution_whatsapp_events_total",
 		Help: "Events received from WhatsApp, by event type.",
 	}, []string{"type"})
+
+	// MessagesDropped counts messages that were not written to the database: the write
+	// queue was full or the batch failed.
+	MessagesDropped = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "evolution_messages_dropped_total",
+		Help: "Messages not persisted (write queue full or batch failed).",
+	})
+
+	// MessageBatchSize is how many messages each database write carried.
+	MessageBatchSize = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name:    "evolution_message_batch_size",
+		Help:    "Messages per batched database write.",
+		Buckets: []float64{1, 2, 5, 10, 25, 50, 100, 200},
+	})
 )
 
 func init() {
 	Registry.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		httpRequests, httpDuration, httpInFlight, Events,
+		httpRequests, httpDuration, httpInFlight, Events, MessagesDropped, MessageBatchSize,
 	)
 }
 
