@@ -1,6 +1,4 @@
-import type { SendKind } from '@/api/messages';
-
-export type PresetGroup = Exclude<SendKind, 'text'>;
+export type PresetGroup = 'button' | 'list' | 'carousel';
 
 export interface Preset {
   id: string;
@@ -45,6 +43,13 @@ export const PRESETS: Preset[] = [
     ]),
   },
   {
+    id: 'btn_reply_img',
+    group: 'button',
+    label: 'Reply com imagem',
+    description: 'Dois botões reply com uma imagem no cabeçalho.',
+    build: (n) => ({ ...button('Teste - Reply com imagem', 'Dois botões reply sob uma imagem.', [{ type: 'reply', displayText: 'Sim', id: 'test_yes' }, { type: 'reply', displayText: 'Não', id: 'test_no' }])(n), imageUrl: 'https://picsum.photos/seed/header/600/400.jpg' }),
+  },
+  {
     id: 'btn_copy',
     group: 'button',
     label: 'CTA Copiar',
@@ -69,16 +74,16 @@ export const PRESETS: Preset[] = [
     id: 'btn_pix',
     group: 'button',
     label: 'PIX (sozinho)',
-    description: 'Pagamento Pix. O servidor exige que seja o único botão.',
+    description: 'Pagamento Pix. Precisa ser o único botão; só aparece no celular.',
     build: button('Teste - PIX', 'Botão Pix (envia sozinho).', [{ type: 'pix', currency: 'BRL', name: 'Minha Loja', keyType: 'cpf', key: '12345678900' }]),
   },
   {
     id: 'btn_cta_group',
     group: 'button',
     label: 'CTAs agrupados',
-    description: 'Copiar + URL + Ligar. Combinação recomendada para o WhatsApp Web; não mistura com reply.',
+    description: 'Copiar + URL + Ligar juntos. Aparece no celular e no WhatsApp Web; não mistura com reply.',
     build: (n) =>
-      button('Teste - CTAs agrupados', 'copy + url + call (funciona no WhatsApp Web).', [
+      button('Teste - CTAs agrupados', 'copy + url + call (celular e WhatsApp Web).', [
         { type: 'copy', displayText: 'Copiar cupom', copyCode: 'CTA2026' },
         { type: 'url', displayText: 'Abrir site', url: 'https://evolutionapi.com' },
         { type: 'call', displayText: 'Ligar agora', phoneNumber: plus(n) },
