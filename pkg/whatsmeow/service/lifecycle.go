@@ -206,6 +206,11 @@ func (w whatsmeowService) Shutdown(ctx context.Context) {
 		close(shutdownCh)
 	})
 
+	// Let go of the instances at the end: another replica may take them over.
+	if w.owner != nil {
+		defer w.owner.Close()
+	}
+
 	clients := w.clientPointer.Snapshot()
 	if len(clients) == 0 {
 		return
