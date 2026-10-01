@@ -21,7 +21,7 @@ services:
       DATABASE_SAVE_MESSAGES: "true"
 
       # Logs e Debug
-      WADEBUG: "DEBUG"
+      WADEBUG: "INFO"
       LOGTYPE: "console"
       LOG_DIRECTORY: "/app/logs"
       LOG_MAX_SIZE: "100"

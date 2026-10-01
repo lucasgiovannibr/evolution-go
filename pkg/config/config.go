@@ -307,9 +307,9 @@ func Load() *Config {
 
 	clientName := os.Getenv(config_env.CLIENT_NAME)
 
-	waDebug := os.Getenv(config_env.WA_DEBUG)
+	waDebug := getenvAny(config_env.WA_DEBUG, config_env.WA_DEBUG_LEGACY)
 
-	logType := os.Getenv(config_env.LOGTYPE)
+	logType := getenvAny(config_env.LOGTYPE, config_env.LOGTYPE_LEGACY)
 
 	webhookFiles := os.Getenv(config_env.WEBHOOKFILES)
 	if webhookFiles == "" {
@@ -538,6 +538,16 @@ func loadMinioConfig(config *Config) {
 	config.MinioBucket = minioBucket
 	config.MinioUseSSL = minioUseSSL
 	config.MinioRegion = minioRegion
+}
+
+// getenvAny returns the first of the named variables that is set (not empty).
+func getenvAny(names ...string) string {
+	for _, name := range names {
+		if v := os.Getenv(name); v != "" {
+			return v
+		}
+	}
+	return ""
 }
 
 func panicIfEmpty(key, value string) {
