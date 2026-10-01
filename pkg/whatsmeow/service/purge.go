@@ -36,6 +36,13 @@ func (w whatsmeowService) PurgeInstanceData(instanceID, jid string) error {
 		}
 	}
 
+	// The media this instance stored in the object storage.
+	if w.mediaStorage != nil {
+		if _, err := w.mediaStorage.DeleteInstance(context.Background(), instanceID); err != nil {
+			errs = append(errs, fmt.Errorf("stored media: %w", err))
+		}
+	}
+
 	return errors.Join(errs...)
 }
 
