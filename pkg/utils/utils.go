@@ -15,8 +15,8 @@ import (
 	"go.mau.fi/whatsmeow/proto/waCompanionReg"
 	"go.mau.fi/whatsmeow/proto/waE2E"
 	whatsmeow_types "go.mau.fi/whatsmeow/types"
-	"golang.org/x/exp/rand"
 	"golang.org/x/net/proxy"
+	"math/rand/v2"
 )
 
 type Values struct {
@@ -33,7 +33,7 @@ func GenerateRandomString(length int) string {
 	characters := "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	b := make([]byte, length)
 	for i := range b {
-		b[i] = characters[rand.Intn(len(characters))]
+		b[i] = characters[rand.IntN(len(characters))]
 	}
 	return string(b)
 }

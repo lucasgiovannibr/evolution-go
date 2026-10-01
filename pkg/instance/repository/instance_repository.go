@@ -9,10 +9,8 @@ import (
 	"gorm.io/gorm"
 
 	label_model "github.com/evolution-foundation/evolution-go/pkg/label/model"
-	label_repository "github.com/evolution-foundation/evolution-go/pkg/label/repository"
 
 	message_model "github.com/evolution-foundation/evolution-go/pkg/message/model"
-	message_repository "github.com/evolution-foundation/evolution-go/pkg/message/repository"
 )
 
 type InstanceRepository interface {
@@ -36,9 +34,7 @@ type InstanceRepository interface {
 }
 
 type instanceRepository struct {
-	db          *gorm.DB
-	labelRepo   label_repository.LabelRepository
-	messageRepo message_repository.MessageRepository
+	db *gorm.DB
 }
 
 func (i *instanceRepository) Create(instance instance_model.Instance) (*instance_model.Instance, error) {

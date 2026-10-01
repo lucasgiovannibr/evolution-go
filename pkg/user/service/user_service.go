@@ -149,27 +149,6 @@ func (u *userService) ensureClientConnectedCtx(ctx context.Context, instanceId s
 	return utils.ClientProvider{Clients: u.clientPointer, Starter: u.whatsmeowService, Gate: true, Wait: clientReadyWait}.Ensure(ctx, instanceId, u.loggerWrapper.GetLogger(instanceId))
 }
 
-func (u *userService) waitForClientReady(ctx context.Context, instanceId string, maxWait time.Duration) (*whatsmeow.Client, error) {
-	deadline := time.Now().Add(maxWait)
-	ticker := time.NewTicker(100 * time.Millisecond)
-	defer ticker.Stop()
-
-	for {
-		client := u.clientPointer.Get(instanceId)
-		if client != nil && client.IsConnected() {
-			return client, nil
-		}
-		if time.Now().After(deadline) {
-			return nil, errors.New("client not ready within wait window")
-		}
-		select {
-		case <-ctx.Done():
-			return nil, fmt.Errorf("waiting for client: %w", ctx.Err())
-		case <-ticker.C:
-		}
-	}
-}
-
 func (u *userService) GetUser(ctx context.Context, data *CheckUserStruct, instance *instance_model.Instance) (*UserCollection, error) {
 	if ctx == nil {
 		ctx = context.Background()
