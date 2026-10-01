@@ -4,12 +4,15 @@ import "context"
 
 // MediaStorage defines the contract for storing and retrieving media files
 type MediaStorage interface {
-	// Store saves the media data and returns a public URL to access it
-	Store(ctx context.Context, data []byte, fileName string, contentType string) (string, error)
+	// Store saves a media file of an instance and returns a (presigned) URL to access it
+	Store(ctx context.Context, instanceID string, data []byte, fileName string, contentType string) (string, error)
 
-	// Delete removes the stored media
-	Delete(ctx context.Context, fileName string) error
+	// Delete removes one stored media file of an instance
+	Delete(ctx context.Context, instanceID string, fileName string) error
 
-	// GetURL returns the public URL for accessing the media
-	GetURL(ctx context.Context, fileName string) (string, error)
+	// GetURL returns a URL for accessing a stored media file of an instance
+	GetURL(ctx context.Context, instanceID string, fileName string) (string, error)
+
+	// DeleteInstance removes every media file of an instance and returns how many
+	DeleteInstance(ctx context.Context, instanceID string) (int, error)
 }
