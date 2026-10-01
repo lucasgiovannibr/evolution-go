@@ -1,7 +1,6 @@
 package send_service
 
 import (
-	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"bytes"
 	"context"
 	crypto_rand "crypto/rand"
@@ -9,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"image"
 	"image/jpeg"
 	"image/png"
@@ -75,6 +75,9 @@ type SendDataStruct struct {
 	MediaHandle     string
 	AdditionalNodes *[]waBinary.Node
 	ForwardingScore *uint32
+	// MediaBytes is the file that was sent, when the caller has it: the SendMessage event
+	// then carries it without downloading it back from WhatsApp.
+	MediaBytes []byte
 }
 
 type QuotedStruct struct {
@@ -1328,6 +1331,7 @@ func (s *sendService) sendMediaFileWithRetry(data *MediaStruct, fileData []byte,
 			FormatJid:       data.FormatJid,
 			MediaHandle:     uploaded.Handle,
 			ForwardingScore: data.ForwardingScore,
+			MediaBytes:      fileData,
 		})
 
 		if err != nil {
@@ -1634,6 +1638,7 @@ func (s *sendService) sendMediaUrlWithRetry(data *MediaStruct, instance *instanc
 			FormatJid:       data.FormatJid,
 			MediaHandle:     uploaded.Handle,
 			ForwardingScore: data.ForwardingScore,
+			MediaBytes:      fileData,
 		})
 
 		if err != nil {
@@ -1754,6 +1759,7 @@ func (s *sendService) SendSticker(data *StickerStruct, instance *instance_model.
 		MentionAll:   data.MentionAll,
 		MentionedJID: data.MentionedJID,
 		FormatJid:    data.FormatJid,
+		MediaBytes:   filedata,
 	})
 	if err != nil {
 		return nil, err
@@ -2870,6 +2876,31 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 		},
 	}
 
+	// The SendMessage event is built after the answer is on its way: it used to run first,
+	// and for media it downloaded again from WhatsApp the file that had just been uploaded
+	// (the caller already has it), which kept the API response waiting for all of it.
+	go s.publishSendMessage(instance, client, messageSent, isMedia, data.MediaBytes)
+
+	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent to %s", instance.Id, data.Number)
+	return messageSent, nil
+}
+
+// publishSendMessage emits the SendMessage event of a message that was just sent. media
+// is the file that was sent, when the caller still has it; without it (and with
+// WEBHOOK_FILES on) the file is downloaded back from WhatsApp. When nobody would receive
+// the event, nothing is built.
+func (s *sendService) publishSendMessage(instance *instance_model.Instance, client *whatsmeow.Client, messageSent *MessageSendStruct, isMedia bool, media []byte) {
+	defer func() {
+		if r := recover(); r != nil {
+			s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] panic publishing the SendMessage event: %v", instance.Id, r)
+		}
+	}()
+
+	msg := messageSent.Message
+	if !s.whatsmeowService.EventWanted(instance, "SendMessage", messageSent.Info.Chat.String()) {
+		return
+	}
+
 	postMap := make(map[string]interface{})
 	postMap["event"] = "SendMessage"
 
@@ -2878,14 +2909,16 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	messageData["Info"] = messageSent.Info
 
 	// Convertendo a mensagem para map usando json marshal/unmarshal
-	msgBytes, err := json.Marshal(messageSent.Message)
+	msgBytes, err := json.Marshal(msg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal message: %v", err)
+		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] failed to marshal message: %v", instance.Id, err)
+		return
 	}
 
 	var msgMap map[string]interface{}
 	if err := json.Unmarshal(msgBytes, &msgMap); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal message: %v", err)
+		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] failed to unmarshal message: %v", instance.Id, err)
+		return
 	}
 
 	messageData["Message"] = msgMap
@@ -2894,48 +2927,42 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	postMap["data"] = messageData
 
 	if isMedia && s.config.WebhookFiles {
-		var data []byte
+		data := media
 		var err error
 
-		img := msg.GetImageMessage()
-		audio := msg.GetAudioMessage()
-		document := msg.GetDocumentMessage()
-		video := msg.GetVideoMessage()
-		sticker := msg.GetStickerMessage()
+		if data == nil {
+			img := msg.GetImageMessage()
+			audio := msg.GetAudioMessage()
+			document := msg.GetDocumentMessage()
+			video := msg.GetVideoMessage()
+			sticker := msg.GetStickerMessage()
 
-		if img != nil {
-			data, err = client.Download(context.Background(), img)
-		} else if audio != nil {
-			data, err = client.Download(context.Background(), audio)
-		} else if document != nil {
-			data, err = client.Download(context.Background(), document)
-		} else if video != nil {
-			data, err = client.Download(context.Background(), video)
-		} else if sticker != nil {
-			data, err = client.Download(context.Background(), sticker)
+			switch {
+			case img != nil:
+				data, err = client.Download(context.Background(), img)
+			case audio != nil:
+				data, err = client.Download(context.Background(), audio)
+			case document != nil:
+				data, err = client.Download(context.Background(), document)
+			case video != nil:
+				data, err = client.Download(context.Background(), video)
+			case sticker != nil:
+				data, err = client.Download(context.Background(), sticker)
+			}
+		}
 
-			webpReader := bytes.NewReader(data)
-			img, err := webp.Decode(webpReader)
-			if err == nil {
+		// Stickers go out as WebP; the event carries them as PNG.
+		if err == nil && msg.GetStickerMessage() != nil {
+			if decoded, decErr := webp.Decode(bytes.NewReader(data)); decErr == nil {
 				var pngBuffer bytes.Buffer
-				err = png.Encode(&pngBuffer, img)
-				if err == nil {
+				if png.Encode(&pngBuffer, decoded) == nil {
 					data = pngBuffer.Bytes()
 				}
 			}
 		}
 
-		if err == nil {
-			// Acessando o Message do map já convertido
-			messageMap := msgMap
-			if messageMap == nil {
-				messageMap = make(map[string]interface{})
-			}
-
-			encodeData := base64.StdEncoding.EncodeToString(data)
-			messageMap["base64"] = encodeData
-
-			messageData["Message"] = messageMap
+		if err == nil && data != nil {
+			msgMap["base64"] = base64.StdEncoding.EncodeToString(data)
 		}
 	}
 
@@ -2943,26 +2970,19 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	postMap["instanceId"] = instance.Id
 	postMap["instanceName"] = instance.Name
 
-	var queueName string
-
-	if _, ok := postMap["event"]; ok {
-		queueName = strings.ToLower(fmt.Sprintf("%s.%s", instance.Id, postMap["event"]))
-	}
+	queueName := strings.ToLower(fmt.Sprintf("%s.%s", instance.Id, postMap["event"]))
 
 	values, err := json.Marshal(postMap)
 	if err != nil {
 		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to marshal JSON for queue", instance.Id)
-		return nil, err
+		return
 	}
 
-	go s.whatsmeowService.CallWebhook(instance, queueName, values)
+	s.whatsmeowService.CallWebhook(instance, queueName, values)
 
 	if s.config.AmqpGlobalEnabled || s.config.NatsGlobalEnabled {
-		go s.whatsmeowService.SendToGlobalQueues(postMap["event"].(string), values, instance.Id)
+		s.whatsmeowService.SendToGlobalQueues(postMap["event"].(string), values, instance.Id)
 	}
-
-	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent to %s", instance.Id, data.Number)
-	return messageSent, nil
 }
 
 func (s *sendService) SendCarousel(data *CarouselStruct, instance *instance_model.Instance) (*MessageSendStruct, error) {

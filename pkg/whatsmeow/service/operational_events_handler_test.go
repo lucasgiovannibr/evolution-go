@@ -18,6 +18,12 @@ import (
 type webhookCapture struct {
 	WhatsmeowService
 	published chan published
+	// nobodyWants makes EventWanted answer false, like an instance without subscribers.
+	nobodyWants bool
+}
+
+func (w *webhookCapture) EventWanted(*instance_model.Instance, string, string) bool {
+	return !w.nobodyWants
 }
 
 type published struct {
@@ -140,5 +146,19 @@ func TestOperationalEventsBelongToTheConnectionGroup(t *testing.T) {
 		if got := globalEventTypeFor(name); got != event_types.CONNECTION {
 			t.Errorf("globalEventTypeFor(%q) = %q, want CONNECTION", name, got)
 		}
+	}
+}
+
+// An event nobody would receive is not even serialized: CallWebhook is never reached.
+func TestHandlerSkipsEventsNobodyWants(t *testing.T) {
+	mycli, capture := newHandlerClient(t, &config.Config{})
+	capture.nobodyWants = true
+
+	mycli.myEventHandler(&events.StreamError{Code: "unknown-code"})
+
+	select {
+	case p := <-capture.published:
+		t.Fatalf("an unwanted event must not be published, got %+v", p)
+	case <-time.After(200 * time.Millisecond):
 	}
 }
