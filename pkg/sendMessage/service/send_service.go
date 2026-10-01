@@ -62,6 +62,19 @@ type sendService struct {
 	loggerWrapper    *logger_wrapper.LoggerManager
 	// existsCache remembers the "is this number on WhatsApp" check (nil = off).
 	existsCache *userExistsCache
+	// throttle limits the sends of each instance (see throttle.go).
+	throttle *sendThrottle
+}
+
+// sendToWhatsApp is client.SendMessage behind the instance's send limit.
+func (s *sendService) sendToWhatsApp(instanceID string, client *whatsmeow.Client, recipient types.JID, msg *waE2E.Message, extra whatsmeow.SendRequestExtra) (whatsmeow.SendResponse, error) {
+	ctx := context.Background()
+	release, err := s.throttle.acquire(ctx, instanceID)
+	if err != nil {
+		return whatsmeow.SendResponse{}, err
+	}
+	defer release()
+	return client.SendMessage(ctx, recipient, msg, extra)
 }
 
 // maxSendDelay is the longest "typing" delay before a send (the same limit ChatPresence
@@ -2912,7 +2925,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 		sendExtra.AdditionalNodes = data.AdditionalNodes
 	}
 
-	response, err := client.SendMessage(context.Background(), recipient, msg, sendExtra)
+	response, err := s.sendToWhatsApp(instance.Id, client, recipient, msg, sendExtra)
 	if err != nil {
 		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error sending message: %v", instance.Id, err)
 		// A bare "server returned error 463" says nothing to a person: explain it and,
@@ -3278,7 +3291,7 @@ func (s *sendService) SendStatusText(data *StatusTextStruct, instance *instance_
 
 	recipient := types.NewJID("status", "broadcast")
 
-	response, err := client.SendMessage(context.Background(), recipient, msg, whatsmeow.SendRequestExtra{ID: messageID})
+	response, err := s.sendToWhatsApp(instance.Id, client, recipient, msg, whatsmeow.SendRequestExtra{ID: messageID})
 	if err != nil {
 		return nil, err
 	}
@@ -3441,7 +3454,7 @@ func (s *sendService) sendStatusMedia(client *whatsmeow.Client, data *StatusMedi
 
 	recipient := types.NewJID("status", "broadcast")
 
-	response, err := client.SendMessage(context.Background(), recipient, media, whatsmeow.SendRequestExtra{ID: messageID})
+	response, err := s.sendToWhatsApp(instance.Id, client, recipient, media, whatsmeow.SendRequestExtra{ID: messageID})
 	if err != nil {
 		return nil, err
 	}
@@ -3519,5 +3532,6 @@ func NewSendService(
 		config:           config,
 		loggerWrapper:    loggerWrapper,
 		existsCache:      newUserExistsCache(config.CheckUserCacheTTL),
+		throttle:         newSendThrottle(throttleConfigFromEnv()),
 	}
 }

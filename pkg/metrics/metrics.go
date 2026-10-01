@@ -52,6 +52,13 @@ var (
 		Help: "Messages not persisted (write queue full or batch failed).",
 	})
 
+	// SendThrottled counts sends refused because the instance was over its send limit
+	// (answered with 429).
+	SendThrottled = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "evolution_send_throttled_total",
+		Help: "Sends refused with 429 because the instance was over its send limit.",
+	})
+
 	// MessageBatchSize is how many messages each database write carried.
 	MessageBatchSize = prometheus.NewHistogram(prometheus.HistogramOpts{
 		Name:    "evolution_message_batch_size",
@@ -64,7 +71,7 @@ func init() {
 	Registry.MustRegister(
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
-		httpRequests, httpDuration, httpInFlight, Events, MessagesDropped, MessageBatchSize,
+		httpRequests, httpDuration, httpInFlight, Events, MessagesDropped, MessageBatchSize, SendThrottled,
 	)
 }
 
