@@ -18,3 +18,12 @@ func NewLoggerManagerForTest(t testingT, cfg *config.Config) *LoggerManager {
 	t.Cleanup(lm.Close)
 	return lm
 }
+
+// NewLoggerManagerInTempDir is NewLoggerManagerForTest with a small config logging into
+// t.TempDir(), for tests of packages that only need a logger to pass along.
+func NewLoggerManagerInTempDir(t interface {
+	testingT
+	TempDir() string
+}) *LoggerManager {
+	return NewLoggerManagerForTest(t, &config.Config{LogDirectory: t.TempDir(), LogMaxSize: 1, LogMaxBackups: 1, LogMaxAge: 1})
+}

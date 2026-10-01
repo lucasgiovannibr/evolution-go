@@ -1,5 +1,7 @@
 package producer_interfaces
 
+import "context"
+
 type Producer interface {
 	Produce(queueName string, payload []byte, webhookUrl string, userID string) error
 	CreateGlobalQueues() error
@@ -26,4 +28,10 @@ type WebhookStats struct {
 // StatsProducer is implemented by producers that can report WebhookStats.
 type StatsProducer interface {
 	WebhookStats() WebhookStats
+}
+
+// Closer is implemented by producers that hold a connection: Close flushes what is
+// pending and releases it, within ctx. Called at shutdown.
+type Closer interface {
+	Close(ctx context.Context) error
 }
