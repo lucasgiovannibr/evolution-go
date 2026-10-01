@@ -1,9 +1,9 @@
 package newsletter_service
 
 import (
-	"github.com/evolution-foundation/evolution-go/pkg/utils"
-	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"context"
+	"github.com/evolution-foundation/evolution-go/pkg/safemap"
+	"github.com/evolution-foundation/evolution-go/pkg/utils"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"

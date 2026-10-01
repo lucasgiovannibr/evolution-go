@@ -3,6 +3,7 @@ package newsletter_handler
 import (
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	newsletter_service "github.com/evolution-foundation/evolution-go/pkg/newsletter/service"
 	"github.com/gin-gonic/gin"
@@ -49,7 +50,7 @@ func (n *newsletterHandler) CreateNewsletter(ctx *gin.Context) {
 	var data *newsletter_service.CreateNewsletterStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -60,7 +61,7 @@ func (n *newsletterHandler) CreateNewsletter(ctx *gin.Context) {
 
 	newsletter, err := n.newsletterService.CreateNewsletter(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -87,7 +88,7 @@ func (n *newsletterHandler) ListNewsletter(ctx *gin.Context) {
 
 	newsletters, err := n.newsletterService.ListNewsletter(instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -117,7 +118,7 @@ func (n *newsletterHandler) GetNewsletter(ctx *gin.Context) {
 	var data *newsletter_service.GetNewsletterStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -128,7 +129,7 @@ func (n *newsletterHandler) GetNewsletter(ctx *gin.Context) {
 
 	newsletter, err := n.newsletterService.GetNewsletter(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -158,7 +159,7 @@ func (n *newsletterHandler) GetNewsletterInvite(ctx *gin.Context) {
 	var data *newsletter_service.GetNewsletterInviteStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -169,7 +170,7 @@ func (n *newsletterHandler) GetNewsletterInvite(ctx *gin.Context) {
 
 	newsletter, err := n.newsletterService.GetNewsletterInvite(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -199,7 +200,7 @@ func (n *newsletterHandler) SubscribeNewsletter(ctx *gin.Context) {
 	var data *newsletter_service.GetNewsletterStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -210,7 +211,7 @@ func (n *newsletterHandler) SubscribeNewsletter(ctx *gin.Context) {
 
 	err = n.newsletterService.SubscribeNewsletter(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -240,7 +241,7 @@ func (n *newsletterHandler) GetNewsletterMessages(ctx *gin.Context) {
 	var data *newsletter_service.GetNewsletterMessagesStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -251,7 +252,7 @@ func (n *newsletterHandler) GetNewsletterMessages(ctx *gin.Context) {
 
 	messages, err := n.newsletterService.GetNewsletterMessages(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 

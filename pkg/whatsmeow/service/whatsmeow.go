@@ -45,9 +45,9 @@ import (
 	label_model "github.com/evolution-foundation/evolution-go/pkg/label/model"
 	label_repository "github.com/evolution-foundation/evolution-go/pkg/label/repository"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
-	"github.com/evolution-foundation/evolution-go/pkg/metrics"
 	message_model "github.com/evolution-foundation/evolution-go/pkg/message/model"
 	message_repository "github.com/evolution-foundation/evolution-go/pkg/message/repository"
+	"github.com/evolution-foundation/evolution-go/pkg/metrics"
 	"github.com/evolution-foundation/evolution-go/pkg/passkey/ceremony"
 	poll_service "github.com/evolution-foundation/evolution-go/pkg/poll/service"
 	"github.com/evolution-foundation/evolution-go/pkg/safemap"
@@ -152,15 +152,15 @@ func (w *whatsmeowService) ownershipLost(instanceID string) {
 }
 
 type MyClient struct {
-	service            WhatsmeowService
-	WAClient           *whatsmeow.Client
-	eventHandlerID     uint32
-	userID             string
-	token              string
+	service        WhatsmeowService
+	WAClient       *whatsmeow.Client
+	eventHandlerID uint32
+	userID         string
+	token          string
 	// instance is the record the running client works with. UpdateInstanceSettings
 	// replaces it from another goroutine while the event handler reads it, so it is only
 	// accessed through inst() / setInst().
-	instance atomic.Pointer[instance_model.Instance]
+	instance           atomic.Pointer[instance_model.Instance]
 	instanceRepository instance_repository.InstanceRepository
 	messageRepository  message_repository.MessageRepository
 	labelRepository    label_repository.LabelRepository

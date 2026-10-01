@@ -50,7 +50,7 @@ type Config struct {
 	MinioPublicBucket bool
 	// MinioURLTTL is how long the presigned media URLs work (MINIO_URL_TTL_HOURS, default
 	// and maximum 168).
-	MinioURLTTL time.Duration
+	MinioURLTTL          time.Duration
 	WhatsappVersionMajor int
 	WhatsappVersionMinor int
 	WhatsappVersionPatch int

@@ -3,6 +3,7 @@ package chat_handler
 import (
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	chat_service "github.com/evolution-foundation/evolution-go/pkg/chat/service"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/gin-gonic/gin"
@@ -28,7 +29,7 @@ func (c *chatHandler) SetDisappearing(ctx *gin.Context) {
 
 	var data *chat_service.DisappearingStruct
 	if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 	if data.Chat == "" {
@@ -64,7 +65,7 @@ func (c *chatHandler) SetDefaultDisappearing(ctx *gin.Context) {
 
 	var data *chat_service.DefaultDisappearingStruct
 	if err := ctx.ShouldBindBodyWithJSON(&data); err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 

@@ -6,6 +6,7 @@ package user_handler
 import (
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	user_service "github.com/evolution-foundation/evolution-go/pkg/user/service"
 	"github.com/gin-gonic/gin"
@@ -35,7 +36,7 @@ func (u *userHandler) SaveContact(ctx *gin.Context) {
 	var data *user_service.SaveContactStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -45,7 +46,7 @@ func (u *userHandler) SaveContact(ctx *gin.Context) {
 	}
 
 	if err := u.userService.SaveContact(data, instance); err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 

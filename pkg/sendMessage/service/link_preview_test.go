@@ -13,14 +13,14 @@ import (
 
 func TestFindURL(t *testing.T) {
 	cases := map[string]string{
-		"olha https://example.com/a?b=1&c=2 legal":    "https://example.com/a?b=1&c=2",
-		"veja https://example.com/a.":                 "https://example.com/a",
-		"(https://example.com/x)":                     "https://example.com/x",
-		"http://example.com, e depois":                "http://example.com",
-		"<https://example.com/p>":                     "https://example.com/p",
-		"\"https://example.com/q\"":                   "https://example.com/q",
-		"https://example.com/a_(b)":                   "https://example.com/a_(b",
-		"sem link aqui":                               "",
+		"olha https://example.com/a?b=1&c=2 legal":       "https://example.com/a?b=1&c=2",
+		"veja https://example.com/a.":                    "https://example.com/a",
+		"(https://example.com/x)":                        "https://example.com/x",
+		"http://example.com, e depois":                   "http://example.com",
+		"<https://example.com/p>":                        "https://example.com/p",
+		"\"https://example.com/q\"":                      "https://example.com/q",
+		"https://example.com/a_(b)":                      "https://example.com/a_(b",
+		"sem link aqui":                                  "",
 		"dois https://one.example e https://two.example": "https://one.example",
 	}
 	for in, want := range cases {

@@ -31,12 +31,12 @@ type RuntimeDiagnostics struct {
 
 // RuntimesReport is the answer of GET /instance/runtimes.
 type RuntimesReport struct {
-	Process   whatsmeow_service.ProcessInfo `json:"process"`
+	Process whatsmeow_service.ProcessInfo `json:"process"`
 	// Webhook is the state of the webhook delivery queues: what is waiting, and what
 	// was dropped because a receiver could not keep up.
 	Webhook   *producer_interfaces.WebhookStats `json:"webhook,omitempty"`
-	Summary   RuntimesSummary               `json:"summary"`
-	Instances []RuntimeDiagnostics          `json:"instances"`
+	Summary   RuntimesSummary                   `json:"summary"`
+	Instances []RuntimeDiagnostics              `json:"instances"`
 }
 
 type RuntimesSummary struct {

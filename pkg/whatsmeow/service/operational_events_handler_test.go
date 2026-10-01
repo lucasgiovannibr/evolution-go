@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/evolution-foundation/evolution-go/pkg/config"
-	"github.com/evolution-foundation/evolution-go/pkg/internal/event_types"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
+	"github.com/evolution-foundation/evolution-go/pkg/internal/event_types"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	"go.mau.fi/util/jsontime"
 	"go.mau.fi/whatsmeow/types/events"

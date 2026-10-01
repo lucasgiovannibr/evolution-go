@@ -3,6 +3,7 @@ package community_handler
 import (
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	community_service "github.com/evolution-foundation/evolution-go/pkg/community/service"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/gin-gonic/gin"
@@ -41,7 +42,7 @@ func (c *communityHandler) CreateCommunity(ctx *gin.Context) {
 	var data *community_service.CreateCommunityStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -52,7 +53,7 @@ func (c *communityHandler) CreateCommunity(ctx *gin.Context) {
 
 	community, err := c.communityService.CreateCommunity(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -82,7 +83,7 @@ func (c *communityHandler) CommunityAdd(ctx *gin.Context) {
 	var data *community_service.AddParticipantStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -98,7 +99,7 @@ func (c *communityHandler) CommunityAdd(ctx *gin.Context) {
 
 	resp, err := c.communityService.CommunityAdd(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 
@@ -128,7 +129,7 @@ func (c *communityHandler) CommunityRemove(ctx *gin.Context) {
 	var data *community_service.AddParticipantStruct
 	err := ctx.ShouldBindBodyWithJSON(&data)
 	if err != nil {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		apierror.BadRequest(ctx, err)
 		return
 	}
 
@@ -144,7 +145,7 @@ func (c *communityHandler) CommunityRemove(ctx *gin.Context) {
 
 	resp, err := c.communityService.CommunityRemove(data, instance)
 	if err != nil {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		apierror.Respond(ctx, err)
 		return
 	}
 

@@ -1,12 +1,12 @@
 package instance_service
 
 import (
-	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"bufio"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"os"
 	"path/filepath"
 	"slices"
