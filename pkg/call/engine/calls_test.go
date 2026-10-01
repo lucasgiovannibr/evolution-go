@@ -60,9 +60,8 @@ func (f *fakeCall) attached() (AudioSink, AudioSource) {
 	return f.sink, f.src
 }
 
-func (f *fakeCall) unusedAnswer() error { return nil }
-func (f *fakeCall) Phase() Phase        { f.mu.Lock(); defer f.mu.Unlock(); return f.phase }
-func (f *fakeCall) OnReady(fn func())   { f.mu.Lock(); f.onReady = fn; f.mu.Unlock() }
+func (f *fakeCall) Phase() Phase      { f.mu.Lock(); defer f.mu.Unlock(); return f.phase }
+func (f *fakeCall) OnReady(fn func()) { f.mu.Lock(); f.onReady = fn; f.mu.Unlock() }
 func (f *fakeCall) OnEnd(fn func(string)) {
 	f.mu.Lock()
 	f.onEnd = fn

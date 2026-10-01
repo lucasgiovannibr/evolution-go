@@ -1,12 +1,12 @@
 package instance_service
 
 import (
-	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"bufio"
 	"context"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"os"
 	"path/filepath"
 	"slices"
@@ -212,10 +212,8 @@ func (i instances) Connect(data *ConnectStruct, instance *instance_model.Instanc
 	subscribedEvents := splitSubscribedEvents(instance.Events)
 	eventString := instance.Events
 
-	// Verifica se a instância já está rodando
-	isInstanceRunning := i.clientPointer.Get(instance.Id) != nil
-
 	// Sincroniza as configurações na instância em execução (se já estiver conectada)
+	var isInstanceRunning bool
 	err := i.whatsmeowService.UpdateInstanceSettings(instance.Id)
 	if err != nil {
 		i.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Instance not in runtime yet, will be updated when connected", instance.Id)

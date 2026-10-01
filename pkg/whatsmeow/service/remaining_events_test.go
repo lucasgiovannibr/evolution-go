@@ -8,8 +8,8 @@ import (
 	"time"
 
 	"github.com/evolution-foundation/evolution-go/pkg/config"
-	"github.com/evolution-foundation/evolution-go/pkg/internal/event_types"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
+	"github.com/evolution-foundation/evolution-go/pkg/internal/event_types"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
 	waBinary "go.mau.fi/whatsmeow/binary"
 	"go.mau.fi/whatsmeow/types"

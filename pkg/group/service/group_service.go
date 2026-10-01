@@ -1,10 +1,10 @@
 package group_service
 
 import (
-	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"strings"
 	"time"
 
