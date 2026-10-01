@@ -3,6 +3,7 @@ package user_handler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/http"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
@@ -10,6 +11,11 @@ import (
 	"github.com/gin-gonic/gin"
 	"go.mau.fi/whatsmeow"
 )
+
+// MaxNumbersPerQuery is the most numbers one /user/check or /user/info request may carry:
+// the whole list goes to WhatsApp as one query, and an unbounded one is slow and the kind
+// of bulk lookup WhatsApp restricts accounts for.
+const MaxNumbersPerQuery = 100
 
 // writeUserWAError maps WhatsApp IQ / context errors to honest HTTP statuses.
 // rate-overlimit → 429; IQ/context timeout or cancel → 504; everything else → 500.
@@ -85,6 +91,11 @@ func (u *userHandler) GetUser(ctx *gin.Context) {
 		return
 	}
 
+	if len(data.Number) > MaxNumbersPerQuery {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("at most %d numbers per request (got %d): split the list", MaxNumbersPerQuery, len(data.Number))})
+		return
+	}
+
 	uc, err := u.userService.GetUser(ctx.Request.Context(), data, instance)
 	if err != nil {
 		writeUserWAError(ctx, err)
@@ -123,6 +134,11 @@ func (u *userHandler) CheckUser(ctx *gin.Context) {
 
 	if len(data.Number) < 1 {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		return
+	}
+
+	if len(data.Number) > MaxNumbersPerQuery {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("at most %d numbers per request (got %d): split the list", MaxNumbersPerQuery, len(data.Number))})
 		return
 	}
 

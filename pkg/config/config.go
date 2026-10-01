@@ -77,6 +77,10 @@ type Config struct {
 	EventIgnoreStatus   bool
 	QrcodeMaxCount      int
 	CheckUserExists     bool
+	// CheckUserCacheTTL is how long "this number is on WhatsApp" is remembered before a
+	// send asks again (CHECK_USER_CACHE_TTL_MIN, minutes, default 720; 0 asks on every
+	// send, as before). "Not registered" is remembered for 5 minutes only.
+	CheckUserCacheTTL time.Duration
 
 	// Calls (see pkg/call/engine). Zero means the engine default.
 	CallMaxConcurrent int // calls one instance may have at the same time
@@ -483,6 +487,7 @@ func Load() *Config {
 		CallDialLimit:        max(callDialLimit, 0),
 		CallStreamOrigins:    callStreamOrigins,
 		CheckUserExists:      checkUserExists != "false", // Default true, set to false to disable
+		CheckUserCacheTTL:    checkUserCacheTTL(),
 		RerequestFromPhone:   rerequestFromPhone == "true",
 		AmqpGlobalEvents:     amqpGlobalEvents,
 		AmqpSpecificEvents:   amqpSpecificEvents,
@@ -508,6 +513,20 @@ func Load() *Config {
 
 // envMB reads a size in megabytes from the environment and returns it in bytes; an
 // absent, invalid or non-positive value gives def.
+// checkUserCacheTTL reads CHECK_USER_CACHE_TTL_MIN: minutes, default 720 (12 h); 0 turns
+// the cache off; an invalid or negative value gives the default.
+func checkUserCacheTTL() time.Duration {
+	v := strings.TrimSpace(os.Getenv(config_env.CHECK_USER_CACHE_TTL_MIN))
+	if v == "" {
+		return 12 * time.Hour
+	}
+	minutes, err := strconv.Atoi(v)
+	if err != nil || minutes < 0 {
+		return 12 * time.Hour
+	}
+	return time.Duration(minutes) * time.Minute
+}
+
 func envMB(name string, def int64) int64 {
 	if v, err := strconv.ParseInt(strings.TrimSpace(os.Getenv(name)), 10, 64); err == nil && v > 0 {
 		return v << 20
