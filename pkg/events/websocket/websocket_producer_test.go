@@ -15,7 +15,7 @@ import (
 
 func newTestProducer(t *testing.T) *websocketProducer {
 	t.Helper()
-	lw := logger_wrapper.NewLoggerManager(&config.Config{LogDirectory: t.TempDir()})
+	lw := logger_wrapper.NewLoggerManagerForTest(t, &config.Config{LogDirectory: t.TempDir()})
 	return NewWebsocketProducer(lw)
 }
 

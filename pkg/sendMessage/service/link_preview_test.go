@@ -80,7 +80,7 @@ func TestResolveImageURL(t *testing.T) {
 func newLinkTestService(t *testing.T) *sendService {
 	t.Helper()
 	cfg := &config.Config{LogDirectory: t.TempDir()}
-	return &sendService{loggerWrapper: logger_wrapper.NewLoggerManager(cfg), config: cfg}
+	return &sendService{loggerWrapper: logger_wrapper.NewLoggerManagerForTest(t, cfg), config: cfg}
 }
 
 func TestBuildLinkPreviewFromAPageWithARelativeImage(t *testing.T) {

@@ -31,7 +31,7 @@ func (e *eventSink) SendToGlobalQueues(string, []byte, string) {}
 func newPublishService(t *testing.T, sink *eventSink, webhookFiles bool) *sendService {
 	t.Helper()
 	cfg := &config.Config{LogDirectory: t.TempDir(), WebhookFiles: webhookFiles}
-	return &sendService{config: cfg, loggerWrapper: logger_wrapper.NewLoggerManager(cfg), whatsmeowService: sink}
+	return &sendService{config: cfg, loggerWrapper: logger_wrapper.NewLoggerManagerForTest(t, cfg), whatsmeowService: sink}
 }
 
 func sentImage() *MessageSendStruct {

@@ -47,7 +47,7 @@ func newHandlerClient(t *testing.T, cfg *config.Config) (*MyClient, *webhookCapt
 		token:         "tok",
 		Instance:      &instance_model.Instance{Id: "inst-1", Name: "test", Token: "tok"},
 		config:        cfg,
-		loggerWrapper: logger_wrapper.NewLoggerManager(cfg),
+		loggerWrapper: logger_wrapper.NewLoggerManagerForTest(t, cfg),
 	}, capture
 }
 
