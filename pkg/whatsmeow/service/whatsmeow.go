@@ -2825,42 +2825,56 @@ func contains(subscriptions []string, event string) bool {
 	return false
 }
 
+// sendToQueueOrWebhook hands one event to every output the instance enabled: RabbitMQ,
+// NATS, the websocket and the webhook.
+//
+// The outputs are independent. It used to return at the first error, so a RabbitMQ
+// that was down (or a websocket subscriber that could not take the frame) kept the
+// webhook from ever being tried; reproduced with rabbitmqEnable set and no broker: the
+// webhook got nothing. They also run side by side now, so a producer that is slow (the
+// RabbitMQ one reconnects for seconds) does not delay the others.
 func (w *whatsmeowService) sendToQueueOrWebhook(instance *instance_model.Instance, queueName string, jsonData []byte) {
+	type output struct {
+		name string
+		send func() error
+	}
+
+	var outputs []output
 	if instance.RabbitmqEnable == "enabled" || instance.RabbitmqEnable == "true" {
-		err := w.rabbitmqProducer.Produce(queueName, jsonData, instance.RabbitmqEnable, instance.Id)
-		if err != nil {
-			w.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to send message to rabbitmq: %s", instance.Id, err)
-			return
-		}
-		w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent to rabbitmq successfully", instance.Id)
+		outputs = append(outputs, output{"rabbitmq", func() error {
+			return w.rabbitmqProducer.Produce(queueName, jsonData, instance.RabbitmqEnable, instance.Id)
+		}})
 	}
-
 	if instance.NatsEnable == "enabled" || instance.NatsEnable == "true" {
-		err := w.natsProducer.Produce(queueName, jsonData, instance.NatsEnable, instance.Id)
-		if err != nil {
-			w.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to send message to nats: %s", instance.Id, err)
-			return
-		}
-		w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent to nats successfully", instance.Id)
+		outputs = append(outputs, output{"nats", func() error {
+			return w.natsProducer.Produce(queueName, jsonData, instance.NatsEnable, instance.Id)
+		}})
 	}
-
 	if instance.WebSocketEnable == "enabled" || instance.WebSocketEnable == "true" {
-		err := w.websocketProducer.Produce(queueName, jsonData, instance.Id, instance.Token)
-		if err != nil {
-			w.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to send message to websocket: %s", instance.Id, err)
-			return
-		}
-		w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent to websocket successfully", instance.Id)
+		outputs = append(outputs, output{"websocket", func() error {
+			return w.websocketProducer.Produce(queueName, jsonData, instance.Id, instance.Token)
+		}})
+	}
+	if instance.Webhook != "" && instance.Webhook != "disabled" {
+		outputs = append(outputs, output{"webhook", func() error {
+			return w.webhookProducer.Produce(queueName, jsonData, instance.Webhook, instance.Id)
+		}})
 	}
 
-	if instance.Webhook != "" && instance.Webhook != "disabled" {
-		err := w.webhookProducer.Produce(queueName, jsonData, instance.Webhook, instance.Id)
-		if err != nil {
-			w.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to send message to webhook: %s", instance.Id, err)
-			return
-		}
-		w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent to webhook successfully", instance.Id)
+	var wg sync.WaitGroup
+	for _, out := range outputs {
+		wg.Add(1)
+		go func(out output) {
+			defer wg.Done()
+			defer recoverAndLog(w.loggerWrapper, instance.Id, "producer "+out.name)
+			if err := out.send(); err != nil {
+				w.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Failed to send message to %s: %s", instance.Id, out.name, err)
+				return
+			}
+			w.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent to %s successfully", instance.Id, out.name)
+		}(out)
 	}
+	wg.Wait()
 }
 
 func (w whatsmeowService) StartInstance(instanceId string) error {
