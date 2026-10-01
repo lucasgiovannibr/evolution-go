@@ -50,40 +50,7 @@ type EditLabelStruct struct {
 }
 
 func (l *labelService) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {
-	client := l.clientPointer.Get(instanceId)
-	l.loggerWrapper.GetLogger(instanceId).LogDebug("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
-
-	if client == nil {
-		l.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] No client found, attempting to start new instance", instanceId)
-		err := l.whatsmeowService.StartInstance(instanceId)
-		if err != nil {
-			l.loggerWrapper.GetLogger(instanceId).LogError("[%s] Failed to start instance: %v", instanceId, err)
-			return nil, errors.New("no active session found")
-		}
-
-		l.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting for the connection...", instanceId)
-		client = utils.WaitForClient(func() *whatsmeow.Client { return l.clientPointer.Get(instanceId) }, utils.InstanceStartTimeout)
-		l.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
-			instanceId,
-			client != nil,
-			client != nil && client.IsConnected())
-
-		if client == nil || !client.IsConnected() {
-			l.loggerWrapper.GetLogger(instanceId).LogError("[%s] New client validation failed - Exists: %v, Connected: %v",
-				instanceId,
-				client != nil,
-				client != nil && client.IsConnected())
-			return nil, errors.New("no active session found")
-		}
-	} else if !client.IsConnected() {
-		l.loggerWrapper.GetLogger(instanceId).LogError("[%s] Existing client is disconnected - Connected status: %v",
-			instanceId,
-			client.IsConnected())
-		return nil, errors.New("client disconnected")
-	}
-
-	l.loggerWrapper.GetLogger(instanceId).LogDebug("[%s] Client successfully validated - Connected: %v", instanceId, client.IsConnected())
-	return client, nil
+	return utils.ClientProvider{Clients: l.clientPointer, Starter: l.whatsmeowService, Gate: true}.Ensure(context.Background(), instanceId, l.loggerWrapper.GetLogger(instanceId))
 }
 
 func (l *labelService) ChatLabel(data *ChatLabelStruct, instance *instance_model.Instance) error {

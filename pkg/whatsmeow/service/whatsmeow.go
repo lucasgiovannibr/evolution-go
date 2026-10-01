@@ -62,6 +62,9 @@ type WhatsmeowService interface {
 	// stored connection state is kept so the instances come back on the next start.
 	Shutdown(ctx context.Context)
 	StartInstance(instanceId string) error
+	// CanAutoStart reports whether a request may start the instance by itself (nil) or why
+	// not: an instance disconnected through the API stays off until it is connected again.
+	CanAutoStart(instanceId string) error
 	ReconnectClient(instanceId string) error
 	ClearInstanceCache(instanceId string, token string) error
 	PurgeInstanceData(instanceId string, jid string) error
@@ -2850,6 +2853,17 @@ func (w whatsmeowService) StartInstance(instanceId string) error {
 
 	go w.StartClient(clientData)
 
+	return nil
+}
+
+func (w whatsmeowService) CanAutoStart(instanceId string) error {
+	instance, err := w.instanceRepository.GetInstanceByID(instanceId)
+	if err != nil {
+		return nil // StartInstance reports a missing instance
+	}
+	if !instance.Connected && instance.DisconnectReason == instance_repository.DisconnectedByAPIReason {
+		return utils.ErrDisconnectedByUser
+	}
 	return nil
 }
 

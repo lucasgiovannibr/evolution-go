@@ -348,7 +348,6 @@ func TestCloseGivesUpAtTheDeadline(t *testing.T) {
 	release := make(chan struct{})
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-release }))
 	defer srv.Close()
-	defer close(release)
 
 	p := newTestProducer(t, 10*time.Second)
 	_ = p.Produce("inst.message", []byte(`{}`), srv.URL, "u")
@@ -363,4 +362,8 @@ func TestCloseGivesUpAtTheDeadline(t *testing.T) {
 	if time.Since(start) > 2*time.Second {
 		t.Fatalf("Close took %v", time.Since(start))
 	}
+	// Let the stuck request finish before the test ends: the worker logs when it does, and
+	// the log directory is removed with the test.
+	close(release)
+	waitFor(t, "the worker to finish", func() bool { return p.WebhookStats().InFlight == 0 })
 }

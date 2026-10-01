@@ -146,36 +146,7 @@ func (u *userService) ensureClientConnected(instanceId string) (*whatsmeow.Clien
 }
 
 func (u *userService) ensureClientConnectedCtx(ctx context.Context, instanceId string) (*whatsmeow.Client, error) {
-	if ctx == nil {
-		ctx = context.Background()
-	}
-
-	client := u.clientPointer.Get(instanceId)
-	u.loggerWrapper.GetLogger(instanceId).LogDebug("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
-
-	if client == nil {
-		u.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] No client found, attempting to start new instance", instanceId)
-		err := u.whatsmeowService.StartInstance(instanceId)
-		if err != nil {
-			u.loggerWrapper.GetLogger(instanceId).LogError("[%s] Failed to start instance: %v", instanceId, err)
-			return nil, errors.New("no active session found")
-		}
-
-		u.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting up to %s for connection...", instanceId, clientReadyWait)
-		client, err = u.waitForClientReady(ctx, instanceId, clientReadyWait)
-		if err != nil {
-			u.loggerWrapper.GetLogger(instanceId).LogError("[%s] New client validation failed: %v", instanceId, err)
-			return nil, errors.New("no active session found")
-		}
-	} else if !client.IsConnected() {
-		u.loggerWrapper.GetLogger(instanceId).LogError("[%s] Existing client is disconnected - Connected status: %v",
-			instanceId,
-			client.IsConnected())
-		return nil, errors.New("client disconnected")
-	}
-
-	u.loggerWrapper.GetLogger(instanceId).LogDebug("[%s] Client successfully validated - Connected: %v", instanceId, client.IsConnected())
-	return client, nil
+	return utils.ClientProvider{Clients: u.clientPointer, Starter: u.whatsmeowService, Gate: true, Wait: clientReadyWait}.Ensure(ctx, instanceId, u.loggerWrapper.GetLogger(instanceId))
 }
 
 func (u *userService) waitForClientReady(ctx context.Context, instanceId string, maxWait time.Duration) (*whatsmeow.Client, error) {

@@ -6,7 +6,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -127,41 +126,7 @@ type ForceReconnectStruct struct {
 }
 
 func (i *instances) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {
-	logger := i.loggerWrapper.GetLogger(instanceId)
-	client := i.clientPointer.Get(instanceId)
-	logger.LogDebug("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
-
-	if client == nil {
-		logger.LogInfo("[%s] No client found, attempting to start new instance", instanceId)
-		err := i.whatsmeowService.StartInstance(instanceId)
-		if err != nil {
-			logger.LogError("[%s] Failed to start instance: %v", instanceId, err)
-			return nil, errors.New("no active session found")
-		}
-
-		logger.LogInfo("[%s] Instance started, waiting for the connection...", instanceId)
-		client = utils.WaitForClient(func() *whatsmeow.Client { return i.clientPointer.Get(instanceId) }, utils.InstanceStartTimeout)
-		logger.LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
-			instanceId,
-			client != nil,
-			client != nil && client.IsConnected())
-
-		if client == nil || !client.IsConnected() {
-			logger.LogError("[%s] New client validation failed - Exists: %v, Connected: %v",
-				instanceId,
-				client != nil,
-				client != nil && client.IsConnected())
-			return nil, errors.New("no active session found")
-		}
-	} else if !client.IsConnected() {
-		logger.LogError("[%s] Existing client is disconnected - Connected status: %v",
-			instanceId,
-			client.IsConnected())
-		return nil, errors.New("client disconnected")
-	}
-
-	logger.LogDebug("[%s] Client successfully validated - Connected: %v", instanceId, client.IsConnected())
-	return client, nil
+	return utils.ClientProvider{Clients: i.clientPointer, Starter: i.whatsmeowService}.Ensure(context.Background(), instanceId, i.loggerWrapper.GetLogger(instanceId))
 }
 
 func (i instances) Create(data *CreateStruct) (*instance_model.Instance, error) {
@@ -309,9 +274,11 @@ func (i instances) Disconnect(instance *instance_model.Instance) (*instance_mode
 	if client.IsConnected() {
 		if client.IsLoggedIn() {
 			i.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Disconnection successful", instance.Id)
-			select {
-			case i.killChannel.Get(instance.Id) <- true:
-			case <-time.After(5 * time.Second):
+			// Stop the runtime for good. Sending `true` on the kill channel (what this used
+			// to do) is the "restart" signal: the supervisor reported a LoggedOut event that
+			// never happened and started the client again, so a disconnect reconnected itself.
+			if err := i.whatsmeowService.ClearInstanceCache(instance.Id, instance.Token); err != nil {
+				return instance, err
 			}
 
 			// Do not clear instance.Events on disconnect (PR #187). Wiping the
@@ -319,7 +286,7 @@ func (i instances) Disconnect(instance *instance_model.Instance) (*instance_mode
 			// next connect, and CallWebhook then dropped every webhook
 			// (strings.Split("", ",") yields [""], which is not an event type).
 			instance.Connected = false
-			instance.DisconnectReason = "Disconnected by API"
+			instance.DisconnectReason = instance_repository.DisconnectedByAPIReason
 			if err := i.instanceRepository.UpdateConnected(instance.Id, false, instance.DisconnectReason); err != nil {
 				return instance, err
 			}

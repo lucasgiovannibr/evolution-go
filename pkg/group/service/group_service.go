@@ -118,40 +118,7 @@ type UpdateGroupRequestParticipantsStruct struct {
 }
 
 func (g *groupService) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {
-	client := g.clientPointer.Get(instanceId)
-	g.loggerWrapper.GetLogger(instanceId).LogDebug("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
-
-	if client == nil {
-		g.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] No client found, attempting to start new instance", instanceId)
-		err := g.whatsmeowService.StartInstance(instanceId)
-		if err != nil {
-			g.loggerWrapper.GetLogger(instanceId).LogError("[%s] Failed to start instance: %v", instanceId, err)
-			return nil, errors.New("no active session found")
-		}
-
-		g.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting for the connection...", instanceId)
-		client = utils.WaitForClient(func() *whatsmeow.Client { return g.clientPointer.Get(instanceId) }, utils.InstanceStartTimeout)
-		g.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking new client - Exists: %v, Connected: %v",
-			instanceId,
-			client != nil,
-			client != nil && client.IsConnected())
-
-		if client == nil || !client.IsConnected() {
-			g.loggerWrapper.GetLogger(instanceId).LogError("[%s] New client validation failed - Exists: %v, Connected: %v",
-				instanceId,
-				client != nil,
-				client != nil && client.IsConnected())
-			return nil, errors.New("no active session found")
-		}
-	} else if !client.IsConnected() {
-		g.loggerWrapper.GetLogger(instanceId).LogError("[%s] Existing client is disconnected - Connected status: %v",
-			instanceId,
-			client.IsConnected())
-		return nil, errors.New("client disconnected")
-	}
-
-	g.loggerWrapper.GetLogger(instanceId).LogDebug("[%s] Client successfully validated - Connected: %v", instanceId, client.IsConnected())
-	return client, nil
+	return utils.ClientProvider{Clients: g.clientPointer, Starter: g.whatsmeowService, Gate: true}.Ensure(context.Background(), instanceId, g.loggerWrapper.GetLogger(instanceId))
 }
 
 func (g *groupService) ListGroups(instance *instance_model.Instance) ([]*types.GroupInfo, error) {
