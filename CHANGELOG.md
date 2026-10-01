@@ -374,6 +374,31 @@ returns); every change below has tests, and the structural gains were measured.
   context and button clicks are functions of their own).
 - Dead code removed; the test logger is closed when a test ends.
 
+### Interactive messages that render (October 2026)
+Tested live on a WhatsApp Business account linked as a device, sending to an iPhone and to
+WhatsApp Web (HTTP 200 only means the server accepted a message; clients silently drop what
+they do not understand). Details and the method in `FORK-TRIAGE.md` §3.
+- **`/send/button` fixed (#59, #110, #170, #204 of upstream).** Reply and CTA buttons
+  (copy/url/call) are now a plain `InteractiveMessage` with a native flow announced as
+  `<native_flow v="9" name="mixed"/>` plus `<bot biz_bot="1"/>`, with no
+  `DocumentWithCaptionMessage` wrapper. The legacy `ButtonsMessage` was always refused (405)
+  and the wrapped CTA was refused (473). Reply buttons take an image or video header again.
+  `reply` mixed with CTA buttons is accepted now (the phone shows it, WhatsApp Web does not).
+  Pix is unchanged. Tapping a button arrives as `ButtonClick`.
+- **`/send/carousel` showed on WhatsApp Web but not on the iPhone**: an empty card header
+  `title`/`subtitle` was sent as an empty string. Empty fields are left out now.
+- **`/send/list` is refused by WhatsApp for linked devices** (405/479, Business accounts
+  included; every format tried). A refused list is now sent as reply buttons (3 per message, at
+  most 9 rows, the `rowId` is the button id); the response carries `Fallback: "buttons"` and
+  `Parts`. `fallbackButtons: false` answers `502 whatsapp_rejected` with an explanation.
+- **Media download errors are client errors**: an unusable URL (error status, unreachable, not
+  http) is `400 invalid_media_url` and a file over the limit is `413 payload_too_large`; both
+  were a `500 internal_error`.
+- **Manager "Testar envio" tab** sends all 12 `/send/*` types (text, link, location, contact,
+  poll, media, sticker, buttons, list, carousel, status text and status media) with a form per
+  type, a typing delay, a cURL view, the attempts of the session and the remembered number.
+  Status asks for a confirmation because it reaches the account's contacts.
+
 ### Documentation
 - `docs/swagger.*` regenerated with swag v1.16.3 (`--parseDependency`; it had not been
   regenerated since the 0.7.2 sync): 28 routes added (calls, `/instance/{id}/integrations`,

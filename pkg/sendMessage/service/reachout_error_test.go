@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	"go.mau.fi/whatsmeow"
 )
@@ -61,5 +62,26 @@ func TestExplainSendErrorLeavesOtherErrorsAlone(t *testing.T) {
 	orig := serverError(500)
 	if got := explainSendError(orig, nil, time.Now()); got != orig {
 		t.Fatalf("other errors must pass through untouched: %v", got)
+	}
+}
+
+func TestExplainInteractiveErrorOnlyForLists(t *testing.T) {
+	for _, code := range []int{405, 473, 479} {
+		got := explainInteractiveError(serverError(code), "ListMessage")
+		var apiErr *apierror.Error
+		if !errors.As(got, &apiErr) || apiErr.Code != "whatsapp_rejected" || !strings.Contains(apiErr.Message, fmt.Sprint(code)) {
+			t.Fatalf("code %d on a list must become an explained api error: %v", code, got)
+		}
+	}
+	orig := serverError(405)
+	if got := explainInteractiveError(orig, "InteractiveMessage"); got != orig {
+		t.Fatalf("a button or carousel keeps its error: %v", got)
+	}
+	other := serverError(500)
+	if got := explainInteractiveError(other, "ListMessage"); got != other {
+		t.Fatalf("an unrelated server error is left alone: %v", got)
+	}
+	if got := explainInteractiveError(nil, "ListMessage"); got != nil {
+		t.Fatalf("nil stays nil: %v", got)
 	}
 }

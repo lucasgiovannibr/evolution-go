@@ -2,7 +2,13 @@
 
 Documentação completa dos endpoints para enviar mensagens interativas no WhatsApp: botões, listas e carrosséis. Todos os endpoints são compatíveis com **Android**, **iOS (iPhone)** e **WhatsApp Web/Desktop**.
 
-> ⚠️ **Limitação conhecida (issues #59, #71, #110, #170, #204 do upstream)**: `/send/button` e `/send/list` retornam `200` com ID de mensagem, mas o WhatsApp pode **não renderizar** (ou responder `405`/`473`) para destinatários em contas pessoais — hoje só o **carrossel** chega de forma confiável. O protocolo para botões/listas nativos parece restrito a sessões oficiais (Business/WABA) e o comportamento muda com o WhatsApp. Trate esses endpoints como **experimentais** em contas comuns e prefira `/send/carousel`, enquetes ou texto com instruções de resposta.
+> ✅ **Verificado em aparelho (01/10/2026)**: numa conta WhatsApp Business conectada como aparelho vinculado, com o destinatário num iPhone e no WhatsApp Web, **botões** (reply, copiar, URL, ligar, agrupados, reply com imagem), **carrossel** e **Pix** chegam e funcionam; ao tocar, o evento `ButtonClick` chega ao webhook. O Android não foi testado.
+>
+> ⚠️ **Lista nativa não existe nesse tipo de sessão**: o WhatsApp recusa toda mensagem de lista de um aparelho vinculado (`405`/`479`), mesmo em conta Business, e o formato `single_select` é aceito mas descartado pelo celular. Por isso `/send/list` **reenvia a lista como botões de resposta** (ver [Enviar Lista](#enviar-lista)).
+>
+> **`200` não prova que renderizou**: o servidor aceita mensagens que o celular depois descarta (a web mostra "não foi possível carregar a mensagem"). Confira sempre no aparelho.
+>
+> Os erros `405`/`473` de botões que as issues #59, #71, #110, #170 e #204 do upstream relatam vinham do formato antigo (`ButtonsMessage` legado e CTA dentro de `DocumentWithCaptionMessage`), já corrigido neste fork.
 >
 > No carrossel, os botões aceitam `type` = `REPLY`, `URL`, `CALL` ou `COPY` (`COPY_CODE` também é aceito). Para `URL`/`CALL` informe o valor em `url`/`phoneNumber` (ou, alternativamente, em `id`); para `COPY`, em `copyCode`.
 
@@ -89,7 +95,7 @@ apikey: SUA-CHAVE-API
 
 ### Exemplo 1: Botões Quick Reply
 
-Máximo 3 botões. Não pode misturar com outros tipos.
+Máximo 3 botões. Funciona no celular e no WhatsApp Web.
 
 ```bash
 curl -X POST http://localhost:4000/send/button \
@@ -157,7 +163,15 @@ curl -X POST http://localhost:4000/send/button \
 
 ## Enviar Lista
 
-Envia uma mensagem com lista de opções organizadas em seções. O usuário toca no botão para abrir a lista e seleciona uma opção.
+Envia uma mensagem com lista de opções organizadas em seções.
+
+> **Como a lista é entregue.** O WhatsApp recusa listas de aparelhos vinculados, então o servidor tenta a lista e, se ela for recusada, envia as mesmas opções como **botões de resposta**:
+> - os itens, na ordem, **3 por mensagem**, em no máximo **9 itens** (3 mensagens); a primeira leva o título e a descrição, as seguintes recebem "(2/3)", "(3/3)" no título;
+> - o `rowId` de cada item é o `id` do botão: ao tocar, o webhook recebe `ButtonClick` com `buttonId` = `rowId`;
+> - o rótulo do botão tem no máximo 20 caracteres (o resto é cortado com "…"); o título completo e a descrição de cada item vão no texto da mensagem;
+> - só a primeira mensagem leva `quoted`, menções e `delay`;
+> - a resposta traz `"Fallback": "buttons"` e `"Parts"` (quantas mensagens), com a primeira em `Info`;
+> - `"fallbackButtons": false` desliga isso e devolve `502` com `code: "whatsapp_rejected"`; mais de 9 itens também devolve esse `502`, dizendo o limite.
 
 **Endpoint**: `POST /send/list`
 
@@ -656,11 +670,11 @@ A instância deve ter o evento `BUTTON_CLICK` ou `MESSAGE` habilitado na configu
 
 ### Regras de Combinação
 
-- **Reply**: Máximo 3 botões. **Não** pode misturar com outros tipos no mesmo envio.
-- **PIX**: Deve ser enviado **sozinho**, sem outros botões.
+- **Reply**: Máximo 3 botões. Misturado com URL/Call/Copy aparece no **celular**, mas **não no WhatsApp Web**.
+- **PIX**: Deve ser enviado **sozinho**, sem outros botões. Aparece só no celular.
 - **URL / Call / Copy**: Podem ser combinados livremente entre si.
 - **Carrossel**: Todos os tipos (exceto PIX) podem ser combinados no mesmo card.
-- **Lista**: Não possui botões nos items. Usa `rowId` para rastreio.
+- **Lista**: Não possui botões nos items. Usa `rowId` para rastreio; é entregue como botões de resposta (3 por mensagem, até 9 itens).
 
 ### Estrutura de Cada Tipo
 
@@ -713,12 +727,16 @@ A instância deve ter o evento `BUTTON_CLICK` ou `MESSAGE` habilitado na configu
 
 ### Compatibilidade Testada
 
-| Tipo de Mensagem | Android | iOS (iPhone) | WhatsApp Web |
-|------------------|---------|--------------|--------------|
-| Botões (reply) | ✅ | ✅ | ✅ |
-| Botões (url) | ✅ | ✅ | ✅ |
-| Botões (call) | ✅ | ✅ | ✅ |
-| Botões (copy) | ✅ | ✅ | ✅ |
-| Botões (pix) | ✅ | ✅ | ✅ |
-| Lista | ✅ | ✅ | ✅ |
-| Carrossel | ✅ | ✅ | ✅ |
+Testado em 01/10/2026 com uma conta Business (aparelho vinculado) enviando para um iPhone e para o WhatsApp Web. O Android não foi testado.
+
+| Tipo de Mensagem | iOS (iPhone) | WhatsApp Web |
+|------------------|--------------|--------------|
+| Botões (reply, até 3) | ✅ | ✅ |
+| Botões (reply com imagem) | ✅ | não testado |
+| Botões (url / call / copy, agrupados) | ✅ | ✅ |
+| Botões (reply + CTA misturados) | ✅ | ❌ não aparece |
+| Botões (pix) | ✅ | ❌ não aparece |
+| Lista (como botões de resposta) | ✅ | ✅ |
+| Carrossel (reply, url, call, copy) | ✅ | ✅ |
+
+> Carrossel: um `header.title` ou `header.subtitle` vazio faz o iPhone descartar o carrossel inteiro. O servidor já omite os campos vazios.

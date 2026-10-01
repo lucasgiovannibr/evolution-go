@@ -71,6 +71,8 @@ var mappings = []mapping{
 	{utils.ErrNotLoggedIn, http.StatusConflict, "instance_not_logged_in"},
 	{utils.ErrDisconnectedByUser, http.StatusConflict, "instance_disconnected_by_user"},
 	{utils.ErrOwnedElsewhere, http.StatusConflict, "instance_on_another_replica"},
+	{utils.ErrDownloadTooLarge, http.StatusRequestEntityTooLarge, "payload_too_large"},
+	{utils.ErrDownloadFailed, http.StatusBadRequest, "invalid_media_url"},
 
 	{whatsmeow.ErrNotConnected, http.StatusServiceUnavailable, "instance_not_connected"},
 	{whatsmeow.ErrNotLoggedIn, http.StatusConflict, "instance_not_logged_in"},

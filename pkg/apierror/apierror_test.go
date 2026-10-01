@@ -41,6 +41,8 @@ func TestClassify(t *testing.T) {
 		{"not logged in", utils.ErrNotLoggedIn, 409, "instance_not_logged_in"},
 		{"disconnected by user", utils.ErrDisconnectedByUser, 409, "instance_disconnected_by_user"},
 		{"other replica", fmt.Errorf("%w: abc", utils.ErrOwnedElsewhere), 409, "instance_on_another_replica"},
+		{"media url unusable", fmt.Errorf("%w: failed to fetch x: HTTP status 403", utils.ErrDownloadFailed), 400, "invalid_media_url"},
+		{"media too large", fmt.Errorf("%w: 9 bytes (limit 1)", utils.ErrDownloadTooLarge), 413, "payload_too_large"},
 		{"whatsmeow not connected", whatsmeow.ErrNotConnected, 503, "instance_not_connected"},
 		{"whatsmeow not logged in", whatsmeow.ErrNotLoggedIn, 409, "instance_not_logged_in"},
 		{"wrapped rate limit", fmt.Errorf("sending: %w", whatsmeow.ErrIQRateOverLimit), 429, "whatsapp_rate_limited"},

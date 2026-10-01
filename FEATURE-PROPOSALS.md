@@ -84,7 +84,7 @@ As sugestões 23 e 24 (diagnóstico do runtime e health check), 26 e 27 (resulta
 
 A documentação de tudo que está em §1 foi atualizada no preparo do release (30/09/2026): wiki (`api-call.md` reescrita, `api-instances.md`, `api-fork-additions.md`, `events-system.md`, `environment-variables.md`), CHANGELOG, swagger, FORK-TRIAGE e `docs/WHATSMEOW-CAPABILITIES.md`. Ainda em aberto:
 
-- Botões e listas em conta pessoal: já registrado em `api-interactive.md`; revisar quando houver validação em aparelho.
+- Botões e listas: validados em aparelho em 01/10/2026 (ver `FORK-TRIAGE.md` §3). Falta testar no Android e em grupos.
 - README: instruções de Windows (PRs #201/#202 são um começo, mas duplicam o bloco "Setup").
 
 ## 5. Ideias que sobraram da análise de outubro de 2026

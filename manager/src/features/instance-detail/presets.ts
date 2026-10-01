@@ -1,6 +1,4 @@
-import type { SendKind } from '@/api/messages';
-
-export type PresetGroup = Exclude<SendKind, 'text'>;
+export type PresetGroup = 'button' | 'list' | 'carousel';
 
 export interface Preset {
   id: string;
@@ -45,6 +43,13 @@ export const PRESETS: Preset[] = [
     ]),
   },
   {
+    id: 'btn_reply_img',
+    group: 'button',
+    label: 'Reply com imagem',
+    description: 'Dois botões reply com uma imagem no cabeçalho.',
+    build: (n) => ({ ...button('Teste - Reply com imagem', 'Dois botões reply sob uma imagem.', [{ type: 'reply', displayText: 'Sim', id: 'test_yes' }, { type: 'reply', displayText: 'Não', id: 'test_no' }])(n), imageUrl: 'https://picsum.photos/seed/header/600/400.jpg' }),
+  },
+  {
     id: 'btn_copy',
     group: 'button',
     label: 'CTA Copiar',
@@ -69,25 +74,35 @@ export const PRESETS: Preset[] = [
     id: 'btn_pix',
     group: 'button',
     label: 'PIX (sozinho)',
-    description: 'Pagamento Pix. O servidor exige que seja o único botão.',
+    description: 'Pagamento Pix. Precisa ser o único botão; só aparece no celular.',
     build: button('Teste - PIX', 'Botão Pix (envia sozinho).', [{ type: 'pix', currency: 'BRL', name: 'Minha Loja', keyType: 'cpf', key: '12345678900' }]),
   },
   {
     id: 'btn_cta_group',
     group: 'button',
     label: 'CTAs agrupados',
-    description: 'Copiar + URL + Ligar. Combinação recomendada para o WhatsApp Web; não mistura com reply.',
+    description: 'Copiar + URL + Ligar juntos. Aparece no celular e no WhatsApp Web; não mistura com reply.',
     build: (n) =>
-      button('Teste - CTAs agrupados', 'copy + url + call (funciona no WhatsApp Web).', [
+      button('Teste - CTAs agrupados', 'copy + url + call (celular e WhatsApp Web).', [
         { type: 'copy', displayText: 'Copiar cupom', copyCode: 'CTA2026' },
         { type: 'url', displayText: 'Abrir site', url: 'https://evolutionapi.com' },
         { type: 'call', displayText: 'Ligar agora', phoneNumber: plus(n) },
       ])(n),
   },
   {
+    id: 'btn_reply_url',
+    group: 'button',
+    label: 'Reply + URL (só no celular)',
+    description: 'Um reply e um botão de link na mesma mensagem. Aparece no celular, mas não no WhatsApp Web.',
+    build: button('Teste - Reply + URL', 'Reply misturado com CTA.', [
+      { type: 'reply', displayText: 'Confirmar', id: 'test_mix_reply' },
+      { type: 'url', displayText: 'Abrir site', url: 'https://evolutionapi.com' },
+    ]),
+  },
+  {
     id: 'list',
     group: 'list',
-    label: 'Lista com seções',
+    label: 'Lista com seções (4 itens, 2 mensagens)',
     description: 'Menu de seleção única com duas seções (Planos e Suporte).',
     build: (number) => ({
       number,
@@ -108,6 +123,29 @@ export const PRESETS: Preset[] = [
           rows: [
             { title: 'Falar com atendente', description: 'Horário comercial', rowId: 'support_agent' },
             { title: 'Central de ajuda', description: 'Artigos e FAQ', rowId: 'support_kb' },
+          ],
+        },
+      ],
+    }),
+  },
+  {
+    id: 'list_short',
+    group: 'list',
+    label: 'Lista curta (3 itens, 1 mensagem)',
+    description: 'Três itens numa só seção: cabe em uma mensagem de botões.',
+    build: (number) => ({
+      number,
+      title: 'Teste - Lista curta',
+      description: 'Escolha um dos planos.',
+      buttonText: 'Ver opções',
+      footerText: FOOTER,
+      sections: [
+        {
+          title: 'Planos',
+          rows: [
+            { title: 'Plano Básico', description: 'R$ 29,90/mês', rowId: 'plan_basic' },
+            { title: 'Plano Pro', description: 'R$ 59,90/mês', rowId: 'plan_pro' },
+            { title: 'Plano Business', description: 'R$ 149,90/mês', rowId: 'plan_business' },
           ],
         },
       ],

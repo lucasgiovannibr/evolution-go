@@ -223,7 +223,7 @@ Instância pareada e conectada por você; mensagens só para o seu próprio núm
 
 **Contatos de teste que ficaram na lista do WhatsApp** (remover à mão, a API não remove): "ZZ Teste Fork" (553100000001) e "ZZ Teste Fork 2" (553196596774).
 
-**Não testado**: proxy (por decisão sua), passkey (a conta não exigiu), botões/lista, ações de canal, `joininvite`, comunidades, eventos reais de estado de chat de outro aparelho e de mensagem indecifrável, receptor de webhook travado ou fila estourada, redes instáveis. **Uso prolongado**: medição de 48 h em andamento (amostra a cada 10 min: saúde, goroutines, memória, conexões do Postgres, reinícios, panics); ela reinicia a cada troca de imagem, e o último início foi às 00:28 UTC de 30/09.
+**Não testado**: proxy (por decisão sua), passkey (a conta não exigiu), ações de canal, `joininvite`, comunidades, eventos reais de estado de chat de outro aparelho e de mensagem indecifrável, receptor de webhook travado ou fila estourada, redes instáveis. **Uso prolongado**: medição de 48 h em andamento (amostra a cada 10 min: saúde, goroutines, memória, conexões do Postgres, reinícios, panics); ela reinicia a cada troca de imagem, e o último início foi às 00:28 UTC de 30/09.
 
 ## 2.1 Rodada de endurecimento (outubro de 2026, PRs #38–#72 do fork)
 
@@ -239,14 +239,24 @@ Não veio de issues do upstream: veio de uma análise completa do sistema (segur
 
 Ficou de fora de propósito: o acoplamento da chave global com o mecanismo de licença (`pkg/core`, código ofuscado do upstream) e tudo que exige a conta real para validar (latência de `/send/*`, mídia recebida pelo caminho novo, `disconnect`, segunda réplica).
 
-## 3. Botões e listas (#59 #71 #110 #170 #204) — não corrigido
+## 3. Botões e listas (#59 #71 #110 #170 #204) — corrigido (botões, carrossel), lista como botões
 
-É o grupo mais reportado (5 issues). Não alterei o código porque não há como validar sem um aparelho — e, ao ler o código do whatsmeow, a hipótese "o bump resolve" **não se sustenta**:
+Era o grupo mais reportado (5 issues) e ficou sem correção enquanto não havia aparelho. Em 01/10/2026 foi testado ao vivo com uma conta **WhatsApp Business** conectada como aparelho vinculado, enviando para um **iPhone** e para o **WhatsApp Web** (o Android não foi testado). Regra que apareceu: **o `200` só diz que o servidor aceitou; quem mostra se renderiza é o cliente**, que descarta em silêncio o que não entende (a web mostra "não foi possível carregar a mensagem").
 
-- O envio retorna 200, mas o WhatsApp não renderiza (ou devolve 405/473). O mantenedor concluiu no #59 que botões/listas nativos parecem restritos a sessões oficiais (Business/WABA) e são descartados para destinatários comuns; só o carrossel sobrevive.
-- Conferi `getButtonTypeFromMessage`/`getButtonAttributes` no whatsmeow antigo (jun/2026) e no novo (29/09): a lógica é **idêntica** — a lib só gera `<biz>` para `ButtonsMessage`, `ListMessage` e as respostas; `InteractiveMessage` (o que o projeto usa em CTA/pix) **não** é coberto. O relato do #204 cita PRs do whatsmeow (#1235, #1221) que não estão nas versões avaliadas.
-- Hoje o projeto injeta `<biz>`/`<bot biz_bot="1">` manualmente e embrulha em `DocumentWithCaptionMessage` (workaround estilo Baileys). O #110 aponta que esse wrapper, criado só para `quick_reply`, também vai nos ramos `pix` e CTA.
-- **Conclusão**: sem aparelho de teste (conta pessoal e Business) qualquer mudança seria chute. Registrei a limitação no wiki (`api-interactive.md`). Se quiser atacar, o experimento é: enviar `ListMessage` cru (sem os nós manuais) e `quick_reply` sem o wrapper, comparando o que chega.
+Método: campo temporário `variant` no endpoint, cada formato enviado de verdade e conferido no aparelho (o código de experimento não foi commitado).
+
+| Mensagem | O que o WhatsApp aceitou e renderizou |
+|---|---|
+| Botões reply, copiar, URL, ligar, agrupados, reply com imagem | `InteractiveMessage` simples com native flow, **sem** o wrapper `DocumentWithCaptionMessage`, anunciado com `<biz><interactive type="native_flow" v="1"><native_flow v="9" name="mixed"/></interactive></biz>` + `<bot biz_bot="1"/>`. O `v="9"` e o `name="mixed"` são o que importa |
+| O que falhava | `ButtonsMessage` legado: sempre `405`. CTA com `native_flow` sem `v="9"` ou com o nome do botão: `473`/`405`. Com o wrapper o celular mostra, a web não |
+| Reply + CTA misturados | aparece no celular, **não** na web (o servidor passou a aceitar a mistura) |
+| Pix | já funcionava (wrapper + `payment_info`); só no celular |
+| Carrossel | sumia **só no iPhone** (a web mostrava): cada card mandava `title`/`subtitle` do cabeçalho como string vazia. Omitir os campos vazios resolveu; `<biz>` não é necessário (só acrescenta o selo "IA") |
+| Lista (`ListMessage` legado, `single_select`, com ou sem wrapper, com várias combinações de `<biz>`) | **sempre recusada** (`405`/`479`) ou aceita e descartada pelo celular. Não existe nesse tipo de sessão, nem em Business |
+
+- **Lista**: `/send/list` tenta a lista e, se ela for recusada, reenvia como **botões de resposta** (3 por mensagem, até 9 itens; o `rowId` vira o `id` do botão e o toque chega como `ButtonClick`). `fallbackButtons: false` devolve o `502 whatsapp_rejected` explicado. Conferido: 1 e 2 mensagens, e cada toque chegou ao servidor com o `rowId`.
+- A hipótese "o bump do whatsmeow resolve" já tinha sido descartada (a lógica de `<biz>` da lib é idêntica nas duas versões); o que resolveu foi o formato da mensagem.
+- O #110 estava certo sobre o wrapper; o #204 acertou que o nó `<biz>` era a questão, mas o conserto é o `native_flow v="9"`, não deixar a lib gerar o nó (ela só cobre `ButtonsMessage`/`ListMessage`, que são justamente os recusados).
 
 ## 3.1 Atualização do whatsmeow (já na `main` do fork)
 
@@ -256,7 +266,7 @@ Verificado: build, `go vet`, `go test -race`, boot com Postgres, imagem Docker (
 
 ## 4. Limites da validação
 
-- **Testado ao vivo** com uma única instância (conta pessoal, chat consigo mesmo e um grupo só com você). Não foram exercitados: proxy, passkey, botões/lista, ações de canal, conta Business, número de terceiros, tráfego intenso, quedas de rede e uso prolongado.
+- **Testado ao vivo** com uma única instância (conta pessoal, chat consigo mesmo e um grupo só com você). Não foram exercitados (nessa rodada): proxy, passkey, ações de canal, conta Business, número de terceiros, tráfego intenso, quedas de rede e uso prolongado.
 - Cada rodada passa por `go build`, `go vet`, `go test -race ./...` (inclui testes novos e um teste de integração do pool Postgres, opt-in) e boot com Postgres.
 - O Go não está instalado na máquina; a compilação roda em containers `golang:1.26`.
 
@@ -268,7 +278,6 @@ Verificado: build, `go vet`, `go test -race`, boot com Postgres, imagem Docker (
 
 | Item | Motivo |
 |---|---|
-| Botões e lista (#59 #71 #110 #170 #204) | Só valida em aparelho; o whatsmeow novo **não** muda isso (§3). Limitação documentada no wiki |
 | Erro 463 em contatos frios (#50 #124) | Depende de observação prolongada com o whatsmeow novo |
 | Uso prolongado (horas/dias) | **Em andamento**: medição de 48 h com a instância ativa; só vale a partir da última troca de imagem, então convém não mexer no código até terminar |
 | PRs #145/#154/#191/#192 (e #197, feito no PR #62 do fork) | O ponto central (um runtime por instância, restauração no startup, goroutines órfãs, backoff da reconexão) foi tratado de forma cirúrgica; o restante depende de decisão/teste ao vivo |
@@ -287,9 +296,9 @@ Verificado: build, `go vet`, `go test -race`, boot com Postgres, imagem Docker (
 
 | Status | Qtde |
 |---|---|
-| ✅ Corrigido | 33 |
+| ✅ Corrigido | 37 |
 | 🟡 Parcial / validar | 6 |
-| 🟣 Depende do whatsmeow | 6 |
+| 🟣 Depende do whatsmeow | 2 |
 | 📝 Proposta | 1 |
 | 🔵 Já na main | 6 |
 | 🔍 Investigar | 3 |
@@ -324,12 +333,12 @@ Legenda de PRs: **Aplicado** = mesclado (com adaptações ao `safemap`); **Reimp
 | [#52](https://github.com/evolution-foundation/evolution-go/issues/52) | /group/participant - "participants is required and cannot be empty" bug | 🔁 Duplicada | Duplicada de #97 (corrigida). |
 | [#54](https://github.com/evolution-foundation/evolution-go/issues/54) | [Bug] Notifications on APP was gone after connected to EvoGo | 🔁 Duplicada | Duplicada de #55. |
 | [#55](https://github.com/evolution-foundation/evolution-go/issues/55) | AlwaysOnline=false não é respeitado — instância fica online permanentemente | 🟡 Parcial / validar | A main já respeita `alwaysOnline` no `Connected`. Corrigido: goroutine de presença antiga (uma por reconexão) continuava enviando `available`; agora encerra ao ser substituída ou com `alwaysOnline=false`. Validar no caminho de reconexão relatado. **Validado ao vivo** (instância real, 29/09). Após reiniciar: "Marked self as unavailable (alwaysOnline=false)". Falta observar por horas/dias. |
-| [#59](https://github.com/evolution-foundation/evolution-go/issues/59) | Button and List messages do not render on consumer WhatsApp — only Carousel w… | 🟣 Depende do whatsmeow | Botões/listas não renderizam em conta pessoal. Ver seção "Botões e listas". Depende de whatsmeow + validação em aparelho. |
+| [#59](https://github.com/evolution-foundation/evolution-go/issues/59) | Button and List messages do not render on consumer WhatsApp — only Carousel w… | ✅ Corrigido | Botões, carrossel e Pix renderizam (verificado em aparelho); a lista é enviada como botões de resposta, porque o WhatsApp recusa lista de aparelho vinculado. Ver "Botões e listas". |
 | [#60](https://github.com/evolution-foundation/evolution-go/issues/60) | GET /polls/{pollMessageId}/results always returns 404 "No votes found" even a… | ✅ Corrigido | Voto de enquete era descriptografado **depois** da troca LID→PN, então sempre falhava e nada era gravado (404). Agora descriptografa antes. **Validado ao vivo** (instância real, 29/09). Voto feito no celular foi descriptografado e gravado; `/polls/{id}/results` retorna o voto. `voterPhone` agora traz o telefone real, não os dígitos do LID. |
 | [#62](https://github.com/evolution-foundation/evolution-go/issues/62) | Eventos de edição de mensagem não estão sendo entregues corretamente | 🔁 Duplicada | Duplicada de #92 (corrigida). **Validado ao vivo** (instância real, 29/09). Log: "Decrypted edited message ... targeting ...". |
 | [#69](https://github.com/evolution-foundation/evolution-go/issues/69) | /send/carousel splits message into two bubbles (Text + Cards) instead of send… | 🔍 Investigar | O código já coloca `body`/`footer` dentro do `InteractiveMessage` (não há envio de texto separado). Se ainda aparecem 2 balões, é comportamento do cliente WhatsApp — precisa de teste em aparelho. |
 | [#70](https://github.com/evolution-foundation/evolution-go/issues/70) | Não chega notificações no celular depois de conectado | 🟡 Parcial / validar | Mesmo grupo do #55 (presença). Caso extra: WhatsApp Business no iPhone. Validar após o fix de presença. |
-| [#71](https://github.com/evolution-foundation/evolution-go/issues/71) | Testei todos os botões/listas, retorna 200 mas nenhum chega (exceto carrossel) | 🔁 Duplicada | Duplicada de #59. |
+| [#71](https://github.com/evolution-foundation/evolution-go/issues/71) | Testei todos os botões/listas, retorna 200 mas nenhum chega (exceto carrossel) | 🔁 Duplicada | Duplicada de #59 (resolvida junto). |
 | [#72](https://github.com/evolution-foundation/evolution-go/issues/72) | Erro 500 ao arquivar conversa em sessões WhatsApp Android (LTHash mismatch) -… | 🟡 Parcial / validar | `AppStateSyncError` (LTHash mismatch): aplicado o recovery controlado do PR #144. Problema de fundo é do whatsmeow/estado do app; validar. |
 | [#75](https://github.com/evolution-foundation/evolution-go/issues/75) | Quando rodo dois worflows juntos quebra uma das instancias e retorna erro 500 | 🟡 Parcial / validar | Duas instâncias em paralelo quebrando com 500: provável race nos maps compartilhados / leak de pool (ambos corrigidos). Sem log para confirmar. |
 | [#76](https://github.com/evolution-foundation/evolution-go/issues/76) | /user/avatar | ✅ Corrigido | `/user/avatar` com timeout de 75s: JID com `+` + IQ sem limite. Corrigido (PR #120). **Validado ao vivo** (instância real, 29/09). Avatar em 0,35 s (antes 75 s). |
@@ -349,7 +358,7 @@ Legenda de PRs: **Aplicado** = mesclado (com adaptações ao `safemap`); **Reimp
 | [#106](https://github.com/evolution-foundation/evolution-go/issues/106) | Postgres connection leak: each (re)connect on a logged-out instance leaks an … | ✅ Corrigido | Leak de pool Postgres: um único container/pool reaproveitado (usa o `authDB` já limitado). **Validado ao vivo** (instância real, 29/09). 3 conexões no Postgres com a instância ativa, estável após reinícios e criação/exclusão de instâncias. |
 | [#107](https://github.com/evolution-foundation/evolution-go/issues/107) | Passkey ceremony stuck at awaiting_confirmation — server never sends PairPass… | 🔍 Investigar | Passkey preso em `awaiting_confirmation` em conta Business. Comportamento do servidor WhatsApp; sem causa no código identificada. |
 | [#109](https://github.com/evolution-foundation/evolution-go/issues/109) | PostgreSQL connection leak: idle connections accumulate and exhaust max_conne… | ✅ Corrigido | Leak de pool Postgres (mesma correção do #106). |
-| [#110](https://github.com/evolution-foundation/evolution-go/issues/110) | Bug: Error 473 when using /send/button with type: "copy" | 🟣 Depende do whatsmeow | Erro 473 no botão `copy`: hipótese do relator (wrapper `DocumentWithCaptionMessage` aplicado aos ramos `pix`/CTA) plausível. Ver "Botões e listas". |
+| [#110](https://github.com/evolution-foundation/evolution-go/issues/110) | Bug: Error 473 when using /send/button with type: "copy" | ✅ Corrigido | Corrigido: o CTA (`copy`/`url`/`call`) vai sem o wrapper, com `native_flow v="9" name="mixed"`. Ver "Botões e listas". |
 | [#111](https://github.com/evolution-foundation/evolution-go/issues/111) | Instance settings silently reset to defaults (rabbitmqEnable, events, flags) … | ✅ Corrigido | `/instance/connect` zerava eventos/RabbitMQ/flags. Agora é atualização parcial (PR #136). |
 | [#112](https://github.com/evolution-foundation/evolution-go/issues/112) | PostgreSQL connections are not released after QR/reconnect failures | ✅ Corrigido | Leak de pool Postgres (mesma correção do #106). |
 | [#113](https://github.com/evolution-foundation/evolution-go/issues/113) | Missing endpoint/support for group announcement mode (open/close group settin… | 🔵 Já na main | Duplicada de #42 — `POST /group/settings` já existe. |
@@ -361,7 +370,7 @@ Legenda de PRs: **Aplicado** = mesclado (com adaptações ao `safemap`); **Reimp
 | [#146](https://github.com/evolution-foundation/evolution-go/issues/146) | Expose SubscribePresence (contact online) + decrypt edited messages (new text… | ✅ Corrigido | Edição descriptografada + `POST /message/subscribe` (presença) implementados. **Validado ao vivo** (instância real, 29/09). Edição validada; `subscribe` responde sucesso (entrega de eventos `Presence` não observada). |
 | [#148](https://github.com/evolution-foundation/evolution-go/issues/148) | QR Code Genetration not working ( version 0.7.2) | ✅ Corrigido | `/instance/qr` agora devolve também `qrcode`/`code` junto dos campos de passkey quando existir QR. Que a conta exija passkey é comportamento do WhatsApp. |
 | [#165](https://github.com/evolution-foundation/evolution-go/issues/165) | Postgres connection leak: StartClient creates a new sqlstore.Container per (r… | ✅ Corrigido | Leak de pool Postgres (mesma correção do #106). |
-| [#170](https://github.com/evolution-foundation/evolution-go/issues/170) | '[Bug] /send/list and /send/button fail with "server returned error 405" — le… | 🟣 Depende do whatsmeow | 405 em `/send/list` e `/send/button`. Ver "Botões e listas". |
+| [#170](https://github.com/evolution-foundation/evolution-go/issues/170) | '[Bug] /send/list and /send/button fail with "server returned error 405" — le… | ✅ Corrigido | Botões corrigidos (formato novo). `/send/list` continua recusada pelo WhatsApp, então reenvia como botões de resposta; `fallbackButtons:false` devolve o `502` explicado. Ver "Botões e listas". |
 | [#172](https://github.com/evolution-foundation/evolution-go/issues/172) | Problem with passcode(webauthn) | ⚪ Sem ação de código | Pedido de uso do passkey helper; ver #173 (melhoria da extensão) e docs de passkey. |
 | [#173](https://github.com/evolution-foundation/evolution-go/issues/173) | Passkey Helper: 1Password/WebAuthn fails from content script — working soluti… | ✅ Corrigido | Extensão `passkey-helper` 1.1.0: WebAuthn no mundo MAIN (gerenciadores de senha funcionam). Não validado ao vivo (a conta de teste não exigiu passkey). |
 | [#175](https://github.com/evolution-foundation/evolution-go/issues/175) | Postgres connection pool leak on every StartClient/reconnect cycle | ✅ Corrigido | Leak de pool Postgres (mesma correção do #106). |
@@ -372,7 +381,7 @@ Legenda de PRs: **Aplicado** = mesclado (com adaptações ao `safemap`); **Reimp
 | [#189](https://github.com/evolution-foundation/evolution-go/issues/189) | 'quoted' reply renders an empty, non-tappable quote card ('QuotedMessage' har… | 🟡 Parcial / validar | Novo campo opcional `quoted.text` preenche o card da citação. Sem ele continua vazio (o conteúdo original não é guardado). Preencher automaticamente exigiria persistir mensagens. **Validado ao vivo** (instância real, 29/09). Card da citação mostra o texto quando `quoted.text` é enviado. |
 | [#193](https://github.com/evolution-foundation/evolution-go/issues/193) | PICTURE / USER_ABOUT / BUTTON_CLICK are accepted in NATS_GLOBAL_EVENTS but ne… | ✅ Corrigido | `PICTURE`, `USER_ABOUT` e `BUTTON_CLICK` agora publicados no NATS/AMQP (mapeamento único). |
 | [#203](https://github.com/evolution-foundation/evolution-go/issues/203) | 0.7.2: fatal error: concurrent map writes in whatsmeowService.StartClient (ki… | ✅ Corrigido | `fatal error: concurrent map writes`: maps compartilhados agora protegidos (`safemap`) + fim da recursão do `StartClient`. |
-| [#204](https://github.com/evolution-foundation/evolution-go/issues/204) | Correção de botões e Lista Resolvido | 🟣 Depende do whatsmeow | Relator diz ter resolvido botões/lista com whatsmeow mais novo e deixando a lib gerar o nó `<biz>`; ofereceu o diff. Ver "Botões e listas". |
+| [#204](https://github.com/evolution-foundation/evolution-go/issues/204) | Correção de botões e Lista Resolvido | ✅ Corrigido | A causa era o formato do `<biz>`: o conserto é `native_flow v="9" name="mixed"` num `InteractiveMessage` simples (a lib só gera `<biz>` para `ButtonsMessage`/`ListMessage`, os recusados). Ver "Botões e listas". |
 
 ## 8. Todos os pull requests
 
