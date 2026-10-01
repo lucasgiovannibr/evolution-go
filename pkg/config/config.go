@@ -109,6 +109,35 @@ func (c *Config) AddInstanceToken(payload map[string]interface{}, token string) 
 	}
 }
 
+// publicExampleKeys are GLOBAL_API_KEY values that ship in this repository's examples: a
+// server started with one of them has a master key everyone can read on GitHub.
+var publicExampleKeys = []string{
+	"429683C4C977415CAAFCCE10F7D57E11",           // .env.example
+	"sua-chave-api-segura-aqui",                  // docker/examples/*.yml
+	"sua-chave-api-segura-aqui-uuid-recomendado", // docker/examples/.env.example
+	"your-secure-api-key-here",                   // README.md
+	"change-me",
+	"changeme",
+}
+
+// minGlobalApiKeyLength is the length below which a master key is reported as weak.
+const minGlobalApiKeyLength = 32
+
+// CheckGlobalApiKey judges GLOBAL_API_KEY, the credential of every administrative route.
+// A key from the repository's examples is an error (the caller refuses to start); a short
+// one is only a warning.
+func CheckGlobalApiKey(key string) (warning string, err error) {
+	for _, known := range publicExampleKeys {
+		if strings.EqualFold(key, known) {
+			return "", fmt.Errorf("GLOBAL_API_KEY is a value published in the project's examples, anyone can use it as the master key: generate your own (for instance `openssl rand -hex 32`)")
+		}
+	}
+	if len(key) < minGlobalApiKeyLength {
+		return fmt.Sprintf("GLOBAL_API_KEY has %d characters; use at least %d (for instance `openssl rand -hex 32`)", len(key), minGlobalApiKeyLength), nil
+	}
+	return "", nil
+}
+
 // EnsureDBExists connects to postgres (without the target database) and creates it if it doesn't exist.
 func (c *Config) EnsureDBExists(dsn string) error {
 	return ensureDBExists(dsn)
@@ -267,6 +296,14 @@ func Load() *Config {
 
 	globalApiKey := os.Getenv(config_env.GLOBAL_API_KEY)
 	panicIfEmpty(config_env.GLOBAL_API_KEY, globalApiKey)
+	if warning, err := CheckGlobalApiKey(globalApiKey); err != nil {
+		if os.Getenv(config_env.ALLOW_INSECURE_API_KEY) != "true" {
+			logger.LogFatal("[CONFIG] %v (set ALLOW_INSECURE_API_KEY=true to start anyway, for local development only)", err)
+		}
+		logger.LogWarn("[CONFIG] %v: starting anyway because ALLOW_INSECURE_API_KEY=true", err)
+	} else if warning != "" {
+		logger.LogWarn("[CONFIG] %s", warning)
+	}
 
 	clientName := os.Getenv(config_env.CLIENT_NAME)
 
