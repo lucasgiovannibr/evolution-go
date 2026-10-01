@@ -394,7 +394,7 @@ func main() {
 
 	cfg := config.Load()
 	if cfg.WebhookIncludeToken {
-		logger.LogWarn("[CONFIG] Events carry the instance token (\"instanceToken\"): every webhook, queue and websocket consumer can use it as the instance API key. Set WEBHOOK_INCLUDE_TOKEN=false to remove it")
+		logger.LogWarn("[CONFIG] Events carry the instance token (\"instanceToken\"): every webhook, queue and websocket consumer can use it as the instance API key. Leave WEBHOOK_INCLUDE_TOKEN unset (false) unless an integration needs it")
 	}
 
 	logger.LogInfo("Starting Evolution GO version %s", version)

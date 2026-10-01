@@ -17,11 +17,18 @@ func TestAddInstanceToken(t *testing.T) {
 		t.Fatalf("WEBHOOK_INCLUDE_TOKEN=false must not put the token in the payload, got %v", payload)
 	}
 
-	// Tests and tools that build a service without a Config keep the historical payload.
+	// Without a Config (tests, tools) the token is never added.
 	var none *Config
 	payload = map[string]interface{}{}
 	none.AddInstanceToken(payload, "tok")
-	if payload["instanceToken"] != "tok" {
-		t.Fatalf("a nil Config must keep the token, got %v", payload)
+	if _, found := payload["instanceToken"]; found {
+		t.Fatalf("a nil Config must not add the token, got %v", payload)
+	}
+
+	// The zero Config (nothing set in the environment) is the safe default.
+	payload = map[string]interface{}{}
+	(&Config{}).AddInstanceToken(payload, "tok")
+	if _, found := payload["instanceToken"]; found {
+		t.Fatalf("the default must not put the token in the payload, got %v", payload)
 	}
 }

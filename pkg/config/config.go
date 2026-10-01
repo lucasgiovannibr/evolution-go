@@ -54,8 +54,8 @@ type Config struct {
 	PprofEnabled         bool
 	// WebhookIncludeToken keeps the instance API token ("instanceToken") in every event
 	// payload sent to webhooks, queues and websockets. The token is the credential of the
-	// instance, so every consumer of the events could use it; it is on only for backwards
-	// compatibility (WEBHOOK_INCLUDE_TOKEN=false removes it).
+	// instance, so every consumer of the events could use it: it is off unless
+	// WEBHOOK_INCLUDE_TOKEN=true, for integrations that still read it.
 	WebhookIncludeToken bool
 	ProxyPort           string
 	ProxyUsername       string
@@ -93,10 +93,10 @@ type Config struct {
 	LogKeepDeleted bool
 }
 
-// AddInstanceToken puts the instance token in an event payload, unless
-// WEBHOOK_INCLUDE_TOKEN=false. A nil Config keeps the historical behaviour.
+// AddInstanceToken puts the instance token in an event payload only when
+// WEBHOOK_INCLUDE_TOKEN=true. A nil Config (tests, tools) never adds it.
 func (c *Config) AddInstanceToken(payload map[string]interface{}, token string) {
-	if c == nil || c.WebhookIncludeToken {
+	if c != nil && c.WebhookIncludeToken {
 		payload["instanceToken"] = token
 	}
 }
@@ -415,7 +415,7 @@ func Load() *Config {
 		ProxyHost:            proxyHost,
 		ProxyFailClosed:      os.Getenv(config_env.PROXY_FAIL_CLOSED) == "true",
 		PprofEnabled:         os.Getenv(config_env.ENABLE_PPROF) == "true",
-		WebhookIncludeToken:  os.Getenv(config_env.WEBHOOK_INCLUDE_TOKEN) != "false", // default true (compat)
+		WebhookIncludeToken:  os.Getenv(config_env.WEBHOOK_INCLUDE_TOKEN) == "true",
 		ProxyPort:            proxyPort,
 		ProxyUsername:        proxyUsername,
 		ProxyPassword:        proxyPassword,
