@@ -986,7 +986,9 @@ func convertAudioWithApi(apiUrl string, apiKey string, convertData ConvertAudio)
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 	req.Header.Set("apikey", apiKey)
 
-	client := utils.DownloadClient
+	// The converter API is configured by the operator (often a container next door), not
+	// taken from a request.
+	client := utils.TrustedClient
 	resp, err := client.Do(req)
 	if err != nil {
 		return nil, 0, fmt.Errorf("erro ao enviar a requisição: %v", err)
