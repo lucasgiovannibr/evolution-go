@@ -102,18 +102,8 @@ func (l *mediaLimiter) run(instanceID string, fn func()) bool {
 // messageHasMedia reports whether the message (or the message it carries) is a file the
 // handler would download.
 func messageHasMedia(m *waE2E.Message) bool {
-	if m == nil {
-		return false
-	}
-	if m.GetImageMessage() != nil || m.GetAudioMessage() != nil || m.GetDocumentMessage() != nil ||
-		m.GetVideoMessage() != nil || m.GetStickerMessage() != nil {
-		return true
-	}
-	if child := m.GetAssociatedChildMessage().GetMessage(); child != nil {
-		return child.GetImageMessage() != nil || child.GetAudioMessage() != nil || child.GetDocumentMessage() != nil ||
-			child.GetVideoMessage() != nil || child.GetStickerMessage() != nil
-	}
-	return false
+	_, ok := pickMedia(m)
+	return ok
 }
 
 // myEventHandler is the handler registered with whatsmeow. It hands messages with media to

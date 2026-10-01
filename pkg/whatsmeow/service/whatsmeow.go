@@ -1662,46 +1662,7 @@ func (mycli *MyClient) handleEvent(rawEvt interface{}) {
 			decryptedPollVote, pollVoteDecryptErr = mycli.decryptPollVote(evt)
 		}
 
-		// Trata o caso especial onde Sender é @lid e SenderAlt é @s.whatsapp.net
-		// Neste caso, devemos inverter: Sender e Chat devem ser @s.whatsapp.net, SenderAlt deve ser @lid
-		senderStr := evt.Info.Sender.String()
-		senderAltStr := evt.Info.SenderAlt.String()
-		chatStr := evt.Info.Chat.String()
-
-		if strings.Contains(senderStr, "@lid") && strings.Contains(senderAltStr, "@s.whatsapp.net") {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Detected LID/WhatsApp JID swap case - Sender: %s, SenderAlt: %s", mycli.userID, senderStr, senderAltStr)
-
-			// Limpa os IDs antes de fazer a troca
-			cleanSenderAlt := cleanSenderID(senderAltStr)
-			cleanSender := cleanSenderID(senderStr)
-
-			// Inverte: Sender e Chat recebem o @s.whatsapp.net, SenderAlt recebe o @lid
-			if cleanedWhatsAppJID, err := types.ParseJID(cleanSenderAlt); err == nil {
-				evt.Info.Sender = cleanedWhatsAppJID
-				// Se Chat também é @lid, atualiza para @s.whatsapp.net
-				if strings.Contains(chatStr, "@lid") {
-					evt.Info.Chat = cleanedWhatsAppJID
-				}
-			}
-
-			if cleanedLID, err := types.ParseJID(cleanSender); err == nil {
-				evt.Info.SenderAlt = cleanedLID
-			}
-
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] JID swap completed - New Sender: %s, New SenderAlt: %s, New Chat: %s",
-				mycli.userID, evt.Info.Sender.String(), evt.Info.SenderAlt.String(), evt.Info.Chat.String())
-		} else {
-			// Comportamento normal: apenas limpa os IDs
-			cleanSender := cleanSenderID(senderStr)
-			if cleanedJID, err := types.ParseJID(cleanSender); err == nil {
-				evt.Info.Sender = cleanedJID
-			}
-
-			cleanSenderAlt := cleanSenderID(senderAltStr)
-			if cleanedLID, err := types.ParseJID(cleanSenderAlt); err == nil {
-				evt.Info.SenderAlt = cleanedLID
-			}
-		}
+		normalizeMessageJIDs(mycli.loggerWrapper.GetLogger(mycli.userID), mycli.userID, &evt.Info)
 
 		// Auto-marca mensagens como lidas se configurado
 		if mycli.inst().ReadMessages && !evt.Info.IsFromMe {
@@ -1819,33 +1780,8 @@ func (mycli *MyClient) handleEvent(rawEvt interface{}) {
 			}
 		}
 
-		var quotedMessage *waE2E.Message
-		var stanzaID string
-
-		if evt.Message.GetExtendedTextMessage() != nil {
-			quotedMessage = evt.Message.GetExtendedTextMessage().GetContextInfo().GetQuotedMessage()
-			stanzaID = evt.Message.GetExtendedTextMessage().GetContextInfo().GetStanzaID()
-		} else if evt.Message.GetImageMessage() != nil {
-			quotedMessage = evt.Message.GetImageMessage().GetContextInfo().GetQuotedMessage()
-			stanzaID = evt.Message.GetImageMessage().GetContextInfo().GetStanzaID()
-		} else if evt.Message.GetAudioMessage() != nil {
-			quotedMessage = evt.Message.GetAudioMessage().GetContextInfo().GetQuotedMessage()
-			stanzaID = evt.Message.GetAudioMessage().GetContextInfo().GetStanzaID()
-		} else if evt.Message.GetDocumentMessage() != nil {
-			quotedMessage = evt.Message.GetDocumentMessage().GetContextInfo().GetQuotedMessage()
-			stanzaID = evt.Message.GetDocumentMessage().GetContextInfo().GetStanzaID()
-		} else if evt.Message.GetVideoMessage() != nil {
-			quotedMessage = evt.Message.GetVideoMessage().GetContextInfo().GetQuotedMessage()
-			stanzaID = evt.Message.GetVideoMessage().GetContextInfo().GetStanzaID()
-		}
-
-		if stanzaID != "" && quotedMessage != nil {
-			quotedMap := make(map[string]interface{})
-
-			quotedMap["stanzaID"] = stanzaID
-			quotedMap["quotedMessage"] = quotedMessage
-
-			dataMap["quoted"] = quotedMap
+		if quotedMessage, stanzaID := quotedContext(evt.Message); stanzaID != "" && quotedMessage != nil {
+			dataMap["quoted"] = map[string]interface{}{"stanzaID": stanzaID, "quotedMessage": quotedMessage}
 			dataMap["isQuoted"] = true
 		}
 
@@ -1854,211 +1790,7 @@ func (mycli *MyClient) handleEvent(rawEvt interface{}) {
 		}
 
 		if mycli.config.WebhookFiles && wantMessage {
-			isMedia := false
-
-			img := evt.Message.GetImageMessage()
-			audio := evt.Message.GetAudioMessage()
-			document := evt.Message.GetDocumentMessage()
-			video := evt.Message.GetVideoMessage()
-			sticker := evt.Message.GetStickerMessage()
-
-			// Check for associated child messages (like media in replies)
-			var associatedImg *waE2E.ImageMessage
-			var associatedAudio *waE2E.AudioMessage
-			var associatedDocument *waE2E.DocumentMessage
-			var associatedVideo *waE2E.VideoMessage
-			var associatedSticker *waE2E.StickerMessage
-
-			if evt.Message.GetAssociatedChildMessage() != nil {
-				childMsg := evt.Message.GetAssociatedChildMessage().GetMessage()
-				if childMsg != nil {
-					associatedImg = childMsg.GetImageMessage()
-					associatedAudio = childMsg.GetAudioMessage()
-					associatedDocument = childMsg.GetDocumentMessage()
-					associatedVideo = childMsg.GetVideoMessage()
-					associatedSticker = childMsg.GetStickerMessage()
-				}
-			}
-
-			if img != nil || audio != nil || document != nil || video != nil || sticker != nil ||
-				associatedImg != nil || associatedAudio != nil || associatedDocument != nil ||
-				associatedVideo != nil || associatedSticker != nil {
-				isMedia = true
-			}
-
-			if isMedia {
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Processing media message - ID: %s", mycli.userID, evt.Info.ID)
-
-				var data []byte
-				var err error
-				var extension string
-				var mimeType string
-				var mediaSize int64
-
-				// Create context with timeout for large files
-				downloadCtx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-				defer cancel()
-
-				downloadStart := time.Now()
-
-				// Handle regular media messages
-				if img != nil {
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Downloading image - ID: %s", mycli.userID, evt.Info.ID)
-					data, err = mycli.WAClient.Download(downloadCtx, img)
-					extension = ".jpg"
-					mimeType = "image/jpeg"
-					if img.FileLength != nil {
-						mediaSize = int64(*img.FileLength)
-					}
-				} else if audio != nil {
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Downloading audio - ID: %s", mycli.userID, evt.Info.ID)
-					data, err = mycli.WAClient.Download(downloadCtx, audio)
-					extension = ".ogg"
-					mimeType = "audio/ogg"
-					if audio.FileLength != nil {
-						mediaSize = int64(*audio.FileLength)
-					}
-				} else if document != nil {
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Downloading document - ID: %s, FileName: %s, Size: %d bytes", mycli.userID, evt.Info.ID, document.GetFileName(), document.GetFileLength())
-					data, err = mycli.WAClient.Download(downloadCtx, document)
-					extension = getExtensionFromMimeType(document.GetMimetype())
-					mimeType = document.GetMimetype()
-					if document.FileLength != nil {
-						mediaSize = int64(*document.FileLength)
-					}
-				} else if video != nil {
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Downloading video - ID: %s, Size: %d bytes", mycli.userID, evt.Info.ID, video.GetFileLength())
-					data, err = mycli.WAClient.Download(downloadCtx, video)
-					extension = ".mp4"
-					mimeType = "video/mp4"
-					if video.FileLength != nil {
-						mediaSize = int64(*video.FileLength)
-					}
-				} else if sticker != nil {
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Downloading sticker - ID: %s", mycli.userID, evt.Info.ID)
-					data, err = mycli.WAClient.Download(downloadCtx, sticker)
-					extension = ".png"
-					mimeType = "image/png"
-					if sticker.FileLength != nil {
-						mediaSize = int64(*sticker.FileLength)
-					}
-
-					if err == nil {
-						if pngData, convErr := stickerAsPNG(data); convErr != nil {
-							mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Could not convert the sticker to PNG, keeping raw webp: %v", mycli.userID, convErr)
-							extension = ".webp"
-							mimeType = "image/webp"
-						} else {
-							data = pngData
-						}
-					}
-					// Handle associated child media messages
-				} else if associatedImg != nil {
-					data, err = mycli.WAClient.Download(context.Background(), associatedImg)
-					extension = ".jpg"
-					mimeType = "image/jpeg"
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Processing associated child image message", mycli.userID)
-				} else if associatedAudio != nil {
-					data, err = mycli.WAClient.Download(context.Background(), associatedAudio)
-					extension = ".ogg"
-					mimeType = "audio/ogg"
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Processing associated child audio message", mycli.userID)
-				} else if associatedDocument != nil {
-					data, err = mycli.WAClient.Download(context.Background(), associatedDocument)
-					extension = getExtensionFromMimeType(associatedDocument.GetMimetype())
-					mimeType = associatedDocument.GetMimetype()
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Processing associated child document message", mycli.userID)
-				} else if associatedVideo != nil {
-					data, err = mycli.WAClient.Download(context.Background(), associatedVideo)
-					extension = ".mp4"
-					mimeType = "video/mp4"
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Processing associated child video message", mycli.userID)
-				} else if associatedSticker != nil {
-					data, err = mycli.WAClient.Download(context.Background(), associatedSticker)
-					extension = ".png"
-					mimeType = "image/png"
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Processing associated child sticker message", mycli.userID)
-
-					if err == nil {
-						if pngData, convErr := stickerAsPNG(data); convErr != nil {
-							mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Could not convert the sticker to PNG, keeping raw webp: %v", mycli.userID, convErr)
-							extension = ".webp"
-							mimeType = "image/webp"
-						} else {
-							data = pngData
-						}
-					}
-				}
-
-				downloadDuration := time.Since(downloadStart)
-
-				if err != nil {
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to download media - ID: %s, Size: %d bytes, Duration: %v, Error: %v", mycli.userID, evt.Info.ID, mediaSize, downloadDuration, err)
-
-					// Check if it's a timeout error
-					if downloadCtx.Err() == context.DeadlineExceeded {
-						mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Download timeout exceeded (5 minutes) for large file - ID: %s, Size: %d bytes", mycli.userID, evt.Info.ID, mediaSize)
-					}
-
-					// Don't return here - continue processing the message without media
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Continuing message processing without media download - ID: %s", mycli.userID, evt.Info.ID)
-				} else {
-					actualSize := len(data)
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Media download successful - ID: %s, Expected: %d bytes, Actual: %d bytes, Duration: %v", mycli.userID, evt.Info.ID, mediaSize, actualSize, downloadDuration)
-
-					// Check for size mismatch
-					if mediaSize > 0 && int64(actualSize) != mediaSize {
-						mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Size mismatch detected - ID: %s, Expected: %d, Got: %d", mycli.userID, evt.Info.ID, mediaSize, actualSize)
-					}
-
-					// Log large file processing
-					if actualSize > 13*1024*1024 { // 13MB
-						mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Processing large file (>13MB) - ID: %s, Size: %d bytes", mycli.userID, evt.Info.ID, actualSize)
-					}
-				}
-
-				messageMap, ok := dataMap["Message"].(map[string]interface{})
-				if !ok {
-					messageMap = make(map[string]interface{})
-				}
-
-				// Only process storage if download was successful
-				if err == nil && len(data) > 0 {
-					if mycli.config.MinioEnabled {
-						fileName := evt.Info.ID + extension
-						storageStart := time.Now()
-
-						mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Uploading to S3/Minio - ID: %s, FileName: %s, Size: %d bytes", mycli.userID, evt.Info.ID, fileName, len(data))
-
-						mediaURL, err := mycli.mediaStorage.Store(context.Background(), mycli.userID, data, fileName, mimeType)
-						storageDuration := time.Since(storageStart)
-
-						if err != nil {
-							mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to store media in S3/Minio - ID: %s, Size: %d bytes, Duration: %v, Error: %v", mycli.userID, evt.Info.ID, len(data), storageDuration, err)
-
-							// Continue processing without storage URL
-							mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Continuing message processing without S3 URL - ID: %s", mycli.userID, evt.Info.ID)
-						} else {
-							mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] S3/Minio upload successful - ID: %s, Size: %d bytes, Duration: %v, URL: %s", mycli.userID, evt.Info.ID, len(data), storageDuration, mediaURL)
-							messageMap["mediaUrl"] = mediaURL
-							messageMap["mimetype"] = mimeType
-						}
-					} else {
-						mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Encoding to base64 - ID: %s, Size: %d bytes", mycli.userID, evt.Info.ID, len(data))
-						encodeStart := time.Now()
-
-						encodeData := base64.StdEncoding.EncodeToString(data)
-						encodeDuration := time.Since(encodeStart)
-
-						mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Base64 encoding completed - ID: %s, Original: %d bytes, Encoded: %d chars, Duration: %v", mycli.userID, evt.Info.ID, len(data), len(encodeData), encodeDuration)
-						messageMap["base64"] = encodeData
-					}
-				} else {
-					mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Skipping media storage due to download failure - ID: %s", mycli.userID, evt.Info.ID)
-				}
-
-				dataMap["Message"] = messageMap
-			}
+			mycli.attachMedia(evt, dataMap)
 		}
 
 		isGroup := strings.HasSuffix(evt.Info.Chat.String(), "@g.us")
@@ -2109,61 +1841,11 @@ func (mycli *MyClient) handleEvent(rawEvt interface{}) {
 		}
 
 		// ===== BUTTON CLICK EVENT DETECTION =====
-		// Detecta cliques em botões e emite evento separado "ButtonClick"
-		// Suporta 3 formatos: ButtonsResponseMessage, InteractiveResponseMessage (NativeFlow), TemplateButtonReplyMessage
-		var buttonClickData map[string]interface{}
-
-		if resp := evt.Message.GetButtonsResponseMessage(); resp != nil {
-			// Legacy buttons response
-			buttonClickData = map[string]interface{}{
-				"buttonId":   resp.GetSelectedButtonID(),
-				"buttonText": resp.GetSelectedDisplayText(),
-				"type":       "buttons_response",
-			}
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Button click detected (legacy): buttonId=%s, buttonText=%s", mycli.userID, resp.GetSelectedButtonID(), resp.GetSelectedDisplayText())
-		} else if resp := evt.Message.GetInteractiveResponseMessage(); resp != nil {
-			// NativeFlow interactive response (quick_reply, cta_url, cta_call, cta_copy)
-			if nf := resp.GetNativeFlowResponseMessage(); nf != nil {
-				buttonId := ""
-				buttonText := ""
-				// Parse paramsJSON to extract id and display_text
-				if nf.GetParamsJSON() != "" {
-					var params map[string]interface{}
-					if err := json.Unmarshal([]byte(nf.GetParamsJSON()), &params); err == nil {
-						if id, ok := params["id"].(string); ok {
-							buttonId = id
-						}
-						if dt, ok := params["display_text"].(string); ok {
-							buttonText = dt
-						}
-					}
-				}
-				buttonClickData = map[string]interface{}{
-					"buttonId":   buttonId,
-					"buttonText": buttonText,
-					"type":       "native_flow_response",
-					"name":       nf.GetName(),
-					"paramsJSON": nf.GetParamsJSON(),
-				}
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Button click detected (native_flow): name=%s, buttonId=%s, buttonText=%s", mycli.userID, nf.GetName(), buttonId, buttonText)
-			}
-		} else if resp := evt.Message.GetTemplateButtonReplyMessage(); resp != nil {
-			// Template button reply
-			buttonClickData = map[string]interface{}{
-				"buttonId":   resp.GetSelectedID(),
-				"buttonText": resp.GetSelectedDisplayText(),
-				"type":       "template_button_reply",
-			}
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Button click detected (template): buttonId=%s, buttonText=%s", mycli.userID, resp.GetSelectedID(), resp.GetSelectedDisplayText())
-		} else if resp := evt.Message.GetListResponseMessage(); resp != nil {
-			// List response (single select)
-			buttonClickData = map[string]interface{}{
-				"buttonId":    resp.GetSingleSelectReply().GetSelectedRowID(),
-				"buttonText":  resp.GetTitle(),
-				"type":        "list_response",
-				"description": resp.GetDescription(),
-			}
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] List selection detected: rowId=%s, title=%s", mycli.userID, resp.GetSingleSelectReply().GetSelectedRowID(), resp.GetTitle())
+		// A click is a message of its own (legacy buttons, native flow, template button, list): it
+		// also goes out as a separate "ButtonClick" event.
+		buttonClickData := buttonClickOf(evt.Message)
+		if buttonClickData != nil {
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Button click detected (%v): buttonId=%v, buttonText=%v", mycli.userID, buttonClickData["type"], buttonClickData["buttonId"], buttonClickData["buttonText"])
 		}
 
 		// Se detectou clique em botão, emite evento separado "ButtonClick"
