@@ -128,13 +128,11 @@ type MyClient struct {
 	WAClient           *whatsmeow.Client
 	eventHandlerID     uint32
 	userID             string
-	Instance           *instance_model.Instance
 	token              string
-	subscriptions      []string
-	webhookUrl         string
-	rabbitmqEnable     string
-	natsEnable         string
-	websocketEnable    string
+	// instance is the record the running client works with. UpdateInstanceSettings
+	// replaces it from another goroutine while the event handler reads it, so it is only
+	// accessed through inst() / setInst().
+	instance atomic.Pointer[instance_model.Instance]
 	instanceRepository instance_repository.InstanceRepository
 	messageRepository  message_repository.MessageRepository
 	labelRepository    label_repository.LabelRepository
@@ -172,6 +170,11 @@ type MyClient struct {
 	appStateRecoveryMu     sync.Mutex
 	appStateRecovery       map[appstate.WAPatchName]appStateRecoveryAttempt
 }
+
+// inst is the instance record of the running client (never nil once the client is set up).
+func (mycli *MyClient) inst() *instance_model.Instance { return mycli.instance.Load() }
+
+func (mycli *MyClient) setInst(i *instance_model.Instance) { mycli.instance.Store(i) }
 
 type appStateRecoveryAttempt struct {
 	fullSyncAt        time.Time
@@ -613,55 +616,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		}
 	}
 
-	var version clientVersion
-
-	platformID, ok := waCompanionReg.DeviceProps_PlatformType_value[strings.ToUpper("chrome")]
-	if ok {
-		store.DeviceProps.PlatformType = waCompanionReg.DeviceProps_PlatformType(platformID).Enum()
-	}
-	if cd.Instance.OsName == "" {
-		cd.Instance.OsName = utils.WhatsAppGetUserOS()
-	}
-
-	store.DeviceProps.Os = &cd.Instance.OsName
-	store.DeviceProps.RequireFullSync = proto.Bool(true)
-
-	if w.config.WhatsappVersionMajor != 0 && w.config.WhatsappVersionMinor != 0 && w.config.WhatsappVersionPatch != 0 {
-		w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Setting whatsapp version to %d.%d.%d", cd.Instance.Id, w.config.WhatsappVersionMajor, w.config.WhatsappVersionMinor, w.config.WhatsappVersionPatch)
-		version.Major = w.config.WhatsappVersionMajor
-		if err == nil {
-			store.DeviceProps.Version.Primary = proto.Uint32(uint32(version.Major))
-		}
-		version.Minor = w.config.WhatsappVersionMinor
-		if err == nil {
-			store.DeviceProps.Version.Secondary = proto.Uint32(uint32(version.Minor))
-		}
-		version.Patch = w.config.WhatsappVersionPatch
-		if err == nil {
-			store.DeviceProps.Version.Tertiary = proto.Uint32(uint32(version.Patch))
-		}
-	} else {
-		// Try to fetch version from WhatsApp Web
-		webVersion, err := fetchWhatsAppWebVersion()
-		if err != nil {
-			w.loggerWrapper.GetLogger(cd.Instance.Id).LogError("[%s] Failed to fetch WhatsApp Web version: %v", cd.Instance.Id, err)
-		} else {
-			w.loggerWrapper.GetLogger(cd.Instance.Id).LogInfo("[%s] Setting whatsapp version from web to %d.%d.%d", cd.Instance.Id, webVersion.Major, webVersion.Minor, webVersion.Patch)
-			version = *webVersion
-			store.DeviceProps.Version.Primary = proto.Uint32(uint32(version.Major))
-			store.DeviceProps.Version.Secondary = proto.Uint32(uint32(version.Minor))
-			store.DeviceProps.Version.Tertiary = proto.Uint32(uint32(version.Patch))
-		}
-	}
-
-	// Apply the resolved version to the connection handshake. It used to be written
-	// only to DeviceProps.Version (the version advertised while pairing), so
-	// WHATSAPP_VERSION_* and the value fetched from WhatsApp Web never reached the
-	// handshake, which kept using the version compiled into whatsmeow until
-	// WhatsApp refused it with "Client outdated (405)" (PR #199).
-	if version.Major != 0 || version.Minor != 0 || version.Patch != 0 {
-		store.SetWAVersion(store.WAVersionContainer{uint32(version.Major), uint32(version.Minor), uint32(version.Patch)})
-	}
+	w.configureWAIdentity(cd, deviceStore.ID == nil)
 
 	// 🔒 FIX: Sempre criar logger, mesmo que WaDebug esteja vazio
 	// Usar "INFO" como nível mínimo para garantir que logs importantes apareçam
@@ -744,16 +699,10 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 
 	mycli := &MyClient{
 		service:            &w,
-		Instance:           cd.Instance,
 		WAClient:           client,
 		eventHandlerID:     1,
 		userID:             cd.Instance.Id,
 		token:              cd.Instance.Token,
-		subscriptions:      cd.Subscriptions,
-		webhookUrl:         cd.Instance.Webhook,
-		rabbitmqEnable:     cd.Instance.RabbitmqEnable,
-		natsEnable:         cd.Instance.NatsEnable,
-		websocketEnable:    cd.Instance.WebSocketEnable,
 		instanceRepository: w.instanceRepository,
 		messageRepository:  w.messageRepository,
 		labelRepository:    w.labelRepository,
@@ -774,6 +723,7 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 		passkeyCeremony:    w.passkeyCeremony,
 	}
 
+	mycli.setInst(cd.Instance)
 	mycli.eventHandlerID = mycli.WAClient.AddEventHandler(mycli.myEventHandler)
 
 	// Armazena o MyClient no map para permitir atualizações posteriores
@@ -949,6 +899,75 @@ func (w whatsmeowService) StartClient(cd *ClientData) {
 	}
 }
 
+// waIdentityMu serializes the writes to whatsmeow's process-wide identity (store.DeviceProps
+// and the WhatsApp version). Both are globals every client reads while it connects, and
+// every StartClient used to rewrite them: starting instances in parallel was a data race,
+// and the version was re-applied (and re-fetched) for each one.
+var (
+	waIdentityMu      sync.Mutex
+	appliedWAVersion  clientVersion
+	waIdentityApplied bool
+)
+
+// configureWAIdentity resolves the WhatsApp version and applies the identity this process
+// presents. The values are the same for every instance, so the globals are only written when
+// they actually change. The OS name is the one thing that is per instance, and it is only
+// used when a device is paired (QR / pair code), so it is only set for a device that is about
+// to be.
+func (w whatsmeowService) configureWAIdentity(cd *ClientData, newDevice bool) {
+	log := w.loggerWrapper.GetLogger(cd.Instance.Id)
+
+	if cd.Instance.OsName == "" {
+		cd.Instance.OsName = utils.WhatsAppGetUserOS()
+	}
+
+	// Resolve the version first (it may hit the network, cached for an hour), outside the lock.
+	var version clientVersion
+	if w.config.WhatsappVersionMajor != 0 && w.config.WhatsappVersionMinor != 0 && w.config.WhatsappVersionPatch != 0 {
+		version = clientVersion{Major: w.config.WhatsappVersionMajor, Minor: w.config.WhatsappVersionMinor, Patch: w.config.WhatsappVersionPatch}
+	} else if webVersion, err := fetchWhatsAppWebVersion(); err != nil {
+		log.LogError("[%s] Failed to fetch WhatsApp Web version: %v", cd.Instance.Id, err)
+	} else {
+		version = *webVersion
+	}
+
+	waIdentityMu.Lock()
+	defer waIdentityMu.Unlock()
+
+	if platformID, ok := waCompanionReg.DeviceProps_PlatformType_value[strings.ToUpper("chrome")]; ok {
+		if want := waCompanionReg.DeviceProps_PlatformType(platformID); store.DeviceProps.GetPlatformType() != want {
+			store.DeviceProps.PlatformType = want.Enum()
+		}
+	}
+	if !store.DeviceProps.GetRequireFullSync() {
+		store.DeviceProps.RequireFullSync = proto.Bool(true)
+	}
+	if newDevice {
+		osName := cd.Instance.OsName
+		store.DeviceProps.Os = &osName
+	}
+
+	if version.Major == 0 && version.Minor == 0 && version.Patch == 0 {
+		return
+	}
+	if waIdentityApplied && appliedWAVersion == version {
+		return
+	}
+	log.LogInfo("[%s] Setting whatsapp version to %d.%d.%d", cd.Instance.Id, version.Major, version.Minor, version.Patch)
+	// DeviceProps.Version is what is advertised while pairing; SetWAVersion is the version of
+	// the connection handshake (without it WhatsApp ended up refusing the one compiled into
+	// whatsmeow with "Client outdated (405)", PR #199).
+	if store.DeviceProps.Version == nil {
+		store.DeviceProps.Version = &waCompanionReg.DeviceProps_AppVersion{}
+	}
+	store.DeviceProps.Version.Primary = proto.Uint32(uint32(version.Major))
+	store.DeviceProps.Version.Secondary = proto.Uint32(uint32(version.Minor))
+	store.DeviceProps.Version.Tertiary = proto.Uint32(uint32(version.Patch))
+	store.SetWAVersion(store.WAVersionContainer{uint32(version.Major), uint32(version.Minor), uint32(version.Patch)})
+	appliedWAVersion = version
+	waIdentityApplied = true
+}
+
 // startPresenceUpdates starts the periodic presence goroutine unless this client
 // already has one. It reports whether it started one.
 func startPresenceUpdates(mycli *MyClient) bool {
@@ -1005,7 +1024,7 @@ func schedulePresenceUpdates(mycli *MyClient) {
 				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Client was replaced, stopping presence updates", mycli.userID)
 				return
 			}
-			if !mycli.Instance.AlwaysOnline {
+			if !mycli.inst().AlwaysOnline {
 				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] alwaysOnline disabled, stopping presence updates", mycli.userID)
 				return
 			}
@@ -1131,12 +1150,12 @@ func (mycli *MyClient) handleQRCodes(codes []string) {
 					"maxCount": mycli.config.QrcodeMaxCount,
 				},
 				"instanceId":   instanceID,
-				"instanceName": mycli.Instance.Name,
+				"instanceName": mycli.inst().Name,
 			}
 			mycli.config.AddInstanceToken(postMap, mycli.token)
 			queueName := strings.ToLower(fmt.Sprintf("%s.%s", instanceID, "QRCode"))
 			if values, err := json.Marshal(postMap); err == nil {
-				go mycli.service.CallWebhook(mycli.Instance, queueName, values)
+				go mycli.service.CallWebhook(mycli.inst(), queueName, values)
 				if mycli.config.AmqpGlobalEnabled || mycli.config.NatsGlobalEnabled {
 					go mycli.service.SendToGlobalQueues("QRCode", values, instanceID)
 				}
@@ -1207,12 +1226,12 @@ func (mycli *MyClient) teardownQR(reason string, forceLogout bool) {
 		"event":        "QRTimeout",
 		"data":         data,
 		"instanceId":   instanceID,
-		"instanceName": mycli.Instance.Name,
+		"instanceName": mycli.inst().Name,
 	}
 	mycli.config.AddInstanceToken(postMap, mycli.token)
 	queueName := strings.ToLower(fmt.Sprintf("%s.%s", instanceID, "QRTimeout"))
 	if values, err := json.Marshal(postMap); err == nil {
-		go mycli.service.CallWebhook(mycli.Instance, queueName, values)
+		go mycli.service.CallWebhook(mycli.inst(), queueName, values)
 		if mycli.config.AmqpGlobalEnabled || mycli.config.NatsGlobalEnabled {
 			go mycli.service.SendToGlobalQueues("QRTimeout", values, instanceID)
 		}
@@ -1331,7 +1350,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			// delivers messages to that active session and suppresses push notifications on
 			// the user's phone. When alwaysOnline is false we now send Unavailable instead.
 			var err error
-			if mycli.Instance.AlwaysOnline {
+			if mycli.inst().AlwaysOnline {
 				startPresenceUpdates(mycli)
 
 				err = mycli.WAClient.SendPresence(context.Background(), types.PresenceAvailable)
@@ -1349,16 +1368,16 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 				}
 			}
 
-			mycli.Instance.Connected = true
-			mycli.Instance.DisconnectReason = ""
-			err = mycli.instanceRepository.UpdateConnected(mycli.Instance.Id, mycli.Instance.Connected, mycli.Instance.DisconnectReason)
+			mycli.inst().Connected = true
+			mycli.inst().DisconnectReason = ""
+			err = mycli.instanceRepository.UpdateConnected(mycli.inst().Id, mycli.inst().Connected, mycli.inst().DisconnectReason)
 			if err != nil {
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.Instance.Id, err)
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.inst().Id, err)
 			}
 
-			err = mycli.instanceRepository.UpdateQrcode(mycli.Instance.Id, "")
+			err = mycli.instanceRepository.UpdateQrcode(mycli.inst().Id, "")
 			if err != nil {
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.Instance.Id, err)
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.inst().Id, err)
 			}
 		}
 	case *events.PairSuccess:
@@ -1562,22 +1581,22 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		// filter, and with the sender as the chat, which is wrong in groups).
 
 		// se ignoreStatus for true e o chat for broadcast ou o id for broadcast retorna
-		if mycli.Instance.IgnoreStatus && (strings.Contains(evt.Info.Chat.String(), "@broadcast") || strings.Contains(evt.Info.ID, "@broadcast")) {
+		if mycli.inst().IgnoreStatus && (strings.Contains(evt.Info.Chat.String(), "@broadcast") || strings.Contains(evt.Info.ID, "@broadcast")) {
 			return
 		}
 
 		// se ignoreGroup for true e o chat for grupo retorna
-		if mycli.Instance.IgnoreGroups && strings.Contains(evt.Info.Chat.String(), "@g.us") {
+		if mycli.inst().IgnoreGroups && strings.Contains(evt.Info.Chat.String(), "@g.us") {
 			return
 		}
 
 		// Verifica advanced settings para ignorar grupos
-		if (mycli.config.EventIgnoreGroup || mycli.Instance.IgnoreGroups) && strings.Contains(evt.Info.Chat.String(), "@g.us") {
+		if (mycli.config.EventIgnoreGroup || mycli.inst().IgnoreGroups) && strings.Contains(evt.Info.Chat.String(), "@g.us") {
 			return
 		}
 
 		// Verifica advanced settings para ignorar status/broadcast
-		if (mycli.config.EventIgnoreStatus || mycli.Instance.IgnoreStatus) && (strings.Contains(evt.Info.Chat.String(), "@broadcast") || strings.Contains(evt.Info.ID, "@broadcast")) {
+		if (mycli.config.EventIgnoreStatus || mycli.inst().IgnoreStatus) && (strings.Contains(evt.Info.Chat.String(), "@broadcast") || strings.Contains(evt.Info.ID, "@broadcast")) {
 			return
 		}
 
@@ -1640,7 +1659,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		}
 
 		// Auto-marca mensagens como lidas se configurado
-		if mycli.Instance.ReadMessages && !evt.Info.IsFromMe {
+		if mycli.inst().ReadMessages && !evt.Info.IsFromMe {
 			go func() {
 				time.Sleep(1 * time.Second) // Pequeno delay para parecer mais natural
 				err := mycli.WAClient.MarkRead(context.Background(), []types.MessageID{evt.Info.ID}, evt.Info.Timestamp, evt.Info.Chat, evt.Info.Sender)
@@ -1662,7 +1681,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		// download its media, ask WhatsApp for the group or serialize it. Those are the
 		// costly parts of a message and used to run for every message regardless.
 		eventChat = evt.Info.Chat.String()
-		wantMessage := mycli.service.EventWanted(mycli.Instance, "Message", eventChat)
+		wantMessage := mycli.service.EventWanted(mycli.inst(), "Message", eventChat)
 
 		if postMap["data"] != nil {
 			jsonBytes, err := json.Marshal(postMap["data"])
@@ -1730,7 +1749,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 							&evt.Info,
 							decrypted,
 							"", // CompanyID não disponível no MyClient, será vazio
-							mycli.Instance.Id,
+							mycli.inst().Id,
 						)
 
 						// Salvar no banco com timeout de segurança
@@ -2120,14 +2139,14 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					"extraData":  buttonClickData,
 				},
 				"instanceId":   mycli.userID,
-				"instanceName": mycli.Instance.Name,
+				"instanceName": mycli.inst().Name,
 			}
 			mycli.config.AddInstanceToken(buttonClickMap, mycli.token)
 
 			buttonClickJSON, err := json.Marshal(buttonClickMap)
 			if err == nil {
 				buttonClickQueue := strings.ToLower(fmt.Sprintf("%s.buttonclick", userID))
-				go mycli.service.CallWebhook(mycli.Instance, buttonClickQueue, buttonClickJSON)
+				go mycli.service.CallWebhook(mycli.inst(), buttonClickQueue, buttonClickJSON)
 				if mycli.config.AmqpGlobalEnabled || mycli.config.NatsGlobalEnabled {
 					go mycli.service.SendToGlobalQueues("ButtonClick", buttonClickJSON, mycli.userID)
 				}
@@ -2142,7 +2161,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		eventChat = evt.Chat.String()
 
 		// se ignoreGroup for true e o chat for grupo retorna
-		if mycli.Instance.IgnoreGroups && strings.Contains(evt.Chat.String(), "@g.us") {
+		if mycli.inst().IgnoreGroups && strings.Contains(evt.Chat.String(), "@g.us") {
 			return
 		}
 
@@ -2254,14 +2273,14 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Logged out for reason %s", mycli.userID, evt.Reason.String())
 
 		// Limpar cache de userInfo para esta instância
-		mycli.userInfoCache.Delete(mycli.Instance.Token)
+		mycli.userInfoCache.Delete(mycli.inst().Token)
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] UserInfo cache cleared", mycli.userID)
 
-		mycli.Instance.DisconnectReason = evt.Reason.String()
-		mycli.Instance.Connected = false
-		err := mycli.instanceRepository.UpdateConnected(mycli.Instance.Id, mycli.Instance.Connected, mycli.Instance.DisconnectReason)
+		mycli.inst().DisconnectReason = evt.Reason.String()
+		mycli.inst().Connected = false
+		err := mycli.instanceRepository.UpdateConnected(mycli.inst().Id, mycli.inst().Connected, mycli.inst().DisconnectReason)
 		if err != nil {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.Instance.Id, err)
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.inst().Id, err)
 		}
 
 		if postMap["data"] != nil {
@@ -2288,9 +2307,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		dataMap["reason"] = evt.Reason.String()
 
 		// Enviar evento LoggedOut para webhook/RabbitMQ ANTES de matar o canal
-		mycli.config.AddInstanceToken(postMap, mycli.Instance.Token)
+		mycli.config.AddInstanceToken(postMap, mycli.inst().Token)
 		postMap["instanceId"] = mycli.userID
-		postMap["instanceName"] = mycli.Instance.Name
+		postMap["instanceName"] = mycli.inst().Name
 
 		values, err := json.Marshal(postMap)
 		if err != nil {
@@ -2304,7 +2323,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] ===== DISPATCHING LOGGEDOUT EVENT ===== Queue: %s", mycli.userID, queueName)
 
 			// Enviar para webhook/RabbitMQ
-			go mycli.service.CallWebhook(mycli.Instance, queueName, values)
+			go mycli.service.CallWebhook(mycli.inst(), queueName, values)
 
 			if mycli.config.AmqpGlobalEnabled || mycli.config.NatsGlobalEnabled {
 				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Sending LoggedOut to global queues - AMQP: %v, NATS: %v", mycli.userID, mycli.config.AmqpGlobalEnabled, mycli.config.NatsGlobalEnabled)
@@ -2327,7 +2346,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		postMap["event"] = "CallOffer"
 
 		// Verifica se deve rejeitar chamadas automaticamente
-		if mycli.Instance.RejectCall {
+		if mycli.inst().RejectCall {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Auto-rejecting call from %s", mycli.userID, evt.CallCreator.String())
 
 			// An instance with a call engine has already preaccepted this offer, so the
@@ -2342,10 +2361,10 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			}
 
 			// Envia mensagem de rejeição se configurada
-			if mycli.Instance.MsgRejectCall != "" {
+			if mycli.inst().MsgRejectCall != "" {
 				msg := &waE2E.Message{
 					ExtendedTextMessage: &waE2E.ExtendedTextMessage{
-						Text: &mycli.Instance.MsgRejectCall,
+						Text: &mycli.inst().MsgRejectCall,
 					},
 				}
 
@@ -2462,14 +2481,14 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Connection failed with reason %s", mycli.userID, evt.Reason.String())
 
 		// Limpar cache de userInfo para esta instância
-		mycli.userInfoCache.Delete(mycli.Instance.Token)
+		mycli.userInfoCache.Delete(mycli.inst().Token)
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] UserInfo cache cleared", mycli.userID)
 
-		mycli.Instance.DisconnectReason = evt.Reason.String()
-		mycli.Instance.Connected = false
-		err := mycli.instanceRepository.UpdateConnected(mycli.Instance.Id, mycli.Instance.Connected, mycli.Instance.DisconnectReason)
+		mycli.inst().DisconnectReason = evt.Reason.String()
+		mycli.inst().Connected = false
+		err := mycli.instanceRepository.UpdateConnected(mycli.inst().Id, mycli.inst().Connected, mycli.inst().DisconnectReason)
 		if err != nil {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.Instance.Id, err)
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.inst().Id, err)
 		}
 	case *events.Disconnected:
 		if shuttingDown.Load() {
@@ -2481,14 +2500,14 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		postMap["event"] = "Disconnected"
 
 		// Limpar cache de userInfo para esta instância (mas não para reconexão automática)
-		mycli.userInfoCache.Delete(mycli.Instance.Token)
+		mycli.userInfoCache.Delete(mycli.inst().Token)
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] UserInfo cache cleared", mycli.userID)
 
-		mycli.Instance.DisconnectReason = "Disconnected emitted because the websocket is closed by the server."
-		mycli.Instance.Connected = false
-		err := mycli.instanceRepository.UpdateConnected(mycli.Instance.Id, mycli.Instance.Connected, mycli.Instance.DisconnectReason)
+		mycli.inst().DisconnectReason = "Disconnected emitted because the websocket is closed by the server."
+		mycli.inst().Connected = false
+		err := mycli.instanceRepository.UpdateConnected(mycli.inst().Id, mycli.inst().Connected, mycli.inst().DisconnectReason)
 		if err != nil {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.Instance.Id, err)
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.inst().Id, err)
 		}
 
 		// Restart the instance (paced by the reconnect backoff, non-blocking)
@@ -2629,13 +2648,13 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	if doWebhook {
 		// Serializing an event (a history sync, a message with its media) is the costly part;
 		// when nobody would receive it, do not.
-		if name, _ := postMap["event"].(string); name != "" && !mycli.service.EventWanted(mycli.Instance, name, eventChat) {
+		if name, _ := postMap["event"].(string); name != "" && !mycli.service.EventWanted(mycli.inst(), name, eventChat) {
 			return
 		}
 
 		mycli.config.AddInstanceToken(postMap, mycli.token)
 		postMap["instanceId"] = mycli.userID
-		postMap["instanceName"] = mycli.Instance.Name
+		postMap["instanceName"] = mycli.inst().Name
 
 		values, err := json.Marshal(postMap)
 		if err != nil {
@@ -2657,7 +2676,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		dataSize := len(values)
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] ===== DISPATCHING WEBHOOK ===== Event: %s, Queue: %s, DataSize: %d bytes", mycli.userID, eventType, queueName, dataSize)
 
-		go mycli.service.CallWebhook(mycli.Instance, queueName, values)
+		go mycli.service.CallWebhook(mycli.inst(), queueName, values)
 
 		if mycli.config.AmqpGlobalEnabled || mycli.config.NatsGlobalEnabled {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Sending to global queues - Event: %s, AMQP: %v, NATS: %v", mycli.userID, eventType, mycli.config.AmqpGlobalEnabled, mycli.config.NatsGlobalEnabled)
@@ -3106,31 +3125,7 @@ func (w whatsmeowService) UpdateInstanceSettings(instanceId string) error {
 	}
 
 	// Atualiza as configurações no MyClient em execução
-	myClient.Instance = instance
-	myClient.webhookUrl = instance.Webhook
-	myClient.rabbitmqEnable = instance.RabbitmqEnable
-	myClient.natsEnable = instance.NatsEnable
-	myClient.websocketEnable = instance.WebSocketEnable
-
-	// Atualiza as subscriptions se os eventos mudaram
-	eventArray := strings.Split(instance.Events, ",")
-	var subscribedEvents []string
-
-	if len(eventArray) < 1 {
-		subscribedEvents = append(subscribedEvents, event_types.MESSAGE)
-	} else {
-		for _, arg := range eventArray {
-			if !event_types.IsEventType(arg) {
-				w.loggerWrapper.GetLogger(instanceId).LogWarn("[%s] Message type discarded: %s", instanceId, arg)
-				continue
-			}
-			if !utils.Find(subscribedEvents, arg) {
-				subscribedEvents = append(subscribedEvents, arg)
-			}
-		}
-	}
-
-	myClient.subscriptions = subscribedEvents
+	myClient.setInst(instance)
 
 	// Atualiza o cache do userInfo com as novas configurações
 	v := Values{map[string]string{
@@ -3165,8 +3160,9 @@ func (w whatsmeowService) UpdateInstanceAdvancedSettings(instanceId string) erro
 	}
 
 	// Atualiza a instância no MyClient com as advanced settings atualizadas
-	wasAlwaysOnline := myClient.Instance != nil && myClient.Instance.AlwaysOnline
-	myClient.Instance = instance
+	previous := myClient.inst()
+	wasAlwaysOnline := previous != nil && previous.AlwaysOnline
+	myClient.setInst(instance)
 
 	// The presence scheduler and the "available"/"unavailable" mark used to happen only
 	// on the Connected event, so switching alwaysOnline at runtime did nothing until the

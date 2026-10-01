@@ -20,8 +20,8 @@ func (w *whatsmeowService) publishCallEvent(instanceID, event string, data map[s
 	// The running client knows the current subscriptions. A call that ends because the
 	// instance was stopped no longer has one, and the database is the next best thing.
 	var instance *instance_model.Instance
-	if mycli := w.myClientPointer.Get(instanceID); mycli != nil && mycli.Instance != nil {
-		instance = mycli.Instance
+	if mycli := w.myClientPointer.Get(instanceID); mycli != nil && mycli.inst() != nil {
+		instance = mycli.inst()
 	} else if w.instanceRepository != nil {
 		found, err := w.instanceRepository.GetInstanceByID(instanceID)
 		if err != nil {

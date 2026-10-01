@@ -41,14 +41,15 @@ func newHandlerClient(t *testing.T, cfg *config.Config) (*MyClient, *webhookCapt
 	t.Helper()
 	cfg.LogDirectory = t.TempDir()
 	capture := &webhookCapture{published: make(chan published, 4)}
-	return &MyClient{
+	mycli := &MyClient{
 		service:       capture,
 		userID:        "inst-1",
 		token:         "tok",
-		Instance:      &instance_model.Instance{Id: "inst-1", Name: "test", Token: "tok"},
 		config:        cfg,
 		loggerWrapper: logger_wrapper.NewLoggerManagerForTest(t, cfg),
-	}, capture
+	}
+	mycli.setInst(&instance_model.Instance{Id: "inst-1", Name: "test", Token: "tok"})
+	return mycli, capture
 }
 
 func waitPublished(t *testing.T, c *webhookCapture) published {
