@@ -159,8 +159,10 @@ type MyClient struct {
 	reachoutTimelock atomic.Pointer[ReachoutTimelockStatus]
 	lastStreamError  atomic.Pointer[StreamErrorInfo]
 	clientOutdatedAt atomic.Int64 // unix nanoseconds of the last events.ClientOutdated
-	passkeyCeremony    *ceremony.Store
-	appStateRecoveryMu sync.Mutex
+	// lastUndecryptReconnect is when an undecryptable message last forced a reconnect.
+	lastUndecryptReconnect atomic.Int64 // unix nanoseconds
+	passkeyCeremony        *ceremony.Store
+	appStateRecoveryMu     sync.Mutex
 	appStateRecovery   map[appstate.WAPatchName]appStateRecoveryAttempt
 }
 
@@ -170,6 +172,24 @@ type appStateRecoveryAttempt struct {
 }
 
 const appStateRecoveryCooldown = 15 * time.Minute
+
+// undecryptReconnectCooldown is the minimum time between two reconnects forced by
+// undecryptable messages.
+const undecryptReconnectCooldown = 5 * time.Minute
+
+// allowUndecryptReconnect reports whether an undecryptable message may force a reconnect
+// now, and records it when it may.
+func (mycli *MyClient) allowUndecryptReconnect(now time.Time) bool {
+	for {
+		last := mycli.lastUndecryptReconnect.Load()
+		if last != 0 && now.Sub(time.Unix(0, last)) < undecryptReconnectCooldown {
+			return false
+		}
+		if mycli.lastUndecryptReconnect.CompareAndSwap(last, now.UnixNano()) {
+			return true
+		}
+	}
+}
 
 func (mycli *MyClient) reserveAppStateRecovery(name appstate.WAPatchName, recoveryRequest bool) bool {
 	mycli.appStateRecoveryMu.Lock()
@@ -1335,24 +1355,23 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		postMap["event"] = "PairSuccess"
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("QR Pair Success for user '%s' with JID '%s' - '%s'", mycli.userID, evt.ID.String(), mycli.WAClient.Store.ID.String())
 
+		// A failed lookup used to be logged and then dereferenced (instance is nil).
 		instance, err := mycli.instanceRepository.GetInstanceByID(mycli.userID)
 		if err != nil {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error getting instance: %s", mycli.userID, err)
-		}
-
-		instance.Qrcode = ""
-		instance.Connected = true
-		instance.DisconnectReason = ""
-		instance.Jid = mycli.WAClient.Store.ID.String()
-
-		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Updating JID: %s in Instance: %s", mycli.userID, mycli.WAClient.Store.ID.String(), instance.Jid)
-
-		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Attempting to update instance in DB (jid %s)", mycli.userID, instance.Jid)
-		err = mycli.instanceRepository.Update(instance)
-		if err != nil {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.userID, err)
 		} else {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Instance successfully updated", mycli.userID)
+			instance.Qrcode = ""
+			instance.Connected = true
+			instance.DisconnectReason = ""
+			instance.Jid = mycli.WAClient.Store.ID.String()
+
+			mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Attempting to update instance in DB (jid %s)", mycli.userID, instance.Jid)
+			err = mycli.instanceRepository.Update(instance)
+			if err != nil {
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.userID, err)
+			} else {
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Instance successfully updated", mycli.userID)
+			}
 		}
 
 		myUserInfo, found := mycli.userInfoCache.Get(mycli.token)
@@ -1527,16 +1546,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] ===== MESSAGE RECEIVED ===== ID: %s, From: %s, Type: %s, Size: %s", mycli.userID, evt.Info.ID, evt.Info.Chat.String(), evt.Info.Type, messageSize)
 
-		// se readMessages for true ele marca como lida
-		if mycli.Instance.ReadMessages {
-			messageIDs := []string{evt.Info.ID}
-			err := mycli.WAClient.MarkRead(context.Background(), messageIDs, time.Now(), evt.Info.Sender, evt.Info.Sender)
-			if err != nil {
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Failed to auto-mark message as read: %v", mycli.userID, err)
-			} else {
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Auto-marked message as read from %s", mycli.userID, evt.Info.Chat.String())
-			}
-		}
+		// readMessages: the message is marked as read once, further below, after the
+		// ignore filters and the LID/PN swap (it used to be marked here too, before any
+		// filter, and with the sender as the chat, which is wrong in groups).
 
 		// se ignoreStatus for true e o chat for broadcast ou o id for broadcast retorna
 		if mycli.Instance.IgnoreStatus && (strings.Contains(evt.Info.Chat.String(), "@broadcast") || strings.Contains(evt.Info.ID, "@broadcast")) {
@@ -2584,11 +2596,17 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 
 			postMap["data"] = evt
 		} else if strings.HasPrefix(evt.Info.ID, "66") || strings.HasPrefix(evt.Info.ID, "67") {
-			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] ID 66 or 67 found, reconnecting client", mycli.userID)
-			mycli.WAClient.Disconnect()
-			err := mycli.WAClient.Connect()
-			if err != nil {
-				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error reconnecting client: %s", mycli.userID, err)
+			// The message id is chosen by the sender, so anyone who can message this number
+			// could force a reconnect with every such message: at most one per cooldown.
+			if !mycli.allowUndecryptReconnect(time.Now()) {
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] ID 66 or 67 found, but a reconnect was forced less than %s ago: not reconnecting again", mycli.userID, undecryptReconnectCooldown)
+			} else {
+				mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] ID 66 or 67 found, reconnecting client", mycli.userID)
+				mycli.WAClient.Disconnect()
+				err := mycli.WAClient.Connect()
+				if err != nil {
+					mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error reconnecting client: %s", mycli.userID, err)
+				}
 			}
 		} else {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] ID is not 66 or 67 or view_once, skipping", mycli.userID)

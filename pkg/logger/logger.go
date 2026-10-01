@@ -192,9 +192,3 @@ func (l *Logger) Close() error {
 	defer l.mu.Unlock()
 	return l.writer.Close()
 }
-
-// GetLogs retorna os logs da instância com filtros opcionais
-func (l *Logger) GetLogs(startDate, endDate time.Time, level string, limit int) ([]LogEntry, error) {
-	// Implementação movida para o service
-	return nil, fmt.Errorf("método movido para instance_service")
-}

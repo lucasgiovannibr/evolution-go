@@ -9,8 +9,6 @@ import (
 type MessageRepository interface {
 	InsertMessage(message message_model.Message) error
 	GetMessageByID(messageID string) (*message_model.Message, error)
-	DeleteAllMessages() (int64, error)
-	GetLatestMessageID(source string) (string, string, error)
 }
 
 type messageRepository struct {
@@ -44,24 +42,6 @@ func (m *messageRepository) GetMessageByID(messageID string) (*message_model.Mes
 	}
 
 	return &message, nil
-}
-
-func (m *messageRepository) DeleteAllMessages() (int64, error) {
-	result := m.db.Exec("DELETE FROM messages")
-	return result.RowsAffected, result.Error
-}
-
-func (m *messageRepository) GetLatestMessageID(source string) (string, string, error) {
-	var message message_model.Message
-	err := m.db.Where("source = ?", source).Order("timestamp DESC").First(&message).Error
-	if err != nil {
-		if err == gorm.ErrRecordNotFound {
-			return "", "", nil
-		}
-		return "", "", err
-	}
-
-	return message.MessageID, message.Timestamp, nil
 }
 
 func NewMessageRepository(db *gorm.DB) MessageRepository {
