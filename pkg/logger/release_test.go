@@ -47,3 +47,49 @@ func TestReleaseFreesTheInstanceLogger(t *testing.T) {
 		t.Fatalf("other instances must keep their file logger: %v", err)
 	}
 }
+
+func TestRemoveFilesDeletesTheLogDirectory(t *testing.T) {
+	dir := t.TempDir()
+	lm := NewLoggerManager(&config.Config{LogDirectory: dir, LogMaxSize: 1, LogMaxBackups: 1, LogMaxAge: 1})
+
+	lm.GetLogger("inst-1").LogInfo("token and jids live here")
+	lm.GetLogger("inst-2").LogInfo("another instance")
+
+	lm.Release("inst-1")
+	if err := lm.RemoveFiles("inst-1"); err != nil {
+		t.Fatalf("RemoveFiles: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "inst-1")); !os.IsNotExist(err) {
+		t.Fatalf("the log directory of a deleted instance must be gone, stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "inst-2", "instance.log")); err != nil {
+		t.Fatalf("other instances' logs must stay: %v", err)
+	}
+}
+
+func TestRemoveFilesKeepsLogsWhenAsked(t *testing.T) {
+	dir := t.TempDir()
+	lm := NewLoggerManager(&config.Config{LogDirectory: dir, LogMaxSize: 1, LogMaxBackups: 1, LogMaxAge: 1, LogKeepDeleted: true})
+
+	lm.GetLogger("inst-1").LogInfo("kept")
+	lm.Release("inst-1")
+	if err := lm.RemoveFiles("inst-1"); err != nil {
+		t.Fatalf("RemoveFiles: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "inst-1", "instance.log")); err != nil {
+		t.Fatalf("LOG_KEEP_DELETED=true must keep the logs: %v", err)
+	}
+}
+
+func TestRemoveFilesRefusesPathsOutsideTheLogDirectory(t *testing.T) {
+	dir := t.TempDir()
+	lm := NewLoggerManager(&config.Config{LogDirectory: dir})
+	for _, id := range []string{"", ".", "..", "../x", "a/b", `a\b`} {
+		if id == `a\b` && string(filepath.Separator) != `\` {
+			continue
+		}
+		if err := lm.RemoveFiles(id); err == nil {
+			t.Errorf("RemoveFiles(%q) must be refused", id)
+		}
+	}
+}

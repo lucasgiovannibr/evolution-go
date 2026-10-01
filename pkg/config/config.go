@@ -52,18 +52,23 @@ type Config struct {
 	ProxyHost            string
 	ProxyFailClosed      bool
 	PprofEnabled         bool
-	ProxyPort            string
-	ProxyUsername        string
-	ProxyPassword        string
-	AmqpGlobalEvents     []string
-	AmqpSpecificEvents   []string
-	NatsUrl              string
-	NatsGlobalEnabled    bool
-	NatsGlobalEvents     []string
-	EventIgnoreGroup     bool
-	EventIgnoreStatus    bool
-	QrcodeMaxCount       int
-	CheckUserExists      bool
+	// WebhookIncludeToken keeps the instance API token ("instanceToken") in every event
+	// payload sent to webhooks, queues and websockets. The token is the credential of the
+	// instance, so every consumer of the events could use it; it is on only for backwards
+	// compatibility (WEBHOOK_INCLUDE_TOKEN=false removes it).
+	WebhookIncludeToken bool
+	ProxyPort           string
+	ProxyUsername       string
+	ProxyPassword       string
+	AmqpGlobalEvents    []string
+	AmqpSpecificEvents  []string
+	NatsUrl             string
+	NatsGlobalEnabled   bool
+	NatsGlobalEvents    []string
+	EventIgnoreGroup    bool
+	EventIgnoreStatus   bool
+	QrcodeMaxCount      int
+	CheckUserExists     bool
 
 	// Calls (see pkg/call/engine). Zero means the engine default.
 	CallMaxConcurrent int // calls one instance may have at the same time
@@ -83,6 +88,17 @@ type Config struct {
 	LogMaxAge     int
 	LogDirectory  string
 	LogCompress   bool
+	// LogKeepDeleted keeps the log directory of an instance after it is deleted. Off by
+	// default: those logs hold the instance token, JIDs and message metadata.
+	LogKeepDeleted bool
+}
+
+// AddInstanceToken puts the instance token in an event payload, unless
+// WEBHOOK_INCLUDE_TOKEN=false. A nil Config keeps the historical behaviour.
+func (c *Config) AddInstanceToken(payload map[string]interface{}, token string) {
+	if c == nil || c.WebhookIncludeToken {
+		payload["instanceToken"] = token
+	}
 }
 
 // EnsureDBExists connects to postgres (without the target database) and creates it if it doesn't exist.
@@ -157,7 +173,7 @@ func extractDBNameAndAdminDSN(dsn string) (string, string, error) {
 }
 
 func (c *Config) CreateUsersDB() (*gorm.DB, error) {
-	logger.LogDebug("Connecting to database on: %s", c.postgresUsersDB)
+	logger.LogDebug("Connecting to the users database")
 
 	dbDSN := c.postgresUsersDB
 
@@ -399,6 +415,7 @@ func Load() *Config {
 		ProxyHost:            proxyHost,
 		ProxyFailClosed:      os.Getenv(config_env.PROXY_FAIL_CLOSED) == "true",
 		PprofEnabled:         os.Getenv(config_env.ENABLE_PPROF) == "true",
+		WebhookIncludeToken:  os.Getenv(config_env.WEBHOOK_INCLUDE_TOKEN) != "false", // default true (compat)
 		ProxyPort:            proxyPort,
 		ProxyUsername:        proxyUsername,
 		ProxyPassword:        proxyPassword,
@@ -422,6 +439,7 @@ func Load() *Config {
 		LogMaxAge:            logMaxAge,
 		LogDirectory:         logDirectory,
 		LogCompress:          logCompress,
+		LogKeepDeleted:       os.Getenv(config_env.LOG_KEEP_DELETED) == "true",
 	}
 
 	minioEnabled := os.Getenv(config_env.MINIO_ENABLED) == "true"

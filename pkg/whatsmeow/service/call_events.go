@@ -33,13 +33,14 @@ func (w *whatsmeowService) publishCallEvent(instanceID, event string, data map[s
 		return
 	}
 
-	values, err := json.Marshal(map[string]interface{}{
-		"event":         event,
-		"data":          data,
-		"instanceToken": instance.Token,
-		"instanceId":    instance.Id,
-		"instanceName":  instance.Name,
-	})
+	payload := map[string]interface{}{
+		"event":        event,
+		"data":         data,
+		"instanceId":   instance.Id,
+		"instanceName": instance.Name,
+	}
+	w.config.AddInstanceToken(payload, instance.Token)
+	values, err := json.Marshal(payload)
 	if err != nil {
 		log.LogError("[%s] Failed to marshal %s: %v", instanceID, event, err)
 		return

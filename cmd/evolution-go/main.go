@@ -205,7 +205,10 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	// NOVO: PollHandler usando PollService já inicializado no whatsmeowService (evita dupla inicialização)
 	pollHandler := poll_handler.NewPollHandler(whatsmeowService.GetPollService(), loggerWrapper)
 
-	r := gin.Default()
+	// gin.Default() prints the query string as it came, which put credentials such as
+	// /ws?token=<GLOBAL_API_KEY> in the access log; AccessLog redacts them.
+	r := gin.New()
+	r.Use(auth_middleware.AccessLog(), gin.Recovery())
 
 	// CORS middleware — must be before everything else
 	r.Use(func(c *gin.Context) {
@@ -390,6 +393,9 @@ func main() {
 	}
 
 	cfg := config.Load()
+	if cfg.WebhookIncludeToken {
+		logger.LogWarn("[CONFIG] Events carry the instance token (\"instanceToken\"): every webhook, queue and websocket consumer can use it as the instance API key. Set WEBHOOK_INCLUDE_TOKEN=false to remove it")
+	}
 
 	logger.LogInfo("Starting Evolution GO version %s", version)
 

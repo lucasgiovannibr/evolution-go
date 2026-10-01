@@ -647,6 +647,9 @@ func (i instances) Delete(id string) error {
 
 	// The instance is gone: free its log file descriptor and logger.
 	i.loggerWrapper.Release(id)
+	if err := i.loggerWrapper.RemoveFiles(id); err != nil {
+		i.loggerWrapper.GetLogger(id).LogWarn("[%s] Could not remove the instance's log files: %v", id, err)
+	}
 
 	return nil
 }
