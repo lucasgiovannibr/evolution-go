@@ -1022,63 +1022,43 @@ func convertAudioWithApi(apiUrl string, apiKey string, convertData ConvertAudio)
 // ffmpeg (and the request waiting on it) running forever.
 const ffmpegTimeout = 3 * time.Minute
 
+// maxConvertedAudio is the most an audio conversion may produce (Opus at 128 kbit/s is
+// ~1 MB a minute; WhatsApp accepts far less than this).
+const maxConvertedAudio int64 = 100 << 20
+
 func convertAudioToOpusWithDuration(inputData []byte) ([]byte, int, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), ffmpegTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "ffmpeg", "-i", "pipe:0",
-		"-f",
-		"ogg",
+	// A slot of the shared pool, a time limit, and a cap on what ffmpeg may write (-fs for
+	// the program itself, maxConvertedAudio for the buffer): ten concurrent audio sends used
+	// to be ten ffmpeg processes with no limit on their output.
+	outBytes, errBytes, err := utils.RunLimited(context.Background(), ffmpegTimeout, "ffmpeg", []string{"-i", "pipe:0",
+		"-f", "ogg",
 		"-vn",
-		"-c:a",
-		"libopus",
-		"-avoid_negative_ts",
-		"make_zero",
-		"-b:a",
-		"128k",
-		"-ar",
-		"48000",
-		"-ac",
-		"1",
-		"-write_xing",
-		"0",
-		"-compression_level",
-		"10",
-		"-application",
-		"voip",
-		"-fflags",
-		"+bitexact",
-		"-flags",
-		"+bitexact",
-		"-id3v2_version",
-		"0",
-		"-map_metadata",
-		"-1",
-		"-map_chapters",
-		"-1",
-		"-write_bext",
-		"0",
+		"-c:a", "libopus",
+		"-avoid_negative_ts", "make_zero",
+		"-b:a", "128k",
+		"-ar", "48000",
+		"-ac", "1",
+		"-write_xing", "0",
+		"-compression_level", "10",
+		"-application", "voip",
+		"-fflags", "+bitexact",
+		"-flags", "+bitexact",
+		"-id3v2_version", "0",
+		"-map_metadata", "-1",
+		"-map_chapters", "-1",
+		"-write_bext", "0",
+		"-fs", strconv.FormatInt(maxConvertedAudio, 10),
 		"pipe:1",
-	)
-
-	var outBuffer bytes.Buffer
-	var errBuffer bytes.Buffer
-
-	cmd.Stdin = bytes.NewReader(inputData)
-	cmd.Stdout = &outBuffer
-	cmd.Stderr = &errBuffer
-
-	err := cmd.Run()
-	if ctx.Err() == context.DeadlineExceeded {
-		return nil, 0, fmt.Errorf("audio conversion timed out after %v", ffmpegTimeout)
-	}
+	}, inputData, maxConvertedAudio)
 	if err != nil {
-		return nil, 0, fmt.Errorf("error during conversion: %v, details: %s", err, errBuffer.String())
+		if errors.Is(err, utils.ErrBusy) || errors.Is(err, utils.ErrOutputTooLarge) || strings.Contains(err.Error(), "timed out") {
+			return nil, 0, fmt.Errorf("audio conversion failed: %w", err)
+		}
+		return nil, 0, fmt.Errorf("error during conversion: %v, details: %s", err, errBytes)
 	}
 
-	convertedData := outBuffer.Bytes()
-
-	outputText := errBuffer.String()
+	convertedData := outBytes
+	outputText := string(errBytes)
 
 	splitTime := strings.Split(outputText, "time=")
 
@@ -2327,6 +2307,11 @@ func makeJPEGThumbnail(fileData []byte, maxWidth int) []byte {
 		maxWidth = 72
 	}
 
+	// No thumbnail rather than a decoder allocating for whatever the header declares.
+	if err := utils.CheckImageDimensions(fileData, utils.MaxImagePixels()); err != nil {
+		return nil
+	}
+
 	img, _, err := image.Decode(bytes.NewReader(fileData))
 	if err != nil {
 		return nil
@@ -2368,6 +2353,12 @@ func makeJPEGThumbnail(fileData []byte, maxWidth int) []byte {
 // using the external "pdftoppm" tool (poppler-utils). It returns nil when
 // pdftoppm is not installed or rasterization fails, so callers can gracefully
 // send the document without a preview instead of failing the request.
+// The preview of a PDF is a nicety: a file this large, or a rendering this slow, gets none.
+const (
+	maxPDFForThumbnail  = 20 << 20
+	pdfThumbnailTimeout = 30 * time.Second
+)
+
 func makePDFThumbnail(fileData []byte, maxWidth int) []byte {
 	if _, err := exec.LookPath("pdftoppm"); err != nil {
 		return nil
@@ -2380,27 +2371,25 @@ func makePDFThumbnail(fileData []byte, maxWidth int) []byte {
 
 	// Render only the first page to a PNG on stdout, scaled to scaleWidth.
 	// "-scale-to-y -1" keeps the original aspect ratio.
-	cmd := exec.Command("pdftoppm",
+	// A PDF is untrusted input for poppler: limit the time (it had none), the size of the
+	// file and the output, and share the conversion slots with ffmpeg.
+	if len(fileData) > maxPDFForThumbnail {
+		return nil
+	}
+	out, _, err := utils.RunLimited(context.Background(), pdfThumbnailTimeout, "pdftoppm", []string{
 		"-png",
 		"-f", "1",
 		"-l", "1",
 		"-singlefile",
 		"-scale-to-x", strconv.Itoa(scaleWidth),
 		"-scale-to-y", "-1",
-	)
-	cmd.Stdin = bytes.NewReader(fileData)
-
-	var out bytes.Buffer
-	cmd.Stdout = &out
-	if err := cmd.Run(); err != nil {
-		return nil
-	}
-	if out.Len() == 0 {
+	}, fileData, 16<<20)
+	if err != nil || len(out) == 0 {
 		return nil
 	}
 
 	// Re-encode the rendered PNG as a JPEG thumbnail for consistency with images.
-	return makeJPEGThumbnail(out.Bytes(), maxWidth)
+	return makeJPEGThumbnail(out, maxWidth)
 }
 
 func sectionsToString(data *ListStruct) (string, error) {

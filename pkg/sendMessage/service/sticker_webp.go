@@ -72,10 +72,20 @@ func stickerWebP(ctx context.Context, url string) ([]byte, error) {
 		return nil, fmt.Errorf("sticker exceeds %d bytes", maxStickerBytes)
 	}
 
+	return stickerFromBytes(raw)
+}
+
+// stickerFromBytes turns downloaded image bytes into the WebP that is uploaded: a valid WebP
+// is kept as it is, anything else is decoded (after its size is checked) and encoded.
+func stickerFromBytes(raw []byte) ([]byte, error) {
 	if isWebP(raw) {
 		return raw, nil
 	}
 
+	// The header is read first: a crafted file can declare gigapixels in a few KB.
+	if err := utils.CheckImageDimensions(raw, utils.MaxImagePixels()); err != nil {
+		return nil, fmt.Errorf("failed to decode image: %w", err)
+	}
 	img, _, err := image.Decode(bytes.NewReader(raw))
 	if err != nil {
 		return nil, fmt.Errorf("failed to decode image: %v", err)
