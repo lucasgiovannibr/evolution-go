@@ -50,3 +50,5 @@ manager/src/
 
 # IMPORTANT: O código-fonte (pkg/, cmd/, etc.) é necessário no stage de build
 # mas NÃO é copiado para a imagem final - apenas o executável compilado vai.
+# the entrypoint is copied into the image
+!docker/entrypoint.sh

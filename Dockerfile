@@ -15,19 +15,37 @@ RUN go mod download
 COPY . .
 
 ARG VERSION=dev
-RUN CGO_ENABLED=1 go build -ldflags "-X main.version=${VERSION}" -o server ./cmd/evolution-go
+# -trimpath and -s -w: no build paths in the binary, no symbol/debug tables (a smaller image).
+RUN CGO_ENABLED=1 go build -trimpath -ldflags "-s -w -X main.version=${VERSION}" -o server ./cmd/evolution-go
 
-FROM alpine:3.19.1 AS final
+# The runtime stage uses the same Alpine release as the build stage: the binary links to the
+# jpeg and webp libraries of the system.
+FROM alpine:3.24 AS final
 
 # poppler-utils provides pdftoppm, used to rasterize PDF page 1 for /send/media document thumbnails
-RUN apk update && apk add --no-cache tzdata ffmpeg libjpeg-turbo libwebp poppler-utils
+# su-exec drops root after the entrypoint has fixed the ownership of the data volumes.
+RUN apk update && apk add --no-cache tzdata ffmpeg libjpeg-turbo libwebp poppler-utils su-exec \
+    && addgroup -S -g 10001 evolution \
+    && adduser -S -u 10001 -G evolution -h /app evolution
 
 WORKDIR /app
 
 COPY --from=build /build/server .
 COPY --from=build /build/manager/dist ./manager/dist
 COPY --from=build /build/VERSION ./VERSION
+COPY docker/entrypoint.sh /entrypoint.sh
+
+# dbdata (SQLite auth DB) and logs are written at run time.
+RUN mkdir -p /app/dbdata /app/logs && chown -R evolution:evolution /app && chmod +x /entrypoint.sh
 
 ENV TZ=America/Sao_Paulo
+ENV SERVER_PORT=8080
 
-ENTRYPOINT ["/app/server"]
+# Liveness: the process is up and serving HTTP (/server/ok does not look at the databases).
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+    CMD wget -q -O /dev/null "http://127.0.0.1:${SERVER_PORT}/server/ok" || exit 1
+
+# The entrypoint starts as root only to hand the data volumes to the evolution user (volumes
+# created by an earlier image belong to root), then runs the server as that user.
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["/app/server"]
