@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 export type LicenseState = 'unchecked' | 'licensed' | 'unlicensed';
 
@@ -15,9 +15,17 @@ interface AuthState {
 const defaultUrl = () => (typeof window !== 'undefined' ? window.location.origin : 'http://localhost:8080');
 
 /**
- * Persisted under the same key and shape the previous manager used, so an existing
- * browser session keeps working after the upgrade.
+ * The session lives in sessionStorage: it ends with the tab. It used to be kept in
+ * localStorage, so the API key (the GLOBAL key, when an administrator logs in) stayed in the
+ * browser for good and was readable by any script that ever ran on this origin. Whatever the
+ * old versions left behind is removed.
  */
+try {
+  localStorage.removeItem('evolution-auth');
+} catch {
+  /* storage blocked: nothing to clean */
+}
+
 export const useAuth = create<AuthState>()(
   persist(
     (set) => ({
@@ -30,6 +38,7 @@ export const useAuth = create<AuthState>()(
     }),
     {
       name: 'evolution-auth',
+      storage: createJSONStorage(() => sessionStorage),
       partialize: (s) => ({
         apiUrl: s.apiUrl,
         apiKey: s.apiKey,

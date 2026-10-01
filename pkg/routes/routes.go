@@ -48,14 +48,16 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 	})
 
 	// Rotas para o gerenciador React (sem autenticação)
-	eng.Static("/assets", "./manager/dist/assets")
+	// Browser-side protections (CSP, no framing, no sniffing) for the manager pages only.
+	managerHeaders := auth_middleware.ManagerSecurityHeaders()
+	eng.Group("/assets", managerHeaders).Static("/", "./manager/dist/assets")
 
 	// Ajuste nas rotas do manager para suportar client-side routing do React
-	eng.GET("/manager/*any", func(c *gin.Context) {
+	eng.GET("/manager/*any", managerHeaders, func(c *gin.Context) {
 		c.File("manager/dist/index.html")
 	})
 
-	eng.GET("/manager", func(c *gin.Context) {
+	eng.GET("/manager", managerHeaders, func(c *gin.Context) {
 		c.File("manager/dist/index.html")
 	})
 
