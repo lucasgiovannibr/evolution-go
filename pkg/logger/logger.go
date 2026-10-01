@@ -71,6 +71,21 @@ func (lm *LoggerManager) Release(instanceId string) {
 	lm.released[instanceId] = struct{}{}
 }
 
+// RemoveFiles deletes the log directory of an instance that was deleted (log files and
+// rotated backups), unless LOG_KEEP_DELETED=true. They used to stay on disk forever, with
+// the instance token, JIDs and message metadata in them. Call Release first, so the file
+// is closed.
+func (lm *LoggerManager) RemoveFiles(instanceId string) error {
+	if lm.config.LogKeepDeleted {
+		return nil
+	}
+	// The id names a directory below the log directory: never let it point elsewhere.
+	if instanceId == "" || instanceId != filepath.Base(instanceId) || instanceId == "." || instanceId == ".." {
+		return fmt.Errorf("invalid instance id %q for log removal", instanceId)
+	}
+	return os.RemoveAll(filepath.Join(lm.config.LogDirectory, instanceId))
+}
+
 func (lm *LoggerManager) GetLogger(instanceId string) *Logger {
 	lm.mu.RLock()
 	logger, exists := lm.loggers[instanceId]

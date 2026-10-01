@@ -1820,8 +1820,6 @@ func (s *sendService) SendContact(data *ContactStruct, instance *instance_model.
 		Organization: data.Vcard.Organization,
 	})
 
-	fmt.Println(VCstring)
-
 	msg := &waE2E.Message{ContactMessage: &waE2E.ContactMessage{
 		DisplayName: &data.Vcard.FullName,
 		Vcard:       &VCstring,
@@ -2962,7 +2960,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 		}
 	}
 
-	postMap["instanceToken"] = instance.Token
+	s.config.AddInstanceToken(postMap, instance.Token)
 	postMap["instanceId"] = instance.Id
 	postMap["instanceName"] = instance.Name
 
@@ -3425,7 +3423,7 @@ func (s *sendService) sendStatusWebhook(messageSent *MessageSendStruct, instance
 	messageData["Message"] = msgMap
 	messageData["MessageContextInfo"] = messageSent.MessageContextInfo
 	postMap["data"] = messageData
-	postMap["instanceToken"] = instance.Token
+	s.config.AddInstanceToken(postMap, instance.Token)
 	postMap["instanceId"] = instance.Id
 	postMap["instanceName"] = instance.Name
 
