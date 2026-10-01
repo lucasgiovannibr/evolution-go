@@ -526,12 +526,12 @@ func (s *sendHandler) SendContact(ctx *gin.Context) {
 // @Description
 // @Description Combination rules enforced by the server:
 // @Description   - Up to 3 `reply` buttons per message.
-// @Description   - `reply` buttons cannot be mixed with any other type.
 // @Description   - `pix` button must be sent ALONE (no other button in the same message).
 // @Description
 // @Description WhatsApp client rendering quirks (NOT enforced by the server, but verified in the field):
 // @Description   - WhatsApp Web: only `reply`-only messages (up to 3) OR CTAs grouped together (`copy` + `url` + `call`) render correctly.
-// @Description   - Do NOT mix `reply` with CTA buttons (`copy`/`url`/`call`) — the message will not appear on WhatsApp Web.
+// @Description   - `reply` mixed with CTA buttons (`copy`/`url`/`call`) shows on the phone but the message does not appear on WhatsApp Web.
+// @Description   - `pix` shows on the phone only.
 // @Description
 // @Description Required body fields: `number`, `title`, `description`, `footer`, `buttons`.
 // @Tags Send Message

@@ -270,12 +270,11 @@ type Button struct {
 //
 // Server-side validation:
 //   - up to 3 `reply` buttons per message;
-//   - `reply` cannot be mixed with any other type;
 //   - `pix` must be the only button in the message.
 //
 // WhatsApp Web rendering quirk (NOT enforced by the server):
-//   - mixing `reply` with CTA buttons (copy/url/call) makes the message invisible on WhatsApp Web;
-//   - safe combinations: only-reply (up to 3) OR grouped CTAs (copy + url + call).
+//   - mixing `reply` with CTA buttons (copy/url/call) shows on the phone but is invisible on WhatsApp Web;
+//   - safe on both: only-reply (up to 3) OR grouped CTAs (copy + url + call).
 type ButtonStruct struct {
 	// Destination phone number.
 	Number string `json:"number" example:"5582988898565"`
@@ -1889,35 +1888,25 @@ func (s *sendService) SendButton(data *ButtonStruct, instance *instance_model.In
 		return nil, err
 	}
 
-	hasReply := false
 	hasPix := false
-	hasOtherTypes := false
 	replyCount := 0
 
 	for _, v := range data.Buttons {
 		switch v.Type {
 		case "reply":
-			hasReply = true
 			replyCount++
 		case "pix":
 			hasPix = true
-		default:
-			hasOtherTypes = true
 		}
 	}
 
-	if hasReply {
-		if replyCount > 3 {
-			return nil, errors.New("máximo de 3 botões do tipo 'reply' permitidos")
-		}
-		if hasOtherTypes {
-			return nil, errors.New("botões do tipo 'reply' não podem ser misturados com outros tipos")
-		}
+	if replyCount > 3 {
+		return nil, apierror.Invalid("máximo de 3 botões do tipo 'reply' permitidos")
 	}
 
 	if hasPix {
 		if len(data.Buttons) > 1 {
-			return nil, errors.New("botão do tipo 'pix' não pode ser combinado com outros botões")
+			return nil, apierror.Invalid("botão do tipo 'pix' não pode ser combinado com outros botões")
 		}
 	}
 

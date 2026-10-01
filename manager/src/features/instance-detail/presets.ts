@@ -90,6 +90,16 @@ export const PRESETS: Preset[] = [
       ])(n),
   },
   {
+    id: 'btn_reply_url',
+    group: 'button',
+    label: 'Reply + URL (só no celular)',
+    description: 'Um reply e um botão de link na mesma mensagem. Aparece no celular, mas não no WhatsApp Web.',
+    build: button('Teste - Reply + URL', 'Reply misturado com CTA.', [
+      { type: 'reply', displayText: 'Confirmar', id: 'test_mix_reply' },
+      { type: 'url', displayText: 'Abrir site', url: 'https://evolutionapi.com' },
+    ]),
+  },
+  {
     id: 'list',
     group: 'list',
     label: 'Lista com seções (4 itens, 2 mensagens)',
