@@ -1,6 +1,8 @@
 package instance_model
 
 import (
+	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -36,6 +38,35 @@ type Instance struct {
 	// CallsEnabled gives the instance a WhatsApp call engine (experimental). It is
 	// read when the client starts, so changing it takes effect on the next connection.
 	CallsEnabled bool `json:"callsEnabled" gorm:"default:false"`
+}
+
+// redactProxy removes the password from the proxy JSON stored on an instance. The API
+// returned the whole record, so creating or listing instances handed the proxy credentials
+// to every caller (and to every log or UI that kept the response).
+func redactProxy(raw string) string {
+	raw = strings.TrimSpace(raw)
+	if raw == "" || raw == "null" {
+		return raw
+	}
+	var cfg map[string]any
+	if err := json.Unmarshal([]byte(raw), &cfg); err != nil {
+		return "" // not something we can vouch for: do not echo it
+	}
+	delete(cfg, "password")
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		return ""
+	}
+	return string(out)
+}
+
+// MarshalJSON keeps the proxy password out of every response that serializes an Instance.
+// The database column (gorm) is not affected, so connecting still uses the real value.
+func (i Instance) MarshalJSON() ([]byte, error) {
+	type plain Instance // no methods: avoids recursing into MarshalJSON
+	p := plain(i)
+	p.Proxy = redactProxy(p.Proxy)
+	return json.Marshal(p)
 }
 
 // AdvancedSettings representa as configurações avançadas de uma instância.
