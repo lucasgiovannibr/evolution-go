@@ -10,8 +10,13 @@ const (
 	POSTGRES_DB             = "POSTGRES_DB"
 	DATABASE_SAVE_MESSAGES  = "DATABASE_SAVE_MESSAGES"
 	GLOBAL_API_KEY          = "GLOBAL_API_KEY"
-	WA_DEBUG                = "DEBUG_ENABLED"
-	LOGTYPE                 = "LOG_TYPE"
+	// WADEBUG and LOGTYPE are the names every example and the documentation use. The code
+	// used to read DEBUG_ENABLED and LOG_TYPE instead, so setting the documented ones had
+	// no effect; those two stay as fallbacks.
+	WA_DEBUG                = "WADEBUG"
+	LOGTYPE                 = "LOGTYPE"
+	WA_DEBUG_LEGACY         = "DEBUG_ENABLED"
+	LOGTYPE_LEGACY          = "LOG_TYPE"
 	WEBHOOKFILES            = "WEBHOOK_FILES"
 	CONNECT_ON_STARTUP      = "CONNECT_ON_STARTUP"
 	REREQUEST_FROM_PHONE    = "REREQUEST_FROM_PHONE"
