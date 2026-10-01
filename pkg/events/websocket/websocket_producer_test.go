@@ -1,6 +1,7 @@
 package websocket_producer
 
 import (
+	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -136,5 +137,35 @@ func TestMultipleSubscribersPerInstance(t *testing.T) {
 	_ = b.SetReadDeadline(time.Now().Add(2 * time.Second))
 	if _, _, err := b.ReadMessage(); err != nil {
 		t.Fatalf("remaining subscriber stopped receiving: %v", err)
+	}
+}
+
+// Close sends a proper close frame (going away) instead of cutting the connections.
+func TestCloseTellsSubscribersTheServerIsGoing(t *testing.T) {
+	p := newTestProducer(t)
+	srv := newServer(p)
+	defer srv.Close()
+
+	a := dial(t, srv, "/?instance=inst1")
+	b := dial(t, srv, "/")
+	waitFor(t, func() bool {
+		p.clientsMux.RLock()
+		defer p.clientsMux.RUnlock()
+		return len(p.clients["inst1"]) == 1 && len(p.broadcast) == 1
+	})
+
+	if err := p.Close(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	for name, c := range map[string]*websocket.Conn{"instance": a, "broadcast": b} {
+		_ = c.SetReadDeadline(time.Now().Add(2 * time.Second))
+		_, _, err := c.ReadMessage()
+		if !websocket.IsCloseError(err, websocket.CloseGoingAway) {
+			t.Fatalf("%s subscriber: want a going-away close frame, got %v", name, err)
+		}
+	}
+	// Nothing is left to write to.
+	if err := p.Produce("inst1.message", []byte("x"), "inst1", ""); err != nil {
+		t.Fatalf("produce after close: %v", err)
 	}
 }

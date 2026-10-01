@@ -2,6 +2,7 @@ package webhook_producer
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -87,6 +88,15 @@ type webhookProducer struct {
 	sent    uint64
 	failed  uint64
 	dropped uint64
+
+	// draining is closed when Close starts: retries no longer wait between attempts (the
+	// remaining ones run back to back), so a receiver that is down is given up on in
+	// moments instead of holding the shutdown for the whole backoff.
+	// stop is closed when Close gives up waiting: retries fail at once.
+	draining  chan struct{}
+	drainOnce sync.Once
+	stop      chan struct{}
+	stopOnce  sync.Once
 }
 
 func envInt(name string, def int) int {
@@ -109,6 +119,28 @@ func NewWebhookProducer(
 		workers:       envInt("WEBHOOK_QUEUE_WORKERS", defaultWorkers),
 		backoff:       defaultBackoff,
 		queues:        map[string]*destQueue{},
+		draining:      make(chan struct{}),
+		stop:          make(chan struct{}),
+	}
+}
+
+// Close waits for the queued events to be delivered, until ctx expires; then it stops the
+// retries and reports what was left. A deploy used to lose every event still queued.
+func (p *webhookProducer) Close(ctx context.Context) error {
+	p.drainOnce.Do(func() { close(p.draining) })
+	tick := time.NewTicker(50 * time.Millisecond)
+	defer tick.Stop()
+	for {
+		st := p.WebhookStats()
+		if st.Pending+st.InFlight == 0 {
+			return nil
+		}
+		select {
+		case <-tick.C:
+		case <-ctx.Done():
+			p.stopOnce.Do(func() { close(p.stop) })
+			return fmt.Errorf("%d webhook event(s) not delivered before shutdown", st.Pending+st.InFlight)
+		}
 	}
 }
 
@@ -232,7 +264,15 @@ func (p *webhookProducer) sendWithRetry(url string, body []byte, attempts int, u
 
 		// No point waiting after the last attempt.
 		if i < attempts-1 {
-			time.Sleep(p.wait(i))
+			t := time.NewTimer(p.wait(i))
+			select {
+			case <-t.C:
+			case <-p.draining: // shutting down: next attempt now
+				t.Stop()
+			case <-p.stop:
+				t.Stop()
+				return false
+			}
 		}
 	}
 	p.loggerWrapper.GetLogger(userID).LogError("[%s] webhook failed after %d attempt(s) - url: %s", userID, attempts, url)

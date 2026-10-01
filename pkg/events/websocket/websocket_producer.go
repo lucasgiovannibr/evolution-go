@@ -1,6 +1,7 @@
 package websocket_producer
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"sync"
@@ -91,6 +92,30 @@ func ServeWs(w http.ResponseWriter, r *http.Request, instanceId string, producer
 			}
 		}
 	}()
+}
+
+// Close tells every subscriber the server is going away and closes the connections: the
+// HTTP server's Shutdown does not touch hijacked (upgraded) connections, so they used to
+// keep the process waiting or be cut without a word.
+func (p *websocketProducer) Close(ctx context.Context) error {
+	p.clientsMux.Lock()
+	var all []*wsConn
+	all = append(all, p.broadcast...)
+	for _, list := range p.clients {
+		all = append(all, list...)
+	}
+	p.broadcast = nil
+	p.clients = make(map[string][]*wsConn)
+	p.clientsMux.Unlock()
+
+	msg := websocket.FormatCloseMessage(websocket.CloseGoingAway, "server shutting down")
+	for _, c := range all {
+		c.writeMu.Lock()
+		_ = c.conn.WriteControl(websocket.CloseMessage, msg, time.Now().Add(time.Second))
+		c.writeMu.Unlock()
+		_ = c.conn.Close()
+	}
+	return nil
 }
 
 func (p *websocketProducer) AddBroadcastClient(conn *wsConn) {

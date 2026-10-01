@@ -21,6 +21,7 @@ services:
   evolution-go:
     image: evolution-go-fork:test
     restart: unless-stopped
+    stop_grace_period: 30s
     depends_on:
       postgres:
         condition: service_healthy

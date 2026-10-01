@@ -87,7 +87,7 @@ func init() {
 	}
 }
 
-func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext, messageRepository message_repository.MessageRepository) *gin.Engine {
+func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.Config, conn *amqp.Connection, exPath string, runtimeCtx *core.RuntimeContext, messageRepository message_repository.MessageRepository) (*gin.Engine, func(context.Context)) {
 	killChannel := safemap.New[chan bool]()
 	clientPointer := safemap.New[*whatsmeow.Client]()
 
@@ -295,7 +295,24 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 		websocket_producer.ServeWs(c.Writer, c.Request, instanceId, websocketProducer)
 	})
 
-	return r
+	// What to do, in this order, when the process is told to stop (see main).
+	stop := func(ctx context.Context) {
+		// 1. No client reconnects or restarts from here on, and every one is disconnected.
+		whatsmeowService.Shutdown(ctx)
+		// 2. What those clients (and the last handlers) produced reaches the database...
+		messageRepository.Close()
+		// 3. ...and the outputs: the webhook queues are drained (until ctx), then the
+		// websocket subscribers are told, then the brokers are flushed and closed.
+		for _, p := range []producer_interfaces.Producer{webhookProducer, websocketProducer, rabbitmqProducer, natsProducer} {
+			if c, ok := p.(producer_interfaces.Closer); ok {
+				if err := c.Close(ctx); err != nil {
+					logger.LogWarn("[SHUTDOWN] %v", err)
+				}
+			}
+		}
+	}
+
+	return r, stop
 }
 
 // usersSQLDB returns the *sql.DB behind the users gorm handle (nil if unavailable).
@@ -482,7 +499,7 @@ func main() {
 	// Owns the background writer that batches message persistence; closed on shutdown.
 	messageRepository := message_repository.NewMessageRepository(db)
 
-	r := setupRouter(db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx, messageRepository)
+	r, stopServices := setupRouter(db, authDB, sqliteDB, cfg, conn, exPath, runtimeCtx, messageRepository)
 
 	// Graceful shutdown with heartbeat
 	heartbeatCtx, heartbeatCancel := context.WithCancel(context.Background())
@@ -526,9 +543,11 @@ func main() {
 		logger.LogError("[SHUTDOWN] Server forced to shutdown: %v", err)
 	}
 
-	// Write the messages still queued for the database (the HTTP server is already
-	// stopped and the clients are closing; nothing new should arrive).
-	messageRepository.Close()
+	// Clients, message writer, webhook queues, brokers: in that order, with a deadline
+	// (docker's default grace period is 10 s; the compose files give it 30).
+	stopCtx, stopCancel := context.WithTimeout(context.Background(), 15*time.Second)
+	defer stopCancel()
+	stopServices(stopCtx)
 
 	// Write the log lines still queued for the disk.
 	logger_wrapper.CloseAll()
