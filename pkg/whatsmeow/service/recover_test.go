@@ -8,7 +8,7 @@ import (
 )
 
 func TestRecoverAndLogContainsPanic(t *testing.T) {
-	lw := logger_wrapper.NewLoggerManager(&config.Config{LogDirectory: t.TempDir()})
+	lw := logger_wrapper.NewLoggerManagerForTest(t, &config.Config{LogDirectory: t.TempDir()})
 
 	done := make(chan struct{})
 	go func() {

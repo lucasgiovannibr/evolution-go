@@ -151,7 +151,7 @@ func TestRemainingEventGroupsAndDelivery(t *testing.T) {
 
 	cfg := &config.Config{LogDirectory: t.TempDir()}
 	webhook := &recordingProducer{}
-	w := &whatsmeowService{config: cfg, loggerWrapper: logger_wrapper.NewLoggerManager(cfg), webhookProducer: webhook}
+	w := &whatsmeowService{config: cfg, loggerWrapper: logger_wrapper.NewLoggerManagerForTest(t, cfg), webhookProducer: webhook}
 	send := func(subscription, event string) bool {
 		before := webhook.count()
 		inst := &instance_model.Instance{Id: "a", Events: subscription, Webhook: "http://example.invalid/hook"}

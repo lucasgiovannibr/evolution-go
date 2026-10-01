@@ -71,7 +71,7 @@ func pngBytes(t *testing.T) []byte {
 
 func prepService(t *testing.T) *sendService {
 	cfg := &config.Config{LogDirectory: t.TempDir()}
-	return &sendService{config: cfg, loggerWrapper: logger_wrapper.NewLoggerManager(cfg)}
+	return &sendService{config: cfg, loggerWrapper: logger_wrapper.NewLoggerManagerForTest(t, cfg)}
 }
 
 func TestPrepareMediaFile(t *testing.T) {

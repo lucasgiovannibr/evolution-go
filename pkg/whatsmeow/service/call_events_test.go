@@ -15,7 +15,7 @@ func newCallEventService(t *testing.T, webhook *recordingProducer, instance *ins
 	cfg := &config.Config{LogDirectory: t.TempDir()}
 	w := &whatsmeowService{
 		config:          cfg,
-		loggerWrapper:   logger_wrapper.NewLoggerManager(cfg),
+		loggerWrapper:   logger_wrapper.NewLoggerManagerForTest(t, cfg),
 		webhookProducer: webhook,
 		myClientPointer: safemap.New[*MyClient](),
 	}
