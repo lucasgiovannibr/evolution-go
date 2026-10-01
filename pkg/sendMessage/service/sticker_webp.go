@@ -25,6 +25,8 @@ import (
 	"time"
 
 	"github.com/chai2010/webp"
+
+	"github.com/evolution-foundation/evolution-go/pkg/utils"
 )
 
 const (
@@ -39,7 +41,7 @@ const (
 	stickerFetchTimeout = 30 * time.Second
 )
 
-var stickerFetchClient = &http.Client{Timeout: stickerFetchTimeout}
+var stickerFetchClient = utils.NewPublicClient(stickerFetchTimeout)
 
 // stickerWebP fetches the sticker URL and returns WebP bytes ready to upload.
 //

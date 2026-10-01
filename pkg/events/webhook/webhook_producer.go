@@ -15,6 +15,7 @@ import (
 
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
+	"github.com/evolution-foundation/evolution-go/pkg/utils"
 )
 
 // Webhook delivery goes through one bounded queue per destination URL.
@@ -102,7 +103,7 @@ func NewWebhookProducer(
 	return &webhookProducer{
 		url:           url,
 		loggerWrapper: loggerWrapper,
-		httpClient:    &http.Client{Timeout: webhookRequestTimeout},
+		httpClient:    utils.NewWebhookClient(webhookRequestTimeout),
 		maxEvents:     envInt("WEBHOOK_QUEUE_MAX_EVENTS", defaultMaxEvents),
 		maxBytes:      int64(envInt("WEBHOOK_QUEUE_MAX_MB", defaultMaxMB)) << 20,
 		workers:       envInt("WEBHOOK_QUEUE_WORKERS", defaultWorkers),
