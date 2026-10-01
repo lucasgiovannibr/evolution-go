@@ -100,6 +100,10 @@ type Config struct {
 	LogMaxAge     int
 	LogDirectory  string
 	LogCompress   bool
+	// LogLevel is the minimum severity written to the instance logs and the console
+	// (LOG_LEVEL: debug, info, warn, error; default info). DEBUG lines used to be written
+	// always.
+	LogLevel string
 	// LogKeepDeleted keeps the log directory of an instance after it is deleted. Off by
 	// default: those logs hold the instance token, JIDs and message metadata.
 	LogKeepDeleted bool
@@ -500,6 +504,7 @@ func Load() *Config {
 		LogDirectory:         logDirectory,
 		LogCompress:          logCompress,
 		LogKeepDeleted:       os.Getenv(config_env.LOG_KEEP_DELETED) == "true",
+		LogLevel:             os.Getenv(config_env.LOG_LEVEL),
 	}
 
 	minioEnabled := os.Getenv(config_env.MINIO_ENABLED) == "true"

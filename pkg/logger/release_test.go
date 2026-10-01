@@ -11,8 +11,10 @@ import (
 func TestReleaseFreesTheInstanceLogger(t *testing.T) {
 	dir := t.TempDir()
 	lm := NewLoggerManager(&config.Config{LogDirectory: dir, LogMaxSize: 1, LogMaxBackups: 1, LogMaxAge: 1})
+	t.Cleanup(lm.Close)
 
 	lm.GetLogger("inst-1").LogInfo("first line")
+	lm.GetLogger("inst-1").Flush()
 	logFile := filepath.Join(dir, "inst-1", "instance.log")
 	before, err := os.ReadFile(logFile)
 	if err != nil || len(before) == 0 {
@@ -30,6 +32,7 @@ func TestReleaseFreesTheInstanceLogger(t *testing.T) {
 
 	// Logging after the release must not resurrect a file logger nor touch the file.
 	lm.GetLogger("inst-1").LogInfo("after release")
+	lm.GetLogger("inst-1").Flush()
 	after, _ := os.ReadFile(logFile)
 	if string(after) != string(before) {
 		t.Fatal("a released instance must not write to its log file any more")
@@ -43,6 +46,7 @@ func TestReleaseFreesTheInstanceLogger(t *testing.T) {
 
 	// Other instances are unaffected.
 	lm.GetLogger("inst-2").LogInfo("still works")
+	lm.GetLogger("inst-2").Flush()
 	if _, err := os.Stat(filepath.Join(dir, "inst-2", "instance.log")); err != nil {
 		t.Fatalf("other instances must keep their file logger: %v", err)
 	}
@@ -51,9 +55,12 @@ func TestReleaseFreesTheInstanceLogger(t *testing.T) {
 func TestRemoveFilesDeletesTheLogDirectory(t *testing.T) {
 	dir := t.TempDir()
 	lm := NewLoggerManager(&config.Config{LogDirectory: dir, LogMaxSize: 1, LogMaxBackups: 1, LogMaxAge: 1})
+	t.Cleanup(lm.Close)
 
 	lm.GetLogger("inst-1").LogInfo("token and jids live here")
+	lm.GetLogger("inst-1").Flush()
 	lm.GetLogger("inst-2").LogInfo("another instance")
+	lm.GetLogger("inst-2").Flush()
 
 	lm.Release("inst-1")
 	if err := lm.RemoveFiles("inst-1"); err != nil {
@@ -70,8 +77,10 @@ func TestRemoveFilesDeletesTheLogDirectory(t *testing.T) {
 func TestRemoveFilesKeepsLogsWhenAsked(t *testing.T) {
 	dir := t.TempDir()
 	lm := NewLoggerManager(&config.Config{LogDirectory: dir, LogMaxSize: 1, LogMaxBackups: 1, LogMaxAge: 1, LogKeepDeleted: true})
+	t.Cleanup(lm.Close)
 
 	lm.GetLogger("inst-1").LogInfo("kept")
+	lm.GetLogger("inst-1").Flush()
 	lm.Release("inst-1")
 	if err := lm.RemoveFiles("inst-1"); err != nil {
 		t.Fatalf("RemoveFiles: %v", err)
@@ -84,6 +93,7 @@ func TestRemoveFilesKeepsLogsWhenAsked(t *testing.T) {
 func TestRemoveFilesRefusesPathsOutsideTheLogDirectory(t *testing.T) {
 	dir := t.TempDir()
 	lm := NewLoggerManager(&config.Config{LogDirectory: dir})
+	t.Cleanup(lm.Close)
 	for _, id := range []string{"", ".", "..", "../x", "a/b", `a\b`} {
 		if id == `a\b` && string(filepath.Separator) != `\` {
 			continue

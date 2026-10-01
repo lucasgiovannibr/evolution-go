@@ -51,7 +51,7 @@ type EditLabelStruct struct {
 
 func (l *labelService) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {
 	client := l.clientPointer.Get(instanceId)
-	l.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
+	l.loggerWrapper.GetLogger(instanceId).LogDebug("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
 
 	if client == nil {
 		l.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] No client found, attempting to start new instance", instanceId)
@@ -82,7 +82,7 @@ func (l *labelService) ensureClientConnected(instanceId string) (*whatsmeow.Clie
 		return nil, errors.New("client disconnected")
 	}
 
-	l.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Client successfully validated - Connected: %v", instanceId, client.IsConnected())
+	l.loggerWrapper.GetLogger(instanceId).LogDebug("[%s] Client successfully validated - Connected: %v", instanceId, client.IsConnected())
 	return client, nil
 }
 
