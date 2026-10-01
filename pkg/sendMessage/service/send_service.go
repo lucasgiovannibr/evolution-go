@@ -1704,29 +1704,6 @@ func (s *sendService) sendPollWithRetry(data *PollStruct, instance *instance_mod
 	return nil, fmt.Errorf("failed to send poll after %d attempts", maxRetries)
 }
 
-func convertToWebP(imageData string) ([]byte, error) {
-	var img image.Image
-	var err error
-
-	raw, err := utils.DownloadBytes(imageData, utils.MaxImageDownload)
-	if err != nil {
-		return nil, fmt.Errorf("failed to fetch image from URL: %v", err)
-	}
-
-	img, _, err = image.Decode(bytes.NewReader(raw))
-	if err != nil {
-		return nil, fmt.Errorf("failed to decode image: %v", err)
-	}
-
-	var webpBuffer bytes.Buffer
-	err = webp.Encode(&webpBuffer, img, &webp.Options{Lossless: false, Quality: 80})
-	if err != nil {
-		return nil, fmt.Errorf("failed to encode image to WebP: %v", err)
-	}
-
-	return webpBuffer.Bytes(), nil
-}
-
 func (s *sendService) SendSticker(data *StickerStruct, instance *instance_model.Instance) (*MessageSendStruct, error) {
 	client, err := s.ensureClientConnected(instance.Id)
 	if err != nil {
@@ -2201,10 +2178,6 @@ func (s *sendService) SendButton(data *ButtonStruct, instance *instance_model.In
 	}
 
 	return message, nil
-}
-
-func stringPointer(s string) *string {
-	return &s
 }
 
 // buildCarouselButton maps a carousel button to its native-flow name and

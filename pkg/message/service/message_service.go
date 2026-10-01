@@ -231,7 +231,7 @@ func (m *messageService) ChatPresence(data *ChatPresenceStruct, instance *instan
 		return "", err
 	}
 
-	var ts time.Time
+	ts := time.Now()
 
 	recipient, ok := utils.ParseJID(data.Number)
 	if !ok {
@@ -313,7 +313,7 @@ func (m *messageService) MarkRead(data *MarkReadStruct, instance *instance_model
 		return "", err
 	}
 
-	var ts time.Time
+	ts := time.Now()
 
 	jid, ok := utils.ParseJID(data.Number)
 	if !ok {
@@ -340,7 +340,7 @@ func (m *messageService) MarkPlayed(data *MarkPlayedStruct, instance *instance_m
 		return "", err
 	}
 
-	var ts time.Time
+	ts := time.Now()
 
 	jid, ok := utils.ParseJID(data.Number)
 	if !ok {
@@ -367,7 +367,7 @@ func (m *messageService) DownloadMedia(data *DownloadMediaStruct, instance *inst
 		return nil, "", err
 	}
 
-	var ts time.Time
+	ts := time.Now()
 
 	msg := data.Message
 
@@ -455,7 +455,7 @@ func (m *messageService) GetMessageStatus(data *MessageStatusStruct, instance *i
 		return nil, "", err
 	}
 
-	var ts time.Time
+	ts := time.Now()
 
 	result, err := m.messageRepository.GetMessageByID(data.Id)
 	if err != nil {

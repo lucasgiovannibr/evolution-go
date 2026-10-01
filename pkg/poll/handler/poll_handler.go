@@ -2,6 +2,7 @@ package poll_handler
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
@@ -82,6 +83,10 @@ func (h *PollHandler) GetPollResults(c *gin.Context) {
 	// Buscar resultados do banco
 	results, err := h.pollService.GetPollResults(c.Request.Context(), pollMessageID, instanceID)
 	if err != nil {
+		if errors.Is(err, poll_service.ErrStorageUnavailable) {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": err.Error()})
+			return
+		}
 		h.loggerWrapper.GetLogger("poll-handler").LogError("[POLL] Error fetching results: %v", err)
 		c.JSON(http.StatusInternalServerError, gin.H{
 			"error": "Failed to fetch poll results",
