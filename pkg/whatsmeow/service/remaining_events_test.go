@@ -106,6 +106,7 @@ func TestRotateADVSecretIsNotLoggedWithItsContent(t *testing.T) {
 	case <-time.After(150 * time.Millisecond):
 	}
 
+	mycli.loggerWrapper.GetLogger("inst-1").Flush() // the log file is written by a goroutine
 	logs, _ := os.ReadFile(filepath.Join(cfg.LogDirectory, "inst-1", "instance.log"))
 	if strings.Contains(string(logs), "SECRET-VALUE") {
 		t.Fatalf("the ADV secrets were written to the log:\n%s", logs)

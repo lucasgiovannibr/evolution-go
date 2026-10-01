@@ -151,7 +151,7 @@ func (u *userService) ensureClientConnectedCtx(ctx context.Context, instanceId s
 	}
 
 	client := u.clientPointer.Get(instanceId)
-	u.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
+	u.loggerWrapper.GetLogger(instanceId).LogDebug("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
 
 	if client == nil {
 		u.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] No client found, attempting to start new instance", instanceId)
@@ -174,7 +174,7 @@ func (u *userService) ensureClientConnectedCtx(ctx context.Context, instanceId s
 		return nil, errors.New("client disconnected")
 	}
 
-	u.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Client successfully validated - Connected: %v", instanceId, client.IsConnected())
+	u.loggerWrapper.GetLogger(instanceId).LogDebug("[%s] Client successfully validated - Connected: %v", instanceId, client.IsConnected())
 	return client, nil
 }
 

@@ -129,7 +129,7 @@ type ForceReconnectStruct struct {
 func (i *instances) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {
 	logger := i.loggerWrapper.GetLogger(instanceId)
 	client := i.clientPointer.Get(instanceId)
-	logger.LogInfo("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
+	logger.LogDebug("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
 
 	if client == nil {
 		logger.LogInfo("[%s] No client found, attempting to start new instance", instanceId)
@@ -160,7 +160,7 @@ func (i *instances) ensureClientConnected(instanceId string) (*whatsmeow.Client,
 		return nil, errors.New("client disconnected")
 	}
 
-	logger.LogInfo("[%s] Client successfully validated - Connected: %v", instanceId, client.IsConnected())
+	logger.LogDebug("[%s] Client successfully validated - Connected: %v", instanceId, client.IsConnected())
 	return client, nil
 }
 

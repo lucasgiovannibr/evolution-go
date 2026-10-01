@@ -525,5 +525,8 @@ func main() {
 		logger.LogError("[SHUTDOWN] Server forced to shutdown: %v", err)
 	}
 
+	// Write the log lines still queued for the disk.
+	logger_wrapper.CloseAll()
+
 	logger.LogInfo("[SHUTDOWN] Server exited")
 }
