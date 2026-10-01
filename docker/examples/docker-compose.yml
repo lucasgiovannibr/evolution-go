@@ -5,6 +5,7 @@ services:
     image: evoapicloud/evolution-go:latest
     container_name: evolution-go
     restart: unless-stopped
+    stop_grace_period: 30s # time to disconnect clients and flush queues on stop
     ports:
       - "4000:4000"
     environment:

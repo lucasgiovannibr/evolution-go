@@ -58,6 +58,9 @@ import (
 type WhatsmeowService interface {
 	StartClient(clientData *ClientData)
 	ConnectOnStartup(clientName string)
+	// Shutdown disconnects every client and stops anything from (re)starting one; the
+	// stored connection state is kept so the instances come back on the next start.
+	Shutdown(ctx context.Context)
 	StartInstance(instanceId string) error
 	ReconnectClient(instanceId string) error
 	ClearInstanceCache(instanceId string, token string) error
@@ -1276,6 +1279,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	case *events.Connected, *events.PushNameSetting:
 		if _, isConnected := rawEvt.(*events.Connected); isConnected {
 			mycli.connectedAt.Store(time.Now().UnixNano())
+			autoReconnect.connected(mycli.userID, time.Now())
 		}
 		mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] events.Connected to Whatsapp for user '%s'", mycli.userID, mycli.WAClient.Store.PushName)
 		if len(mycli.WAClient.Store.PushName) > 0 {
@@ -2468,6 +2472,11 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.Instance.Id, err)
 		}
 	case *events.Disconnected:
+		if shuttingDown.Load() {
+			// We are the ones closing it: the instance must stay marked connected so the
+			// next start brings it back, and nothing may reconnect it now.
+			return
+		}
 		doWebhook = true
 		postMap["event"] = "Disconnected"
 
@@ -2482,13 +2491,8 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 			mycli.loggerWrapper.GetLogger(mycli.userID).LogError("[%s] Error updating instance: %s", mycli.Instance.Id, err)
 		}
 
-		// Trigger instance restart via websocket-capable service (non-blocking)
-		go func(instanceID string) {
-			mycli.loggerWrapper.GetLogger(instanceID).LogInfo("[%s] Disconnected detected, restarting instance", instanceID)
-			if err := mycli.service.ReconnectClient(instanceID); err != nil {
-				mycli.loggerWrapper.GetLogger(instanceID).LogError("[%s] Failed to restart instance: %v", instanceID, err)
-			}
-		}(mycli.userID)
+		// Restart the instance (paced by the reconnect backoff, non-blocking)
+		mycli.scheduleAutoReconnect("Disconnected detected")
 	case *events.KeepAliveTimeout:
 		doWebhook = true
 		postMap["event"] = "KeepAliveTimeout"
@@ -2507,12 +2511,7 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 		// uses. Exact match keeps counts 4, 5, ... from piling up restarts while
 		// one is already underway (ReconnectClient also ignores duplicates).
 		if evt.ErrorCount == 3 {
-			go func(instanceID string) {
-				mycli.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] 3 consecutive keepalive timeouts, restarting instance", instanceID)
-				if err := mycli.service.ReconnectClient(instanceID); err != nil {
-					mycli.loggerWrapper.GetLogger(instanceID).LogError("[%s] Failed to restart instance: %v", instanceID, err)
-				}
-			}(mycli.userID)
+			mycli.scheduleAutoReconnect("3 consecutive keepalive timeouts")
 		}
 	case *events.KeepAliveRestored:
 		doWebhook = true
@@ -2855,7 +2854,13 @@ func (w whatsmeowService) ConnectOnStartup(clientName string) {
 
 	w.loggerWrapper.GetLogger(clientName).LogInfo("[%s] Found %d connected instances", clientName, len(instances))
 
-	for _, instance := range instances {
+	stagger := startupStagger()
+	for i, instance := range instances {
+		// Pace the boot: see startupStagger.
+		if i > 0 && !sleepOrShutdown(staggerWithJitter(stagger)) {
+			w.loggerWrapper.GetLogger(clientName).LogInfo("[%s] Shutting down, the remaining instances are not started", clientName)
+			return
+		}
 		w.loggerWrapper.GetLogger(clientName).LogInfo("[%s] Starting client for user '%s'", clientName, instance.Id)
 
 		err := w.StartInstance(instance.Id)
@@ -3181,6 +3186,7 @@ func (w whatsmeowService) ClearInstanceCache(instanceId string, token string) er
 	w.userInfoCache.Delete(token)
 	forgetInstanceChatTimers(instanceId)
 	groupInfos.forgetInstance(instanceId)
+	autoReconnect.forget(instanceId)
 
 	// Limpar myClientPointer se existir
 	if _, exists := w.myClientPointer.Lookup(instanceId); exists {

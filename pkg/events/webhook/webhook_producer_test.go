@@ -1,6 +1,7 @@
 package webhook_producer
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -26,6 +27,8 @@ func newTestProducer(t *testing.T, timeout time.Duration) *webhookProducer {
 		workers:       1,
 		backoff:       []time.Duration{time.Millisecond},
 		queues:        map[string]*destQueue{},
+		draining:      make(chan struct{}),
+		stop:          make(chan struct{}),
 	}
 }
 
@@ -286,5 +289,78 @@ func TestQueueUsesSeveralWorkers(t *testing.T) {
 
 	if got := peak.Load(); got < 2 || got > 4 {
 		t.Fatalf("peak concurrency %d, want between 2 and 4", got)
+	}
+}
+
+// Close waits for what is queued: a deploy used to lose every pending event.
+func TestCloseDrainsQueuedEvents(t *testing.T) {
+	var got atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		time.Sleep(20 * time.Millisecond)
+		got.Add(1)
+	}))
+	defer srv.Close()
+
+	p := newTestProducer(t, time.Second)
+	for i := 0; i < 10; i++ {
+		_ = p.Produce("inst.message", []byte(`{}`), srv.URL, "u")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := p.Close(ctx); err != nil {
+		t.Fatalf("close: %v", err)
+	}
+	if got.Load() != 10 {
+		t.Fatalf("delivered %d of 10 before Close returned", got.Load())
+	}
+}
+
+// A receiver that is down must not keep the process from stopping: once Close starts, the
+// retries stop waiting between attempts, and at the deadline they stop altogether.
+func TestCloseDoesNotWaitOutTheBackoffOfADeadReceiver(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer srv.Close()
+
+	p := newTestProducer(t, time.Second)
+	p.backoff = []time.Duration{time.Minute, time.Minute} // would retry for minutes
+	_ = p.Produce("inst.message", []byte(`{}`), srv.URL, "u")
+	waitFor(t, "the first attempt", func() bool { return p.WebhookStats().InFlight == 1 })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	start := time.Now()
+	err := p.Close(ctx)
+	if time.Since(start) > 2*time.Second {
+		t.Fatalf("Close waited %v for a dead receiver", time.Since(start))
+	}
+	if err != nil {
+		t.Fatalf("the event was given up on, nothing is left: %v", err)
+	}
+	if st := p.WebhookStats(); st.Failed != 1 {
+		t.Fatalf("the undelivered event must be counted as failed: %+v", st)
+	}
+}
+
+// A receiver that hangs is cut at the deadline.
+func TestCloseGivesUpAtTheDeadline(t *testing.T) {
+	release := make(chan struct{})
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { <-release }))
+	defer srv.Close()
+	defer close(release)
+
+	p := newTestProducer(t, 10*time.Second)
+	_ = p.Produce("inst.message", []byte(`{}`), srv.URL, "u")
+	waitFor(t, "the attempt", func() bool { return p.WebhookStats().InFlight == 1 })
+
+	ctx, cancel := context.WithTimeout(context.Background(), 300*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	if err := p.Close(ctx); err == nil {
+		t.Fatal("expected an error: the event could not be delivered")
+	}
+	if time.Since(start) > 2*time.Second {
+		t.Fatalf("Close took %v", time.Since(start))
 	}
 }
