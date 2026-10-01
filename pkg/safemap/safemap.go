@@ -1,6 +1,6 @@
 // Package safemap holds the process-wide maps that are shared across goroutines.
 //
-// WHY THIS EXISTS
+// # WHY THIS EXISTS
 //
 // The three state maps of the process (clientPointer, myClientPointer and
 // killChannel) are created once at startup and passed BY REFERENCE into eleven
@@ -19,7 +19,7 @@
 // within seconds, but every number was offline in the meantime, and it repeats
 // on every restart that brings up more than a couple of instances at once.
 //
-// WHY A SEPARATE PACKAGE, AND WHY GENERICS
+// # WHY A SEPARATE PACKAGE, AND WHY GENERICS
 //
 // MyClient lives in pkg/whatsmeow/service. If the safe type lived there, the
 // other ten packages would have to import that package and an import cycle

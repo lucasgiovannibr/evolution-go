@@ -1,9 +1,9 @@
 package community_service
 
 import (
-	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"context"
 	"errors"
+	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"

@@ -30,8 +30,8 @@ func TestParseDisappearingTimer(t *testing.T) {
 func TestSetDisappearingValidatesBeforeTouchingTheClient(t *testing.T) {
 	c := &chatService{} // no client: reaching it would panic
 	for name, d := range map[string]*DisappearingStruct{
-		"no timer":  {Chat: "5511999990001"},
-		"bad chat":  {Chat: "@@", Timer: "24h"},
+		"no timer":   {Chat: "5511999990001"},
+		"bad chat":   {Chat: "@@", Timer: "24h"},
 		"newsletter": {Chat: "123@newsletter", Timer: "24h"},
 	} {
 		err := c.SetDisappearing(d, nil)

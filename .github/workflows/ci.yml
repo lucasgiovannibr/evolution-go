@@ -44,6 +44,12 @@ jobs:
         with:
           go-version-file: go.mod
 
+      # pkg/core is the license runtime and is left as it is.
+      - name: gofmt
+        run: |
+          files=$(gofmt -l $(git ls-files '*.go' | grep -v '^pkg/core/'))
+          if [ -n "$files" ]; then echo "not gofmt-formatted:"; echo "$files"; exit 1; fi
+
       - run: go build ./...
       # go build never compiles _test.go files; vet does.
       - run: go vet ./...
@@ -53,3 +59,48 @@ jobs:
       # Fails only on vulnerabilities the code can actually reach.
       - run: go install golang.org/x/vuln/cmd/govulncheck@latest
       - run: govulncheck ./...
+
+  # Bugs and deprecated APIs (staticcheck SA*), dead code, ineffectual assignments: .golangci.yml
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - uses: golangci/golangci-lint-action@v8
+        with:
+          version: latest
+
+  # The manager panel (React): types, tests and a build that must still succeed.
+  manager:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: manager
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: manager/package-lock.json
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      # The audited tree is the production one: a vulnerable runtime dependency fails the build.
+      - run: npm audit --omit=dev --audit-level=high
+
+  # The image that is published: its OS packages and the Go binary's modules.
+  image:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t evolution-go:ci .
+      - uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: evolution-go:ci
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
