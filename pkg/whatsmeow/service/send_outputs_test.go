@@ -36,7 +36,7 @@ func (f *failingProducer) called() int {
 func newOutputsService(t *testing.T) *whatsmeowService {
 	t.Helper()
 	cfg := &config.Config{LogDirectory: t.TempDir()}
-	return &whatsmeowService{config: cfg, loggerWrapper: logger_wrapper.NewLoggerManager(cfg)}
+	return &whatsmeowService{config: cfg, loggerWrapper: logger_wrapper.NewLoggerManagerForTest(t, cfg)}
 }
 
 // Reproduced on the test stack: rabbitmqEnable set and no broker => the webhook of the

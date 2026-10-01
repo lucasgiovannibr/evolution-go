@@ -45,6 +45,12 @@ type Config struct {
 	MinioUseSSL          bool
 	MinioEnabled         bool
 	MinioRegion          string
+	// MinioPublicBucket makes the bucket world-readable (MINIO_PUBLIC_BUCKET=true). Off by
+	// default: it used to be applied silently, replacing the bucket's own policy.
+	MinioPublicBucket bool
+	// MinioURLTTL is how long the presigned media URLs work (MINIO_URL_TTL_HOURS, default
+	// and maximum 168).
+	MinioURLTTL time.Duration
 	WhatsappVersionMajor int
 	WhatsappVersionMinor int
 	WhatsappVersionPatch int
@@ -562,6 +568,11 @@ func loadMinioConfig(config *Config) {
 	config.MinioBucket = minioBucket
 	config.MinioUseSSL = minioUseSSL
 	config.MinioRegion = minioRegion
+	config.MinioPublicBucket = os.Getenv(config_env.MINIO_PUBLIC_BUCKET) == "true"
+	config.MinioURLTTL = 7 * 24 * time.Hour
+	if hours, err := strconv.Atoi(strings.TrimSpace(os.Getenv(config_env.MINIO_URL_TTL_HOURS))); err == nil && hours > 0 && hours < 7*24 {
+		config.MinioURLTTL = time.Duration(hours) * time.Hour
+	}
 }
 
 // getenvAny returns the first of the named variables that is set (not empty).

@@ -19,7 +19,7 @@ func newMockPollService(t *testing.T) (*pollService, sqlmock.Sqlmock) {
 	}
 	t.Cleanup(func() { db.Close() })
 	cfg := &config.Config{LogDirectory: t.TempDir()}
-	return &pollService{db: db, loggerWrapper: logger_wrapper.NewLoggerManager(cfg)}, mock
+	return &pollService{db: db, loggerWrapper: logger_wrapper.NewLoggerManagerForTest(t, cfg)}, mock
 }
 
 // A vote is unique per instance: two instances that receive the same poll must each

@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"net/url"
+	"path"
 	"strings"
 	"time"
 
@@ -13,14 +14,48 @@ import (
 	"github.com/minio/minio-go/v7/pkg/credentials"
 )
 
-type MinioMediaStorage struct {
-	client     *minio.Client
-	bucketName string
-	baseURL    string
+// mediaFolder is the prefix of every object this service writes. Below it each instance has
+// its own folder: message ids are not unique across accounts (two instances in the same
+// group receive the same message), so a flat <messageID>.<ext> let one instance overwrite
+// another's object, and made it impossible to remove one instance's files.
+const mediaFolder = "evolution-go-medias"
+
+// maxPresignTTL is the longest an S3 presigned URL can live (7 days).
+const maxPresignTTL = 7 * 24 * time.Hour
+
+// Options configure the storage.
+type Options struct {
+	Endpoint, AccessKey, SecretKey, Bucket, Region string
+	UseSSL                                         bool
+	// PublicBucket makes every object of the bucket world-readable (MINIO_PUBLIC_BUCKET=true).
+	// It used to be done unconditionally: SetBucketPolicy replaces the policy the bucket
+	// already had, and exposed everything in it, media of every customer included.
+	PublicBucket bool
+	// URLTTL is how long the presigned URLs of stored media work (default and maximum 7
+	// days).
+	URLTTL time.Duration
 }
 
-func setBucketPolicy(client *minio.Client, bucketName string) error {
-	policy := `{
+// objectStore is the part of the MinIO client this package uses, so it can be tested.
+type objectStore interface {
+	BucketExists(ctx context.Context, bucket string) (bool, error)
+	MakeBucket(ctx context.Context, bucket string, opts minio.MakeBucketOptions) error
+	SetBucketPolicy(ctx context.Context, bucket, policy string) error
+	PutObject(ctx context.Context, bucket, object string, data []byte, contentType string) error
+	StatObject(ctx context.Context, bucket, object string) error
+	RemoveObject(ctx context.Context, bucket, object string) error
+	ListObjects(ctx context.Context, bucket, prefix string) ([]string, error)
+	PresignedGetObject(ctx context.Context, bucket, object string, expiry time.Duration) (string, error)
+}
+
+type MinioMediaStorage struct {
+	store      objectStore
+	bucketName string
+	urlTTL     time.Duration
+}
+
+func publicReadPolicy(bucketName string) string {
+	return `{
 		"Version": "2012-10-17",
 		"Statement": [
 			{
@@ -31,121 +66,184 @@ func setBucketPolicy(client *minio.Client, bucketName string) error {
 			}
 		]
 	}`
-
-	return client.SetBucketPolicy(context.Background(), bucketName, policy)
 }
 
-// generateFilePath creates a simple media folder structure
-// Format: evolution-go-medias/{filename}
-func generateFilePath(fileName string) string {
-	return fmt.Sprintf("evolution-go-medias/%s", fileName)
-}
-
-// resolveFilePath determines if the input is a full path or just a filename
-// If it's just a filename, it assumes it's in the evolution-go-medias folder
-// If it's a full path, it returns it as-is
-func (m *MinioMediaStorage) resolveFilePath(ctx context.Context, fileNameOrPath string) (string, error) {
-	// If the input already contains path separators, assume it's a full path
-	if strings.Contains(fileNameOrPath, "/") {
-		return fileNameOrPath, nil
+// safeName reduces a file name to its last element: it comes from a message id and a
+// mime-type extension, but it ends up in an object key.
+func safeName(fileName string) string {
+	fileName = strings.ReplaceAll(fileName, `\`, "/")
+	fileName = path.Base(fileName)
+	if fileName == "." || fileName == ".." || fileName == "/" {
+		return "file"
 	}
-
-	// If it's just a filename, assume it's in the evolution-go-medias folder
-	return fmt.Sprintf("evolution-go-medias/%s", fileNameOrPath), nil
+	return fileName
 }
 
-func NewMinioMediaStorage(
-	endpoint,
-	accessKeyID,
-	secretAccessKey,
-	bucketName,
-	region string,
-	useSSL bool,
-) (storage_interfaces.MediaStorage, error) {
-	client, err := minio.New(endpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKeyID, secretAccessKey, ""),
-		Secure: useSSL,
-		Region: region,
+// objectKey is where a media file of an instance lives. instanceID is a path element: it
+// must be one (the id of an instance is a UUID).
+func objectKey(instanceID, fileName string) (string, error) {
+	if instanceID == "" || instanceID != path.Base(instanceID) || instanceID == "." || instanceID == ".." || strings.ContainsAny(instanceID, `\`) {
+		return "", fmt.Errorf("invalid instance id %q for a storage key", instanceID)
+	}
+	return mediaFolder + "/" + instanceID + "/" + safeName(fileName), nil
+}
+
+// NewMinioMediaStorage connects to the S3-compatible storage.
+func NewMinioMediaStorage(o Options) (storage_interfaces.MediaStorage, error) {
+	client, err := minio.New(o.Endpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(o.AccessKey, o.SecretKey, ""),
+		Secure: o.UseSSL,
+		Region: o.Region,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create MinIO client: %w", err)
 	}
-
-	// Try to set bucket policy to allow public access (optional for some providers)
-	err = setBucketPolicy(client, bucketName)
-	if err != nil {
-		// Some providers (like Backblaze B2) don't support SetBucketPolicy
-		// Log warning but continue - files can still be accessed via presigned URLs
-		fmt.Printf("Warning: Failed to set bucket policy (provider may not support it): %v\n", err)
-	}
-
-	baseURL := fmt.Sprintf("https://%s/%s", endpoint, bucketName)
-	if !useSSL {
-		baseURL = fmt.Sprintf("http://%s/%s", endpoint, bucketName)
-	}
-
-	return &MinioMediaStorage{
-		client:     client,
-		bucketName: bucketName,
-		baseURL:    baseURL,
-	}, nil
+	return newStorage(&minioStore{client}, o)
 }
 
-func (m *MinioMediaStorage) Store(ctx context.Context, data []byte, fileName string, contentType string) (string, error) {
-	// Generate organized file path
-	filePath := generateFilePath(fileName)
-	reader := bytes.NewReader(data)
+func newStorage(store objectStore, o Options) (*MinioMediaStorage, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
 
-	_, err := m.client.PutObject(ctx, m.bucketName, filePath, reader, int64(len(data)), minio.PutObjectOptions{
-		ContentType: contentType,
-	})
+	exists, err := store.BucketExists(ctx, o.Bucket)
 	if err != nil {
-		return "", fmt.Errorf("failed to store object: %w", err)
+		return nil, fmt.Errorf("cannot reach bucket %q: %w", o.Bucket, err)
+	}
+	if !exists {
+		if err := store.MakeBucket(ctx, o.Bucket, minio.MakeBucketOptions{Region: o.Region}); err != nil {
+			return nil, fmt.Errorf("bucket %q does not exist and could not be created: %w", o.Bucket, err)
+		}
 	}
 
-	// Gerando URL assinada com validade de 7 dias
-	reqParams := make(url.Values)
-	presignedURL, err := m.client.PresignedGetObject(ctx, m.bucketName, filePath, time.Hour*24*7, reqParams)
+	// The bucket keeps the policy it has unless the operator asks for a public one.
+	if o.PublicBucket {
+		if err := store.SetBucketPolicy(ctx, o.Bucket, publicReadPolicy(o.Bucket)); err != nil {
+			// Some providers (like Backblaze B2) do not support it; the URLs are presigned anyway.
+			fmt.Printf("Warning: MINIO_PUBLIC_BUCKET is set but the bucket policy could not be applied: %v\n", err)
+		}
+	}
+
+	ttl := o.URLTTL
+	if ttl <= 0 || ttl > maxPresignTTL {
+		ttl = maxPresignTTL
+	}
+	return &MinioMediaStorage{store: store, bucketName: o.Bucket, urlTTL: ttl}, nil
+}
+
+// Store saves a media file of an instance and returns a presigned URL for it.
+func (m *MinioMediaStorage) Store(ctx context.Context, instanceID string, data []byte, fileName string, contentType string) (string, error) {
+	key, err := objectKey(instanceID, fileName)
+	if err != nil {
+		return "", err
+	}
+	if err := m.store.PutObject(ctx, m.bucketName, key, data, contentType); err != nil {
+		return "", fmt.Errorf("failed to store object: %w", err)
+	}
+	return m.presign(ctx, key)
+}
+
+func (m *MinioMediaStorage) presign(ctx context.Context, key string) (string, error) {
+	u, err := m.store.PresignedGetObject(ctx, m.bucketName, key, m.urlTTL)
 	if err != nil {
 		return "", fmt.Errorf("failed to generate presigned URL: %w", err)
 	}
-
-	return presignedURL.String(), nil
+	return u, nil
 }
 
-func (m *MinioMediaStorage) Delete(ctx context.Context, fileName string) error {
-	// Resolve the full path for the file
-	filePath, err := m.resolveFilePath(ctx, fileName)
+// Delete removes one media file of an instance.
+func (m *MinioMediaStorage) Delete(ctx context.Context, instanceID string, fileName string) error {
+	key, err := objectKey(instanceID, fileName)
 	if err != nil {
-		return fmt.Errorf("failed to resolve file path: %w", err)
+		return err
 	}
-
-	err = m.client.RemoveObject(ctx, m.bucketName, filePath, minio.RemoveObjectOptions{})
-	if err != nil {
+	if err := m.store.RemoveObject(ctx, m.bucketName, key); err != nil {
 		return fmt.Errorf("failed to delete object: %w", err)
 	}
 	return nil
 }
 
-func (m *MinioMediaStorage) GetURL(ctx context.Context, fileName string) (string, error) {
-	// Resolve the full path for the file
-	filePath, err := m.resolveFilePath(ctx, fileName)
+// GetURL returns a fresh presigned URL for a stored file of an instance.
+func (m *MinioMediaStorage) GetURL(ctx context.Context, instanceID string, fileName string) (string, error) {
+	key, err := objectKey(instanceID, fileName)
 	if err != nil {
-		return "", fmt.Errorf("failed to resolve file path: %w", err)
+		return "", err
 	}
-
-	// Check if object exists
-	_, err = m.client.StatObject(ctx, m.bucketName, filePath, minio.StatObjectOptions{})
-	if err != nil {
+	if err := m.store.StatObject(ctx, m.bucketName, key); err != nil {
 		return "", fmt.Errorf("failed to get object stats: %w", err)
 	}
+	return m.presign(ctx, key)
+}
 
-	// Gerando URL assinada com validade de 7 dias
-	reqParams := make(url.Values)
-	presignedURL, err := m.client.PresignedGetObject(ctx, m.bucketName, filePath, time.Hour*24*7, reqParams)
+// DeleteInstance removes every media file of an instance (it was deleted), and returns how
+// many were removed. Files used to stay in the bucket for good.
+func (m *MinioMediaStorage) DeleteInstance(ctx context.Context, instanceID string) (int, error) {
+	prefix, err := objectKey(instanceID, "x")
 	if err != nil {
-		return "", fmt.Errorf("failed to generate presigned URL: %w", err)
+		return 0, err
 	}
+	prefix = strings.TrimSuffix(prefix, "x") // ".../<instanceID>/"
 
-	return presignedURL.String(), nil
+	keys, err := m.store.ListObjects(ctx, m.bucketName, prefix)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list the media of the instance: %w", err)
+	}
+	removed := 0
+	for _, key := range keys {
+		if !strings.HasPrefix(key, prefix) { // never remove outside the instance's folder
+			continue
+		}
+		if err := m.store.RemoveObject(ctx, m.bucketName, key); err != nil {
+			return removed, fmt.Errorf("failed to delete %s: %w", key, err)
+		}
+		removed++
+	}
+	return removed, nil
+}
+
+// minioStore adapts the MinIO client to objectStore.
+type minioStore struct{ c *minio.Client }
+
+func (s *minioStore) BucketExists(ctx context.Context, bucket string) (bool, error) {
+	return s.c.BucketExists(ctx, bucket)
+}
+
+func (s *minioStore) MakeBucket(ctx context.Context, bucket string, opts minio.MakeBucketOptions) error {
+	return s.c.MakeBucket(ctx, bucket, opts)
+}
+
+func (s *minioStore) SetBucketPolicy(ctx context.Context, bucket, policy string) error {
+	return s.c.SetBucketPolicy(ctx, bucket, policy)
+}
+
+func (s *minioStore) PutObject(ctx context.Context, bucket, object string, data []byte, contentType string) error {
+	_, err := s.c.PutObject(ctx, bucket, object, bytes.NewReader(data), int64(len(data)), minio.PutObjectOptions{ContentType: contentType})
+	return err
+}
+
+func (s *minioStore) StatObject(ctx context.Context, bucket, object string) error {
+	_, err := s.c.StatObject(ctx, bucket, object, minio.StatObjectOptions{})
+	return err
+}
+
+func (s *minioStore) RemoveObject(ctx context.Context, bucket, object string) error {
+	return s.c.RemoveObject(ctx, bucket, object, minio.RemoveObjectOptions{})
+}
+
+func (s *minioStore) ListObjects(ctx context.Context, bucket, prefix string) ([]string, error) {
+	var keys []string
+	for obj := range s.c.ListObjects(ctx, bucket, minio.ListObjectsOptions{Prefix: prefix, Recursive: true}) {
+		if obj.Err != nil {
+			return keys, obj.Err
+		}
+		keys = append(keys, obj.Key)
+	}
+	return keys, nil
+}
+
+func (s *minioStore) PresignedGetObject(ctx context.Context, bucket, object string, expiry time.Duration) (string, error) {
+	u, err := s.c.PresignedGetObject(ctx, bucket, object, expiry, url.Values{})
+	if err != nil {
+		return "", err
+	}
+	return u.String(), nil
 }
