@@ -8,7 +8,7 @@ import (
 
 type MessageRepository interface {
 	InsertMessage(message message_model.Message) error
-	GetMessageByID(messageID string) (*message_model.Message, error)
+	GetMessageByID(instanceID, messageID string) (*message_model.Message, error)
 }
 
 type messageRepository struct {
@@ -26,14 +26,16 @@ func messageUpdateColumns(message message_model.Message) []string {
 
 func (m *messageRepository) InsertMessage(message message_model.Message) error {
 	return m.db.Clauses(clause.OnConflict{
-		Columns:   []clause.Column{{Name: "message_id"}},
+		Columns:   []clause.Column{{Name: "instance_id"}, {Name: "message_id"}},
 		DoUpdates: clause.AssignmentColumns(messageUpdateColumns(message)),
 	}).Create(&message).Error
 }
 
-func (m *messageRepository) GetMessageByID(messageID string) (*message_model.Message, error) {
+// GetMessageByID looks a message up inside one instance: it used to search every
+// instance's rows, so any instance token could read the status of another one's messages.
+func (m *messageRepository) GetMessageByID(instanceID, messageID string) (*message_model.Message, error) {
 	var message message_model.Message
-	err := m.db.Where("message_id = ?", messageID).First(&message).Error
+	err := m.db.Where("instance_id = ? AND message_id = ?", instanceID, messageID).First(&message).Error
 	if err != nil {
 		if err == gorm.ErrRecordNotFound {
 			return nil, nil

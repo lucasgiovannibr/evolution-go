@@ -58,6 +58,7 @@ import (
 	passkey_handler "github.com/evolution-foundation/evolution-go/pkg/passkey/handler"
 	poll_handler "github.com/evolution-foundation/evolution-go/pkg/poll/handler"
 	routes "github.com/evolution-foundation/evolution-go/pkg/routes"
+	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	send_handler "github.com/evolution-foundation/evolution-go/pkg/sendMessage/handler"
 	send_service "github.com/evolution-foundation/evolution-go/pkg/sendMessage/service"
 	server_handler "github.com/evolution-foundation/evolution-go/pkg/server/handler"
@@ -67,7 +68,6 @@ import (
 	user_service "github.com/evolution-foundation/evolution-go/pkg/user/service"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 )
 
 var devMode = flag.Bool("dev", false, "Enable development mode")
@@ -316,6 +316,15 @@ func migrate(db *gorm.DB) {
 
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	// message_id used to be unique on its own, which made two instances that receive the
+	// same message (same group) overwrite each other's row. The key is
+	// (instance_id, message_id) now; drop the old constraint.
+	if db.Migrator().HasConstraint(&message_model.Message{}, "uni_messages_message_id") {
+		if err := db.Migrator().DropConstraint(&message_model.Message{}, "uni_messages_message_id"); err != nil {
+			log.Fatal(err)
+		}
 	}
 }
 

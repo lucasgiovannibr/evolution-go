@@ -1,10 +1,10 @@
 package message_service
 
 import (
-	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"context"
 	"errors"
 	"fmt"
+	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"net/http"
 	"os"
 	"strings"
@@ -457,7 +457,7 @@ func (m *messageService) GetMessageStatus(data *MessageStatusStruct, instance *i
 
 	ts := time.Now()
 
-	result, err := m.messageRepository.GetMessageByID(data.Id)
+	result, err := m.messageRepository.GetMessageByID(instance.Id, data.Id)
 	if err != nil {
 		return nil, "", err
 	}
