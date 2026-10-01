@@ -2014,7 +2014,9 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 
 		isGroup := strings.HasSuffix(evt.Info.Chat.String(), "@g.us")
 		if isGroup && wantMessage {
-			groupData, err := mycli.WAClient.GetGroupInfo(context.Background(), evt.Info.Chat)
+			groupData, err := groupInfos.get(groupInfoKey(mycli.userID, evt.Info.Chat), func() (*types.GroupInfo, error) {
+				return mycli.WAClient.GetGroupInfo(context.Background(), evt.Info.Chat)
+			})
 			if err == nil {
 				dataMap["groupData"] = groupData
 			}
@@ -2588,10 +2590,12 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	case *events.GroupInfo:
 		doWebhook = true
 		postMap["event"] = "GroupInfo"
+		groupInfos.forget(groupInfoKey(mycli.userID, evt.JID))
 		learnChatTimerFromGroup(mycli.userID, evt.JID, evt.Ephemeral, time.Now())
 	case *events.JoinedGroup:
 		doWebhook = true
 		postMap["event"] = "JoinedGroup"
+		groupInfos.forget(groupInfoKey(mycli.userID, evt.JID))
 		learnChatTimerFromGroup(mycli.userID, evt.JID, &evt.GroupEphemeral, time.Now())
 	case *events.NewsletterJoin:
 		doWebhook = true
@@ -3195,6 +3199,7 @@ func (w whatsmeowService) ClearInstanceCache(instanceId string, token string) er
 	// Limpar userInfoCache
 	w.userInfoCache.Delete(token)
 	forgetInstanceChatTimers(instanceId)
+	groupInfos.forgetInstance(instanceId)
 
 	// Limpar myClientPointer se existir
 	if _, exists := w.myClientPointer.Lookup(instanceId); exists {
