@@ -64,6 +64,21 @@ type sendService struct {
 	existsCache *userExistsCache
 }
 
+// maxSendDelay is the longest "typing" delay before a send (the same limit ChatPresence
+// has).
+const maxSendDelay = 60 * time.Second
+
+// sendDelay is the typing delay of a send, and whether it had to be capped. The delay is
+// an int32 of milliseconds supplied by the caller (up to ~24 days), and the request, its
+// goroutine and the "typing" state were held for all of it.
+func sendDelay(ms int32) (delay time.Duration, capped bool) {
+	delay = time.Duration(ms) * time.Millisecond
+	if delay > maxSendDelay {
+		return maxSendDelay, true
+	}
+	return delay, false
+}
+
 type SendDataStruct struct {
 	Id              string
 	Number          string
@@ -422,6 +437,22 @@ type MessageSendStruct struct {
 	MessageContextInfo *waE2E.ContextInfo
 }
 
+// The ways a send finds no usable connection. They are matched with errors.Is, not by
+// their text: the text used to be compared, and an error wrapped with %v (which loses the
+// chain) quietly stopped being retried. The texts are the ones the API has always returned.
+var (
+	// ErrNoActiveSession: the instance has no client, or it did not come up.
+	ErrNoActiveSession = errors.New("no active session found")
+	// ErrClientDisconnected: the instance has a client whose socket is down.
+	ErrClientDisconnected = errors.New("client disconnected")
+)
+
+// isDisconnectionError reports whether err means the connection was missing, which a
+// retry may fix (a validation or WhatsApp error will not change by trying again).
+func isDisconnectionError(err error) bool {
+	return errors.Is(err, ErrNoActiveSession) || errors.Is(err, ErrClientDisconnected)
+}
+
 func (s *sendService) ensureClientConnected(instanceId string) (*whatsmeow.Client, error) {
 	client := s.clientPointer.Get(instanceId)
 	s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Checking client connection status - Client exists: %v", instanceId, client != nil)
@@ -431,7 +462,7 @@ func (s *sendService) ensureClientConnected(instanceId string) (*whatsmeow.Clien
 		err := s.whatsmeowService.StartInstance(instanceId)
 		if err != nil {
 			s.loggerWrapper.GetLogger(instanceId).LogError("[%s] Failed to start instance: %v", instanceId, err)
-			return nil, errors.New("no active session found")
+			return nil, ErrNoActiveSession
 		}
 
 		s.loggerWrapper.GetLogger(instanceId).LogInfo("[%s] Instance started, waiting for the connection...", instanceId)
@@ -446,13 +477,13 @@ func (s *sendService) ensureClientConnected(instanceId string) (*whatsmeow.Clien
 				instanceId,
 				client != nil,
 				client != nil && client.IsConnected())
-			return nil, errors.New("no active session found")
+			return nil, ErrNoActiveSession
 		}
 	} else if !client.IsConnected() {
 		s.loggerWrapper.GetLogger(instanceId).LogError("[%s] Existing client is disconnected - Connected status: %v",
 			instanceId,
 			client.IsConnected())
-		return nil, errors.New("client disconnected")
+		return nil, ErrClientDisconnected
 	}
 
 	// A socket without a paired device can never send. Failing here, with an error
@@ -478,7 +509,7 @@ func (s *sendService) ensureClientConnectedWithRetry(instanceId string, maxRetri
 		}
 
 		// Check if it's a disconnection error that we can retry
-		if err.Error() == "client disconnected" || err.Error() == "no active session found" {
+		if isDisconnectionError(err) {
 			s.loggerWrapper.GetLogger(instanceId).LogWarn("[%s] Client disconnected on attempt %d/%d, attempting reconnection...", instanceId, attempt, maxRetries)
 
 			// Attempt to reconnect the client
@@ -580,7 +611,7 @@ func (s *sendService) validateAndCheckUserExists(phone string, formatJid *bool, 
 	// Get the client to check if user exists on WhatsApp
 	client, err := s.ensureClientConnected(instance.Id)
 	if err != nil {
-		return types.NewJID("", types.DefaultUserServer), fmt.Errorf("failed to connect client: %v", err)
+		return types.NewJID("", types.DefaultUserServer), fmt.Errorf("failed to connect client: %w", err)
 	}
 
 	// The answer is remembered (see userExistsCache): a send used to cost one usync query,
@@ -694,7 +725,7 @@ func (s *sendService) sendTextWithRetry(data *TextStruct, instance *instance_mod
 
 		if err != nil {
 			// Check if it's a client disconnection error
-			if strings.Contains(err.Error(), "client disconnected") || strings.Contains(err.Error(), "no active session") {
+			if isDisconnectionError(err) {
 				s.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] SendText failed due to disconnection on attempt %d/%d: %v", instance.Id, attempt, maxRetries, err)
 				if attempt < maxRetries {
 					waitTime := time.Duration(attempt) * time.Second
@@ -892,7 +923,7 @@ func (s *sendService) sendLinkWithRetry(data *LinkStruct, instance *instance_mod
 
 		if err != nil {
 			// Check if it's a client disconnection error
-			if strings.Contains(err.Error(), "client disconnected") || strings.Contains(err.Error(), "no active session") {
+			if isDisconnectionError(err) {
 				s.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] SendLink failed due to disconnection on attempt %d/%d: %v", instance.Id, attempt, maxRetries, err)
 				if attempt < maxRetries {
 					waitTime := time.Duration(attempt) * time.Second
@@ -1070,11 +1101,147 @@ func convertAudioToOpusWithDuration(inputData []byte) ([]byte, int, error) {
 	return convertedData, duration, nil
 }
 
+// mediaPrep is a media file checked, and converted when WhatsApp needs another format,
+// ready to be uploaded.
+type mediaPrep struct {
+	fileData   []byte
+	mimeType   string
+	uploadType whatsmeow.MediaType
+	duration   int // seconds, for audio
+}
+
+// prepareMediaFile validates the type of an uploaded file against what the caller said it
+// is and converts audio to Opus. It does not touch the connection.
+func (s *sendService) prepareMediaFile(data *MediaStruct, fileData []byte) (*mediaPrep, error) {
+	mime, _ := mimetype.DetectReader(bytes.NewReader(fileData))
+	mimeType := mime.String()
+
+	var uploadType whatsmeow.MediaType
+	var duration int
+
+	switch data.Type {
+	case "image":
+		if mimeType != "image/jpeg" && mimeType != "image/png" && mimeType != "image/webp" {
+			errMsg := fmt.Sprintf("Invalid file format: '%s'. Only 'image/jpeg', 'image/png' and 'image/webp' are accepted", mimeType)
+			return nil, errors.New(errMsg)
+		}
+		if mimeType == "image/webp" {
+			mimeType = "image/jpeg"
+		}
+		uploadType = whatsmeow.MediaImage
+	case "video":
+		if mimeType != "video/mp4" {
+			errMsg := fmt.Sprintf("Invalid file format: '%s'. Only 'video/mp4' is accepted", mimeType)
+			return nil, errors.New(errMsg)
+		}
+		uploadType = whatsmeow.MediaVideo
+	case "audio":
+		converterApiUrl := s.config.ApiAudioConverter
+		converterApiKey := s.config.ApiAudioConverterKey
+		var convertedData []byte
+		var err error
+		if converterApiUrl == "" {
+
+			convertedData, duration, err = convertAudioToOpusWithDuration(fileData)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			convertedData, duration, err = convertAudioWithApi(converterApiUrl, converterApiKey, ConvertAudio{Base64: base64.StdEncoding.EncodeToString(fileData)})
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		fileData = convertedData
+		mimeType = "audio/ogg; codecs=opus"
+		uploadType = whatsmeow.MediaAudio
+	case "document":
+		uploadType = whatsmeow.MediaDocument
+	default:
+		return nil, errors.New("invalid media type")
+	}
+	return &mediaPrep{fileData: fileData, mimeType: mimeType, uploadType: uploadType, duration: duration}, nil
+}
+
+// prepareMediaURL downloads the file of a URL and prepares it like prepareMediaFile.
+func (s *sendService) prepareMediaURL(data *MediaStruct, instanceID string, startTime time.Time) (*mediaPrep, error) {
+	instance := &instance_model.Instance{Id: instanceID}
+	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Iniciando download da URL: %s", instance.Id, data.Url)
+
+	// An error page is not the file (a 404 used to be sent as a document), and the
+	// size is bounded.
+	fileData, err := utils.DownloadBytes(data.Url, utils.MaxMediaDownload)
+	if err != nil {
+		return nil, err
+	}
+	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Download concluído em %v. Tamanho: %d bytes", instance.Id, time.Since(startTime), len(fileData))
+
+	mime, _ := mimetype.DetectReader(bytes.NewReader(fileData))
+	mimeType := mime.String()
+	if strings.HasSuffix(strings.ToLower(data.Url), ".mp4") {
+		mimeType = "video/mp4"
+	}
+
+	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Tipo MIME detectado: %s", instance.Id, mimeType)
+
+	var uploadType whatsmeow.MediaType
+	var duration int
+
+	processingStart := time.Now()
+	switch data.Type {
+	case "image":
+		if mimeType != "image/jpeg" && mimeType != "image/png" && mimeType != "image/webp" {
+			errMsg := fmt.Sprintf("Invalid file format: '%s'. Only 'image/jpeg', 'image/png' and 'image/webp' are accepted", mimeType)
+			return nil, errors.New(errMsg)
+		}
+		if mimeType == "image/webp" {
+			mimeType = "image/jpeg"
+		}
+		uploadType = whatsmeow.MediaImage
+
+	case "video", "ptv":
+		if mimeType != "video/mp4" {
+			errMsg := fmt.Sprintf("Invalid file format: '%s'. Only 'video/mp4' are accepted", mimeType)
+			return nil, errors.New(errMsg)
+		}
+		uploadType = whatsmeow.MediaVideo
+	case "audio":
+		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Iniciando conversão de áudio...", instance.Id)
+		converterApiUrl := s.config.ApiAudioConverter
+		converterApiKey := s.config.ApiAudioConverterKey
+		var convertedData []byte
+		var err error
+		if converterApiUrl == "" {
+			s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Usando conversão local...", instance.Id)
+			convertedData, duration, err = convertAudioToOpusWithDuration(fileData)
+		} else {
+			s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Usando API de conversão...", instance.Id)
+			convertedData, duration, err = convertAudioWithApi(converterApiUrl, converterApiKey, ConvertAudio{Base64: base64.StdEncoding.EncodeToString(fileData)})
+		}
+		if err != nil {
+			return nil, err
+		}
+		fileData = convertedData
+		mimeType = "audio/ogg; codecs=opus"
+		uploadType = whatsmeow.MediaAudio
+		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Conversão de áudio concluída em %v", instance.Id, time.Since(processingStart))
+	case "document":
+		uploadType = whatsmeow.MediaDocument
+	default:
+		return nil, errors.New("invalid media type")
+	}
+	return &mediaPrep{fileData: fileData, mimeType: mimeType, uploadType: uploadType, duration: duration}, nil
+}
+
 func (s *sendService) SendMediaFile(data *MediaStruct, fileData []byte, instance *instance_model.Instance) (*MessageSendStruct, error) {
 	return s.sendMediaFileWithRetry(data, fileData, instance, 3)
 }
 
 func (s *sendService) sendMediaFileWithRetry(data *MediaStruct, fileData []byte, instance *instance_model.Instance, maxRetries int) (*MessageSendStruct, error) {
+	// The file is checked and converted once: a retry after a disconnection used to run
+	// the conversion again over the already converted audio.
+	var prep *mediaPrep
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] SendMediaFile attempt %d/%d", instance.Id, attempt, maxRetries)
 
@@ -1086,54 +1253,14 @@ func (s *sendService) sendMediaFileWithRetry(data *MediaStruct, fileData []byte,
 			continue
 		}
 
-		mime, _ := mimetype.DetectReader(bytes.NewReader(fileData))
-		mimeType := mime.String()
-
-		var uploadType whatsmeow.MediaType
-		var duration int
-
-		switch data.Type {
-		case "image":
-			if mimeType != "image/jpeg" && mimeType != "image/png" && mimeType != "image/webp" {
-				errMsg := fmt.Sprintf("Invalid file format: '%s'. Only 'image/jpeg', 'image/png' and 'image/webp' are accepted", mimeType)
-				return nil, errors.New(errMsg)
+		if prep == nil {
+			p, err := s.prepareMediaFile(data, fileData)
+			if err != nil {
+				return nil, err
 			}
-			if mimeType == "image/webp" {
-				mimeType = "image/jpeg"
-			}
-			uploadType = whatsmeow.MediaImage
-		case "video":
-			if mimeType != "video/mp4" {
-				errMsg := fmt.Sprintf("Invalid file format: '%s'. Only 'video/mp4' is accepted", mimeType)
-				return nil, errors.New(errMsg)
-			}
-			uploadType = whatsmeow.MediaVideo
-		case "audio":
-			converterApiUrl := s.config.ApiAudioConverter
-			converterApiKey := s.config.ApiAudioConverterKey
-			var convertedData []byte
-			var err error
-			if converterApiUrl == "" {
-
-				convertedData, duration, err = convertAudioToOpusWithDuration(fileData)
-				if err != nil {
-					return nil, err
-				}
-			} else {
-				convertedData, duration, err = convertAudioWithApi(converterApiUrl, converterApiKey, ConvertAudio{Base64: base64.StdEncoding.EncodeToString(fileData)})
-				if err != nil {
-					return nil, err
-				}
-			}
-
-			fileData = convertedData
-			mimeType = "audio/ogg; codecs=opus"
-			uploadType = whatsmeow.MediaAudio
-		case "document":
-			uploadType = whatsmeow.MediaDocument
-		default:
-			return nil, errors.New("invalid media type")
+			prep = p
 		}
+		fileData, mimeType, uploadType, duration := prep.fileData, prep.mimeType, prep.uploadType, prep.duration
 
 		// Detectar se é newsletter para usar upload sem criptografia
 		isNewsletter := strings.Contains(data.Number, "@newsletter")
@@ -1336,7 +1463,7 @@ func (s *sendService) sendMediaFileWithRetry(data *MediaStruct, fileData []byte,
 
 		if err != nil {
 			// Check if it's a client disconnection error
-			if strings.Contains(err.Error(), "client disconnected") || strings.Contains(err.Error(), "no active session") {
+			if isDisconnectionError(err) {
 				s.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] SendMediaFile failed due to disconnection on attempt %d/%d: %v", instance.Id, attempt, maxRetries, err)
 				if attempt < maxRetries {
 					waitTime := time.Duration(attempt) * time.Second
@@ -1360,6 +1487,9 @@ func (s *sendService) SendMediaUrl(data *MediaStruct, instance *instance_model.I
 }
 
 func (s *sendService) sendMediaUrlWithRetry(data *MediaStruct, instance *instance_model.Instance, maxRetries int) (*MessageSendStruct, error) {
+	// The download and the conversion happen once: a retry after a disconnection used to
+	// download the whole file again (up to 100 MB) and convert it again.
+	var prep *mediaPrep
 	for attempt := 1; attempt <= maxRetries; attempt++ {
 		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] SendMediaUrl attempt %d/%d for URL: %s", instance.Id, attempt, maxRetries, data.Url)
 		startTime := time.Now()
@@ -1372,70 +1502,14 @@ func (s *sendService) sendMediaUrlWithRetry(data *MediaStruct, instance *instanc
 			continue
 		}
 
-		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Iniciando download da URL: %s", instance.Id, data.Url)
-
-		// An error page is not the file (a 404 used to be sent as a document), and the
-		// size is bounded.
-		fileData, err := utils.DownloadBytes(data.Url, utils.MaxMediaDownload)
-		if err != nil {
-			return nil, err
-		}
-		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Download concluído em %v. Tamanho: %d bytes", instance.Id, time.Since(startTime), len(fileData))
-
-		mime, _ := mimetype.DetectReader(bytes.NewReader(fileData))
-		mimeType := mime.String()
-		if strings.HasSuffix(strings.ToLower(data.Url), ".mp4") {
-			mimeType = "video/mp4"
-		}
-
-		s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Tipo MIME detectado: %s", instance.Id, mimeType)
-
-		var uploadType whatsmeow.MediaType
-		var duration int
-
-		processingStart := time.Now()
-		switch data.Type {
-		case "image":
-			if mimeType != "image/jpeg" && mimeType != "image/png" && mimeType != "image/webp" {
-				errMsg := fmt.Sprintf("Invalid file format: '%s'. Only 'image/jpeg', 'image/png' and 'image/webp' are accepted", mimeType)
-				return nil, errors.New(errMsg)
-			}
-			if mimeType == "image/webp" {
-				mimeType = "image/jpeg"
-			}
-			uploadType = whatsmeow.MediaImage
-
-		case "video", "ptv":
-			if mimeType != "video/mp4" {
-				errMsg := fmt.Sprintf("Invalid file format: '%s'. Only 'video/mp4' are accepted", mimeType)
-				return nil, errors.New(errMsg)
-			}
-			uploadType = whatsmeow.MediaVideo
-		case "audio":
-			s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Iniciando conversão de áudio...", instance.Id)
-			converterApiUrl := s.config.ApiAudioConverter
-			converterApiKey := s.config.ApiAudioConverterKey
-			var convertedData []byte
-			var err error
-			if converterApiUrl == "" {
-				s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Usando conversão local...", instance.Id)
-				convertedData, duration, err = convertAudioToOpusWithDuration(fileData)
-			} else {
-				s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Usando API de conversão...", instance.Id)
-				convertedData, duration, err = convertAudioWithApi(converterApiUrl, converterApiKey, ConvertAudio{Base64: base64.StdEncoding.EncodeToString(fileData)})
-			}
+		if prep == nil {
+			p, err := s.prepareMediaURL(data, instance.Id, startTime)
 			if err != nil {
 				return nil, err
 			}
-			fileData = convertedData
-			mimeType = "audio/ogg; codecs=opus"
-			uploadType = whatsmeow.MediaAudio
-			s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Conversão de áudio concluída em %v", instance.Id, time.Since(processingStart))
-		case "document":
-			uploadType = whatsmeow.MediaDocument
-		default:
-			return nil, errors.New("invalid media type")
+			prep = p
 		}
+		fileData, mimeType, uploadType, duration := prep.fileData, prep.mimeType, prep.uploadType, prep.duration
 
 		// Detectar se é newsletter para usar upload sem criptografia
 		isNewsletter := strings.Contains(data.Number, "@newsletter")
@@ -1643,7 +1717,7 @@ func (s *sendService) sendMediaUrlWithRetry(data *MediaStruct, instance *instanc
 
 		if err != nil {
 			// Check if it's a client disconnection error
-			if strings.Contains(err.Error(), "client disconnected") || strings.Contains(err.Error(), "no active session") {
+			if isDisconnectionError(err) {
 				s.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] SendMediaUrl failed due to disconnection on attempt %d/%d: %v", instance.Id, attempt, maxRetries, err)
 				if attempt < maxRetries {
 					waitTime := time.Duration(attempt) * time.Second
@@ -1696,7 +1770,7 @@ func (s *sendService) sendPollWithRetry(data *PollStruct, instance *instance_mod
 
 		if err != nil {
 			// Check if it's a client disconnection error
-			if strings.Contains(err.Error(), "client disconnected") || strings.Contains(err.Error(), "no active session") {
+			if isDisconnectionError(err) {
 				s.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] SendPoll failed due to disconnection on attempt %d/%d: %v", instance.Id, attempt, maxRetries, err)
 				if attempt < maxRetries {
 					waitTime := time.Duration(attempt) * time.Second
@@ -2522,7 +2596,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	// dereference the nil that leaves behind.
 	client := s.clientPointer.Get(instance.Id)
 	if client == nil || client.Store == nil || client.Store.ID == nil {
-		return nil, errors.New("no active session found")
+		return nil, ErrNoActiveSession
 	}
 
 	var message string
@@ -2533,6 +2607,10 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 	}
 
 	if data.Delay > 0 {
+		delay, capped := sendDelay(data.Delay)
+		if capped {
+			s.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] delay of %dms capped to %v", instance.Id, data.Delay, maxSendDelay)
+		}
 		media := ""
 		if messageType == "AudioMessage" {
 			media = "audio"
@@ -2543,7 +2621,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 			return nil, err
 		}
 
-		time.Sleep(time.Duration(data.Delay) * time.Millisecond)
+		time.Sleep(delay)
 
 		err = client.SendChatPresence(context.Background(), recipient, types.ChatPresence("paused"), types.ChatPresenceMedia(media))
 		if err != nil {

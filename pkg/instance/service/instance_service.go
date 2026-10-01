@@ -551,8 +551,12 @@ func (i instances) Pair(data *PairStruct, instance *instance_model.Instance) (*P
 			return nil, fmt.Errorf("failed to start instance: %w", err)
 		}
 		// Wait for the WA websocket connection and initial QR generation to establish.
-		// PairPhone must be called after the QR event is received per whatsmeow docs.
-		time.Sleep(3 * time.Second)
+		// PairPhone must be called after the QR event is received per whatsmeow docs. It
+		// waited a fixed 3 s; the QR is stored as soon as it arrives, so wait for that.
+		utils.WaitUntilEvery(qrWaitTimeout, 250*time.Millisecond, func() bool {
+			c := i.clientPointer.Get(instance.Id)
+			return c != nil && c.IsConnected() && i.qrOrLoginReady(instance.Id)
+		})
 		client = i.clientPointer.Get(instance.Id)
 		if client == nil {
 			return nil, fmt.Errorf("failed to initialize client for pairing")
