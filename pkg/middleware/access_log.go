@@ -51,13 +51,18 @@ func AccessLog() gin.HandlerFunc {
 			if q := RedactQuery(p.Request.URL.RawQuery); q != "" {
 				path += "?" + q
 			}
-			return fmt.Sprintf("[GIN] %v | %3d | %13v | %15s | %-7s %#v\n%s",
+			requestID := ""
+			if id, ok := p.Keys[RequestIDKey].(string); ok && id != "" {
+				requestID = " req=" + id
+			}
+			return fmt.Sprintf("[GIN] %v | %3d | %13v | %15s | %-7s %#v%s\n%s",
 				p.TimeStamp.Format("2006/01/02 - 15:04:05"),
 				p.StatusCode,
 				p.Latency,
 				p.ClientIP,
 				p.Method,
 				path,
+				requestID,
 				p.ErrorMessage,
 			)
 		},
