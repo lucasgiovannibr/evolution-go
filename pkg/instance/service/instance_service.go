@@ -926,10 +926,10 @@ func (i instances) GetLogs(instanceId string, startDate, endDate time.Time, leve
 
 	scanner := bufio.NewScanner(file)
 
-	// Aumenta o buffer do scanner para lidar com linhas grandes
+	// Lines can be long (a logged event); the buffer starts small and grows up to 1 MB
+	// (it used to allocate the full 1 MB for every request).
 	const maxCapacity = 1024 * 1024 // 1MB
-	buf := make([]byte, maxCapacity)
-	scanner.Buffer(buf, maxCapacity)
+	scanner.Buffer(make([]byte, 0, 64*1024), maxCapacity)
 
 	for scanner.Scan() {
 		var entry logger_wrapper.LogEntry
@@ -951,10 +951,15 @@ func (i instances) GetLogs(instanceId string, startDate, endDate time.Time, leve
 
 		logs = append(logs, entry)
 
-		// Verifica o limite
-		if len(logs) >= limit {
-			break
+		// Keep only the most recent `limit` entries (the file is chronological). It used
+		// to stop at the first `limit` matches, which returned the OLDEST ones of the
+		// range, not the latest.
+		if len(logs) >= 2*limit {
+			logs = append(logs[:0], logs[len(logs)-limit:]...)
 		}
+	}
+	if len(logs) > limit {
+		logs = logs[len(logs)-limit:]
 	}
 
 	if err := scanner.Err(); err != nil {
