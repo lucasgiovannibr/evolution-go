@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"io"
 	"sort"
 )
 
@@ -148,10 +147,15 @@ func (e *bodyEditor) set(key string, value interface{}) error {
 
 func (e *bodyEditor) modified() bool { return len(e.edits) > 0 }
 
-// reader serves the body with the edits applied. Untouched bytes are not copied.
-func (e *bodyEditor) reader() io.Reader {
+// apply returns the body with the edits applied.
+//
+// When the buffer has room (readBody leaves some) the edits are made in place: the bytes
+// after a field are moved with one memmove and nothing else is allocated, which is what
+// keeps a 100 MB body at ~100 MB instead of two copies of it. Without room it falls back
+// to a new buffer.
+func (e *bodyEditor) apply() []byte {
 	if !e.modified() {
-		return bytes.NewReader(e.body)
+		return e.body
 	}
 	type edit struct {
 		span
@@ -161,24 +165,25 @@ func (e *bodyEditor) reader() io.Reader {
 	for key, value := range e.edits {
 		edits = append(edits, edit{e.spans[key], value})
 	}
-	sort.Slice(edits, func(i, j int) bool { return edits[i].start < edits[j].start })
+	// From the last field to the first, so the spans of the earlier ones stay valid.
+	sort.Slice(edits, func(i, j int) bool { return edits[i].start > edits[j].start })
 
-	var parts []io.Reader
-	at := 0
+	body := e.body
 	for _, ed := range edits {
-		parts = append(parts, bytes.NewReader(e.body[at:ed.start]), bytes.NewReader(ed.value))
-		at = ed.end
+		oldLen := len(body)
+		newLen := oldLen - (ed.end - ed.start) + len(ed.value)
+		if newLen <= cap(body) {
+			body = body[:max(oldLen, newLen)]
+			copy(body[ed.start+len(ed.value):], body[ed.end:oldLen]) // memmove, overlap is fine
+			copy(body[ed.start:], ed.value)
+			body = body[:newLen]
+			continue
+		}
+		grown := make([]byte, newLen+newLen/64+1024)
+		copy(grown, body[:ed.start])
+		copy(grown[ed.start:], ed.value)
+		copy(grown[ed.start+len(ed.value):], body[ed.end:oldLen])
+		body = grown[:newLen]
 	}
-	parts = append(parts, bytes.NewReader(e.body[at:]))
-	return io.MultiReader(parts...)
-}
-
-// size is the length of the body with the edits applied.
-func (e *bodyEditor) size() int64 {
-	n := int64(len(e.body))
-	for key, value := range e.edits {
-		s := e.spans[key]
-		n += int64(len(value)) - int64(s.end-s.start)
-	}
-	return n
+	return body
 }

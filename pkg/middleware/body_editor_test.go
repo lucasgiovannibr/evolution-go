@@ -2,7 +2,6 @@ package auth_middleware
 
 import (
 	"encoding/json"
-	"io"
 	"math/rand"
 	"reflect"
 	"strings"
@@ -91,11 +90,7 @@ func TestBodyEditorEditsOnlyTheChosenFields(t *testing.T) {
 		if err := e.set("number", "EDITED"); err != nil {
 			t.Fatal(err)
 		}
-		out, _ := io.ReadAll(e.reader())
-
-		if int64(len(out)) != e.size() {
-			t.Fatalf("size() = %d but the body has %d bytes", e.size(), len(out))
-		}
+		out := e.apply()
 		var got map[string]interface{}
 		if err := json.Unmarshal(out, &got); err != nil {
 			t.Fatalf("edited body is not valid JSON: %v\n%s", err, out)
@@ -131,11 +126,16 @@ func TestBodyEditorEscapedKeyIsMatched(t *testing.T) {
 // The point of the rewrite: a body dominated by one big field is neither parsed into a
 // map nor re-encoded.
 func BenchmarkNormalizeNumberInAHugeBody(b *testing.B) {
-	body := []byte(`{"number":"5511999999999","type":"image","url":"` + strings.Repeat("QUJD", 5<<20) + `"}`) // 20 MB
+	original := []byte(`{"number":"5511999999999","type":"image","url":"` + strings.Repeat("QUJD", 5<<20) + `"}`) // 20 MB
 	b.ReportAllocs()
-	b.SetBytes(int64(len(body)))
-	b.ResetTimer()
+	b.SetBytes(int64(len(original)))
 	for i := 0; i < b.N; i++ {
+		// what readBody hands over: the body in a buffer with a little room, read once
+		b.StopTimer()
+		body := make([]byte, len(original), len(original)+8<<10)
+		copy(body, original)
+		b.StartTimer()
+
 		e, err := newBodyEditor(body, "number", "formatJid")
 		if err != nil {
 			b.Fatal(err)
@@ -146,7 +146,7 @@ func BenchmarkNormalizeNumberInAHugeBody(b *testing.B) {
 			b.Fatal("unexpected")
 		}
 		_ = e.set("number", value)
-		_, _ = io.Copy(io.Discard, e.reader())
+		_ = e.apply()
 	}
 }
 
@@ -164,5 +164,45 @@ func BenchmarkLegacyNormalizeInAHugeBody(b *testing.B) {
 		m["number"] = "+5511999999999@s.whatsapp.net"
 		out, _ := json.Marshal(m)
 		_ = out
+	}
+}
+
+// The edits are made inside the buffer when it has room (no second copy of the body), and
+// in a new buffer when it has not; both give the same bytes.
+func TestApplyInPlaceAndGrownAgree(t *testing.T) {
+	body := `{"a":"` + strings.Repeat("x", 1000) + `","number":"5511999999999","tail":[1,2,3]}`
+	want := `{"a":"` + strings.Repeat("x", 1000) + `","number":"+5511999999999@s.whatsapp.net","tail":[1,2,3]}`
+
+	for name, capacity := range map[string]int{"room": len(body) + 256, "no room": len(body)} {
+		buf := make([]byte, len(body), capacity)
+		copy(buf, body)
+		e, err := newBodyEditor(buf, "number")
+		if err != nil {
+			t.Fatal(err)
+		}
+		_ = e.set("number", "+5511999999999@s.whatsapp.net")
+		got := e.apply()
+		if string(got) != want {
+			t.Fatalf("%s: got %q", name, got)
+		}
+		if name == "room" && &got[0] != &buf[0] {
+			t.Fatal("with room in the buffer the edit must not allocate a new one")
+		}
+	}
+}
+
+func TestApplyWithSeveralEditsAndAShorterValue(t *testing.T) {
+	body := `{"number":"5511999999999","vcard":{"phone":"1"},"other":"keep","x":"5511999999999"}`
+	buf := make([]byte, len(body), len(body)+512)
+	copy(buf, body)
+	e, _ := newBodyEditor(buf, "number", "x")
+	_ = e.set("number", "N")                                // shorter
+	_ = e.set("x", "a much longer replacement value for x") // longer
+	var got map[string]interface{}
+	if err := json.Unmarshal(e.apply(), &got); err != nil {
+		t.Fatal(err)
+	}
+	if got["number"] != "N" || got["x"] != "a much longer replacement value for x" || got["other"] != "keep" {
+		t.Fatalf("got %v", got)
 	}
 }
