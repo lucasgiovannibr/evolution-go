@@ -45,6 +45,7 @@ import (
 	label_model "github.com/evolution-foundation/evolution-go/pkg/label/model"
 	label_repository "github.com/evolution-foundation/evolution-go/pkg/label/repository"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
+	"github.com/evolution-foundation/evolution-go/pkg/metrics"
 	message_model "github.com/evolution-foundation/evolution-go/pkg/message/model"
 	message_repository "github.com/evolution-foundation/evolution-go/pkg/message/repository"
 	"github.com/evolution-foundation/evolution-go/pkg/passkey/ceremony"
@@ -1214,7 +1215,9 @@ func (mycli *MyClient) teardownQR(reason string, forceLogout bool) {
 
 func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 	mycli.lastEventAt.Store(time.Now().UnixNano())
-	mycli.lastEventType.Store(strings.TrimPrefix(fmt.Sprintf("%T", rawEvt), "*events."))
+	eventType := strings.TrimPrefix(fmt.Sprintf("%T", rawEvt), "*events.")
+	mycli.lastEventType.Store(eventType)
+	metrics.Events.WithLabelValues(eventType).Inc()
 	mycli.eventCount.Add(1)
 
 	userID := mycli.userID

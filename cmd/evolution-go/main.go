@@ -48,6 +48,7 @@ import (
 	label_repository "github.com/evolution-foundation/evolution-go/pkg/label/repository"
 	label_service "github.com/evolution-foundation/evolution-go/pkg/label/service"
 	logger_wrapper "github.com/evolution-foundation/evolution-go/pkg/logger"
+	"github.com/evolution-foundation/evolution-go/pkg/metrics"
 	message_handler "github.com/evolution-foundation/evolution-go/pkg/message/handler"
 	message_model "github.com/evolution-foundation/evolution-go/pkg/message/model"
 	message_repository "github.com/evolution-foundation/evolution-go/pkg/message/repository"
@@ -208,7 +209,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	// gin.Default() prints the query string as it came, which put credentials such as
 	// /ws?token=<GLOBAL_API_KEY> in the access log; AccessLog redacts them.
 	r := gin.New()
-	r.Use(auth_middleware.AccessLog(), gin.Recovery())
+	r.Use(auth_middleware.RequestID(), metrics.Middleware(), auth_middleware.AccessLog(), gin.Recovery())
 
 	// Files above this size are kept on disk while a multipart body is parsed, not in memory.
 	r.MaxMultipartMemory = 8 << 20
@@ -258,6 +259,13 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 
 	// Optional Go profiler (goroutine/heap/cpu), for hunting leaks. Off by default and
 	// only reachable with the GLOBAL API key.
+	// Prometheus metrics, behind the global API key.
+	metrics.RegisterDBStats("users", usersSQLDB(db))
+	metrics.RegisterDBStats("auth", firstSQLDB(authDB, sqliteDB))
+	metrics.RegisterInstances(clientPointer)
+	metrics.RegisterWebhookQueues(whatsmeowService.WebhookStats)
+	r.GET("/metrics", auth_middleware.NewMiddleware(config, instanceService).AuthAdmin, metrics.Handler())
+
 	if config.PprofEnabled {
 		logger.LogWarn("ENABLE_PPROF is set: /debug/pprof is exposed behind the global API key")
 		pp := r.Group("/debug/pprof", auth_middleware.NewMiddleware(config, instanceService).AuthAdmin)
