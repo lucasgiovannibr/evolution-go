@@ -3,9 +3,11 @@ package send_service
 import (
 	"errors"
 	"fmt"
+	"net/http"
 	"strings"
 	"time"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	whatsmeow_service "github.com/evolution-foundation/evolution-go/pkg/whatsmeow/service"
 	"go.mau.fi/whatsmeow"
 )
@@ -35,4 +37,35 @@ func explainSendError(err error, lock *whatsmeow_service.ReachoutTimelockStatus,
 		}
 	}
 	return fmt.Errorf("%w: %s. Messages to contacts that already talked to this number still work; otherwise wait or ask the contact to message first", err, msg)
+}
+
+// interactiveRefusal is the code WhatsApp answers with (405, 473, 479) when it refuses the
+// shape of an interactive message. whatsmeow only carries it in the text of the error.
+func interactiveRefusal(err error) string {
+	if err == nil || !errors.Is(err, whatsmeow.ErrServerReturnedError) {
+		return ""
+	}
+	text := strings.TrimSpace(err.Error())
+	for _, code := range []string{"405", "473", "479"} {
+		if strings.HasSuffix(text, " "+code) {
+			return code
+		}
+	}
+	return ""
+}
+
+// explainInteractiveError turns WhatsApp's bare refusal of a list into an answer a client can
+// act on. Lists (the legacy ListMessage and the native single_select) were refused for every
+// wire format tried from a linked-device session, Business account included; the buttons
+// and the carousel are accepted. Other message types keep their error.
+func explainInteractiveError(err error, messageType string) error {
+	code := interactiveRefusal(err)
+	if code == "" || messageType != "ListMessage" {
+		return err
+	}
+	return &apierror.Error{
+		Status:  http.StatusBadGateway,
+		Code:    "whatsapp_rejected",
+		Message: "WhatsApp refused the list message (server error " + code + "): list messages are not accepted from linked-device sessions, even on WhatsApp Business accounts. Use /send/button (up to 3 reply buttons) or /send/carousel instead",
+	}
 }

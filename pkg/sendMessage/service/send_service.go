@@ -1988,94 +1988,14 @@ func (s *sendService) SendButton(data *ButtonStruct, instance *instance_model.In
 		})
 	}
 
-	templateId := strconv.FormatInt(time.Now().UnixNano()/1000000, 10)
-	messageParamsJSON := `{"from":"api","templateId":` + templateId + `}`
-
-	// MessageSecret (32 random bytes) — required for iOS to render interactive messages.
-	btnMsgSecret := make([]byte, 32)
-	_, _ = crypto_rand.Read(btnMsgSecret)
-
 	var msg *waE2E.Message
 	var msgType string
+	var bizNodes []waBinary.Node
 
-	if hasReply && !hasOtherTypes && !hasPix {
-		// Reply-only: native ButtonsMessage wrapped in DocumentWithCaptionMessage (Baileys PR #36).
-		var replyButtons []*waE2E.ButtonsMessage_Button
-		for _, v := range data.Buttons {
-			replyButtons = append(replyButtons, &waE2E.ButtonsMessage_Button{
-				ButtonID: proto.String(v.Id),
-				ButtonText: &waE2E.ButtonsMessage_Button_ButtonText{
-					DisplayText: proto.String(v.DisplayText),
-				},
-				Type: waE2E.ButtonsMessage_Button_RESPONSE.Enum(),
-			})
-		}
-
-		buttonsMsg := &waE2E.ButtonsMessage{
-			ContentText: proto.String(data.Description),
-			FooterText:  proto.String(data.Footer),
-			HeaderType:  waE2E.ButtonsMessage_EMPTY.Enum(),
-			Buttons:     replyButtons,
-		}
-
-		// Optional media header (image or video URL).
-		if data.ImageUrl != "" {
-			if fileData, readErr := utils.DownloadBytes(data.ImageUrl, utils.MaxImageDownload); readErr != nil {
-				s.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Button header ImageUrl not attached: %v", instance.Id, readErr)
-			} else {
-				{
-					if uploaded, upErr := client.Upload(context.Background(), fileData, whatsmeow.MediaImage); upErr == nil {
-						buttonsMsg.HeaderType = waE2E.ButtonsMessage_IMAGE.Enum()
-						buttonsMsg.Header = &waE2E.ButtonsMessage_ImageMessage{
-							ImageMessage: &waE2E.ImageMessage{
-								URL:           proto.String(uploaded.URL),
-								DirectPath:    proto.String(uploaded.DirectPath),
-								MediaKey:      uploaded.MediaKey,
-								Mimetype:      proto.String("image/jpeg"),
-								FileEncSHA256: uploaded.FileEncSHA256,
-								FileSHA256:    uploaded.FileSHA256,
-								FileLength:    proto.Uint64(uint64(len(fileData))),
-							},
-						}
-					}
-				}
-			}
-		} else if data.VideoUrl != "" {
-			if fileData, readErr := utils.DownloadBytes(data.VideoUrl, utils.MaxMediaDownload); readErr != nil {
-				s.loggerWrapper.GetLogger(instance.Id).LogWarn("[%s] Button header VideoUrl not attached: %v", instance.Id, readErr)
-			} else {
-				{
-					if uploaded, upErr := client.Upload(context.Background(), fileData, whatsmeow.MediaVideo); upErr == nil {
-						buttonsMsg.HeaderType = waE2E.ButtonsMessage_VIDEO.Enum()
-						buttonsMsg.Header = &waE2E.ButtonsMessage_VideoMessage{
-							VideoMessage: &waE2E.VideoMessage{
-								URL:           proto.String(uploaded.URL),
-								DirectPath:    proto.String(uploaded.DirectPath),
-								MediaKey:      uploaded.MediaKey,
-								Mimetype:      proto.String("video/mp4"),
-								FileEncSHA256: uploaded.FileEncSHA256,
-								FileSHA256:    uploaded.FileSHA256,
-								FileLength:    proto.Uint64(uint64(len(fileData))),
-							},
-						}
-					}
-				}
-			}
-		}
-
-		msg = &waE2E.Message{
-			DocumentWithCaptionMessage: &waE2E.FutureProofMessage{
-				Message: &waE2E.Message{
-					ButtonsMessage: buttonsMsg,
-				},
-			},
-			MessageContextInfo: &waE2E.MessageContextInfo{
-				MessageSecret: btnMsgSecret,
-			},
-		}
-		msgType = "ButtonsMessage"
-	} else if hasPix {
-		// Pix: NativeFlowMessage wrapped in DocumentWithCaptionMessage.
+	if hasPix {
+		// Pix: NativeFlowMessage wrapped in DocumentWithCaptionMessage, announced as payment_info.
+		btnMsgSecret := make([]byte, 32)
+		_, _ = crypto_rand.Read(btnMsgSecret)
 		paymentMsgParams := `{"native_flow_name":"order_details","version":1}`
 
 		var interactiveBody *waE2E.InteractiveMessage_Body
@@ -2104,103 +2024,34 @@ func (s *sendService) SendButton(data *ButtonStruct, instance *instance_model.In
 			},
 		}
 		msgType = "InteractiveMessage"
+		bizNodes = nativeFlowBizNodes("payment_info", "1", data.Number)
 	} else {
-		// Mixed CTA buttons (url/copy/call): NativeFlowMessage wrapped in DocumentWithCaptionMessage.
-		body := func() string {
-			t := "*" + data.Title + "*"
-			if data.Description != "" {
-				t += "\n\n" + data.Description + "\n"
-			}
-			return t
-		}()
-
-		msg = &waE2E.Message{
-			DocumentWithCaptionMessage: &waE2E.FutureProofMessage{
-				Message: &waE2E.Message{
-					InteractiveMessage: &waE2E.InteractiveMessage{
-						Body: &waE2E.InteractiveMessage_Body{
-							Text: &body,
-						},
-						Footer: &waE2E.InteractiveMessage_Footer{
-							Text: &data.Footer,
-						},
-						InteractiveMessage: &waE2E.InteractiveMessage_NativeFlowMessage_{
-							NativeFlowMessage: &waE2E.InteractiveMessage_NativeFlowMessage{
-								Buttons:           buttons,
-								MessageParamsJSON: &messageParamsJSON,
-								MessageVersion:    proto.Int32(1),
-							},
-						},
-					},
-				},
-			},
-			MessageContextInfo: &waE2E.MessageContextInfo{
-				MessageSecret: btnMsgSecret,
-			},
+		// Reply and CTA buttons (copy/url/call): a plain InteractiveMessage with a native flow,
+		// announced as <native_flow v="9" name="mixed"/>. Checked on a WhatsApp Business account,
+		// on the phone and on WhatsApp Web. The legacy ButtonsMessage is refused by the server
+		// (405), and the same native flow wrapped in DocumentWithCaptionMessage, with another
+		// native_flow name or without v="9" is refused (405/473) or never rendered.
+		body := data.Description
+		if data.Title != "" {
+			body = "*" + data.Title + "*\n\n" + data.Description
 		}
+
+		interactive := &waE2E.InteractiveMessage{
+			Body: &waE2E.InteractiveMessage_Body{Text: proto.String(body)},
+			InteractiveMessage: &waE2E.InteractiveMessage_NativeFlowMessage_{
+				NativeFlowMessage: &waE2E.InteractiveMessage_NativeFlowMessage{Buttons: buttons},
+			},
+			// ContextInfo must exist: SendMessage fills it in when the message quotes another.
+			ContextInfo: &waE2E.ContextInfo{},
+		}
+		if data.Footer != "" {
+			interactive.Footer = &waE2E.InteractiveMessage_Footer{Text: proto.String(data.Footer)}
+		}
+		interactive.Header = s.buttonHeader(client, instance.Id, data)
+
+		msg = &waE2E.Message{InteractiveMessage: interactive}
 		msgType = "InteractiveMessage"
-	}
-
-	// Build biz/bot nodes injected directly in the XMPP stanza — required for mobile rendering.
-	// Reply-only buttons get <biz><buttons/></biz>; CTA/Pix get <biz><interactive type="native_flow" v="1"><native_flow name="X"/></interactive></biz>.
-	// The <bot biz_bot="1"/> node is required for 1:1 chats (skipped on groups).
-	var bizInteractiveContent waBinary.Node
-	if hasReply && !hasOtherTypes && !hasPix {
-		bizInteractiveContent = waBinary.Node{
-			Tag: "interactive",
-			Attrs: waBinary.Attrs{
-				"type": "native_flow",
-				"v":    "1",
-			},
-			Content: []waBinary.Node{{
-				Tag: "native_flow",
-				Attrs: waBinary.Attrs{
-					"name": "quick_reply",
-				},
-			}},
-		}
-	} else if hasPix {
-		bizInteractiveContent = waBinary.Node{
-			Tag: "interactive",
-			Attrs: waBinary.Attrs{
-				"type": "native_flow",
-				"v":    "1",
-			},
-			Content: []waBinary.Node{{
-				Tag: "native_flow",
-				Attrs: waBinary.Attrs{
-					"name": "payment_info",
-				},
-			}},
-		}
-	} else {
-		// Mixed CTA buttons (url/copy/call) — name="mixed" is the WhatsApp convention.
-		bizInteractiveContent = waBinary.Node{
-			Tag: "interactive",
-			Attrs: waBinary.Attrs{
-				"type": "native_flow",
-				"v":    "1",
-			},
-			Content: []waBinary.Node{{
-				Tag: "native_flow",
-				Attrs: waBinary.Attrs{
-					"name": "mixed",
-				},
-			}},
-		}
-	}
-
-	bizNodes := []waBinary.Node{
-		{
-			Tag:     "biz",
-			Content: []waBinary.Node{bizInteractiveContent},
-		},
-	}
-	if !strings.Contains(data.Number, "@g.us") {
-		bizNodes = append(bizNodes, waBinary.Node{
-			Tag:   "bot",
-			Attrs: waBinary.Attrs{"biz_bot": "1"},
-		})
+		bizNodes = nativeFlowBizNodes("mixed", "9", data.Number)
 	}
 
 	// Route through centralized SendMessage for ContextInfo, webhooks, quotes, mentions.
@@ -2219,6 +2070,102 @@ func (s *sendService) SendButton(data *ButtonStruct, instance *instance_model.In
 	}
 
 	return message, nil
+}
+
+// nativeFlowBizNodes is the <biz> node that announces a native flow message to the server, plus
+// the <bot biz_bot="1"/> node that 1:1 chats need (groups do not take it).
+func nativeFlowBizNodes(flowName, flowVersion, number string) []waBinary.Node {
+	nodes := []waBinary.Node{{
+		Tag: "biz",
+		Content: []waBinary.Node{{
+			Tag:   "interactive",
+			Attrs: waBinary.Attrs{"type": "native_flow", "v": "1"},
+			Content: []waBinary.Node{{
+				Tag:   "native_flow",
+				Attrs: waBinary.Attrs{"name": flowName, "v": flowVersion},
+			}},
+		}},
+	}}
+	if !strings.Contains(number, "@g.us") {
+		nodes = append(nodes, waBinary.Node{Tag: "bot", Attrs: waBinary.Attrs{"biz_bot": "1"}})
+	}
+	return nodes
+}
+
+// buttonHeader uploads the optional image or video header of a button message. A header that
+// cannot be downloaded or uploaded is skipped (logged) so the buttons still go out.
+func (s *sendService) buttonHeader(client *whatsmeow.Client, instanceID string, data *ButtonStruct) *waE2E.InteractiveMessage_Header {
+	switch {
+	case data.ImageUrl != "":
+		fileData, err := utils.DownloadBytes(data.ImageUrl, utils.MaxImageDownload)
+		if err != nil {
+			s.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Button header ImageUrl not attached: %v", instanceID, err)
+			return nil
+		}
+		uploaded, err := client.Upload(context.Background(), fileData, whatsmeow.MediaImage)
+		if err != nil {
+			s.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Button header image upload failed: %v", instanceID, err)
+			return nil
+		}
+		imgW, imgH := imageDimensions(fileData)
+		return &waE2E.InteractiveMessage_Header{
+			HasMediaAttachment: proto.Bool(true),
+			Media: &waE2E.InteractiveMessage_Header_ImageMessage{
+				ImageMessage: &waE2E.ImageMessage{
+					URL:           proto.String(uploaded.URL),
+					DirectPath:    proto.String(uploaded.DirectPath),
+					MediaKey:      uploaded.MediaKey,
+					Mimetype:      proto.String("image/jpeg"),
+					FileEncSHA256: uploaded.FileEncSHA256,
+					FileSHA256:    uploaded.FileSHA256,
+					FileLength:    proto.Uint64(uint64(len(fileData))),
+					JPEGThumbnail: makeJPEGThumbnail(fileData, 72),
+					Width:         imgW,
+					Height:        imgH,
+				},
+			},
+		}
+	case data.VideoUrl != "":
+		fileData, err := utils.DownloadBytes(data.VideoUrl, utils.MaxMediaDownload)
+		if err != nil {
+			s.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Button header VideoUrl not attached: %v", instanceID, err)
+			return nil
+		}
+		uploaded, err := client.Upload(context.Background(), fileData, whatsmeow.MediaVideo)
+		if err != nil {
+			s.loggerWrapper.GetLogger(instanceID).LogWarn("[%s] Button header video upload failed: %v", instanceID, err)
+			return nil
+		}
+		return &waE2E.InteractiveMessage_Header{
+			HasMediaAttachment: proto.Bool(true),
+			Media: &waE2E.InteractiveMessage_Header_VideoMessage{
+				VideoMessage: &waE2E.VideoMessage{
+					URL:           proto.String(uploaded.URL),
+					DirectPath:    proto.String(uploaded.DirectPath),
+					MediaKey:      uploaded.MediaKey,
+					Mimetype:      proto.String("video/mp4"),
+					FileEncSHA256: uploaded.FileEncSHA256,
+					FileSHA256:    uploaded.FileSHA256,
+					FileLength:    proto.Uint64(uint64(len(fileData))),
+				},
+			},
+		}
+	}
+	return nil
+}
+
+// carouselCardHeader is the header of a carousel card, without media yet. A title or subtitle
+// sent as an empty string makes the iPhone drop the whole carousel (WhatsApp Web still shows
+// it), so the field is left out when there is no text.
+func carouselCardHeader(h CarouselCardHeaderStruct) *waE2E.InteractiveMessage_Header {
+	header := &waE2E.InteractiveMessage_Header{HasMediaAttachment: proto.Bool(false)}
+	if h.Title != "" {
+		header.Title = proto.String(h.Title)
+	}
+	if h.Subtitle != "" {
+		header.Subtitle = proto.String(h.Subtitle)
+	}
+	return header
 }
 
 // buildCarouselButton maps a carousel button to its native-flow name and
@@ -2814,7 +2761,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error sending message: %v", instance.Id, err)
 		// A bare "server returned error 463" says nothing to a person: explain it and,
 		// when WhatsApp told us about the restriction, say until when.
-		return nil, explainSendError(err, s.whatsmeowService.ReachoutTimelock(instance.Id), time.Now())
+		return nil, explainInteractiveError(explainSendError(err, s.whatsmeowService.ReachoutTimelock(instance.Id), time.Now()), messageType)
 	}
 
 	s.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Message sent successfully! ServerID: %d", instance.Id, response.ServerID)
@@ -2987,11 +2934,7 @@ func (s *sendService) SendCarousel(data *CarouselStruct, instance *instance_mode
 			Body: &waE2E.InteractiveMessage_Body{
 				Text: proto.String(card.Body.Text),
 			},
-			Header: &waE2E.InteractiveMessage_Header{
-				Title:              proto.String(card.Header.Title),
-				Subtitle:           proto.String(card.Header.Subtitle),
-				HasMediaAttachment: proto.Bool(false),
-			},
+			Header: carouselCardHeader(card.Header),
 		}
 
 		// Add media to header if URL provided

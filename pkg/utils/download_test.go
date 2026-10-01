@@ -30,6 +30,12 @@ func TestDownloadBytesRejectsNon2xx(t *testing.T) {
 	if err == nil || data != nil || !strings.Contains(err.Error(), "404") {
 		t.Fatalf("data=%q err=%v", data, err)
 	}
+	if !errors.Is(err, ErrDownloadFailed) {
+		t.Fatalf("an error status must be ErrDownloadFailed so the API answers 400: %v", err)
+	}
+	if _, err := DownloadBytes("ftp://x/y", 10); !errors.Is(err, ErrDownloadFailed) {
+		t.Fatalf("a non-http URL must be ErrDownloadFailed: %v", err)
+	}
 }
 
 func TestDownloadBytesEnforcesTheLimit(t *testing.T) {

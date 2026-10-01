@@ -22,6 +22,11 @@ const (
 // ErrDownloadTooLarge is returned when the body exceeds the limit.
 var ErrDownloadTooLarge = errors.New("file is too large")
 
+// ErrDownloadFailed is returned when the URL gave no usable file: it is not http(s), cannot be
+// reached, answered with an error status or could not be read. The URL came from the caller, so
+// it is theirs to fix.
+var ErrDownloadFailed = errors.New("could not download the file")
+
 // DownloadBytes fetches a URL with DownloadClient and returns its body.
 //
 // Callers used to do http.Get + io.ReadAll, which had three gaps: an error page (404,
@@ -31,17 +36,17 @@ var ErrDownloadTooLarge = errors.New("file is too large")
 func DownloadBytes(rawURL string, maxBytes int64) ([]byte, error) {
 	rawURL = strings.TrimSpace(rawURL)
 	if !strings.HasPrefix(rawURL, "http://") && !strings.HasPrefix(rawURL, "https://") {
-		return nil, fmt.Errorf("invalid URL: only http and https are supported")
+		return nil, fmt.Errorf("%w: invalid URL, only http and https are supported", ErrDownloadFailed)
 	}
 
 	resp, err := DownloadClient.Get(rawURL)
 	if err != nil {
-		return nil, fmt.Errorf("failed to fetch %s: %w", rawURL, err)
+		return nil, fmt.Errorf("%w: failed to fetch %s: %w", ErrDownloadFailed, rawURL, err)
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode > 299 {
-		return nil, fmt.Errorf("failed to fetch %s: HTTP status %d", rawURL, resp.StatusCode)
+		return nil, fmt.Errorf("%w: failed to fetch %s: HTTP status %d", ErrDownloadFailed, rawURL, resp.StatusCode)
 	}
 	if resp.ContentLength > maxBytes {
 		return nil, fmt.Errorf("%w: %d bytes (limit %d)", ErrDownloadTooLarge, resp.ContentLength, maxBytes)
@@ -49,7 +54,7 @@ func DownloadBytes(rawURL string, maxBytes int64) ([]byte, error) {
 
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxBytes+1))
 	if err != nil {
-		return nil, fmt.Errorf("failed to read %s: %w", rawURL, err)
+		return nil, fmt.Errorf("%w: failed to read %s: %w", ErrDownloadFailed, rawURL, err)
 	}
 	if int64(len(data)) > maxBytes {
 		return nil, fmt.Errorf("%w: more than %d bytes", ErrDownloadTooLarge, maxBytes)
