@@ -2,9 +2,9 @@ package group_service
 
 import (
 	"context"
-	"errors"
 	"strings"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 	"go.mau.fi/whatsmeow/types"
@@ -47,10 +47,10 @@ func normalizeInviteCode(code string) string {
 // validate checks the fields required by the kind of invite.
 func (s *GroupInviteStruct) validate() error {
 	if normalizeInviteCode(s.Code) == "" {
-		return errors.New("code is required")
+		return apierror.Invalid("code is required")
 	}
 	if s.IsInviteMessage() && s.Inviter == "" {
-		return errors.New("inviter is required for an invite message")
+		return apierror.Invalid("inviter is required for an invite message")
 	}
 	return nil
 }
@@ -58,11 +58,11 @@ func (s *GroupInviteStruct) validate() error {
 func (g *groupService) parseInviteMessageJIDs(data *GroupInviteStruct) (group, inviter types.JID, err error) {
 	group, err = types.ParseJID(data.GroupJID)
 	if err != nil || group.Server != types.GroupServer {
-		return group, inviter, errors.New("invalid groupJid")
+		return group, inviter, apierror.Invalid("invalid groupJid")
 	}
 	parsed, ok := utils.ParseJID(data.Inviter)
 	if !ok {
-		return group, inviter, errors.New("invalid inviter")
+		return group, inviter, apierror.Invalid("invalid inviter")
 	}
 	return group, utils.CanonicalJID(parsed), nil
 }
@@ -96,7 +96,7 @@ func (g *groupService) JoinGroupInvite(data *GroupInviteStruct, instance *instan
 		return err
 	}
 	if !data.IsInviteMessage() {
-		return errors.New("groupJid is required: this route joins from an invite message; for an invite link use /group/join")
+		return apierror.Invalid("groupJid is required: this route joins from an invite message; for an invite link use /group/join")
 	}
 	client, err := g.ensureClientConnected(instance.Id)
 	if err != nil {

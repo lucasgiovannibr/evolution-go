@@ -5,6 +5,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	event_types "github.com/evolution-foundation/evolution-go/pkg/internal/event_types"
 )
 
@@ -56,10 +57,10 @@ func (d *IntegrationsStruct) Validate() error {
 			}
 		}
 		if len(unknown) > 0 {
-			return fmt.Errorf("unknown event types: %s", strings.Join(unknown, ", "))
+			return apierror.Invalid(fmt.Sprintf("unknown event types: %s", strings.Join(unknown, ", ")))
 		}
 		if hasAll && len(d.Subscribe) > 1 {
-			return fmt.Errorf("subscribe: ALL cannot be combined with other events")
+			return apierror.Invalid("subscribe: ALL cannot be combined with other events")
 		}
 	}
 
@@ -69,7 +70,7 @@ func (d *IntegrationsStruct) Validate() error {
 		"natsEnable":      d.NatsEnable,
 	} {
 		if v != "" && !producerValues[v] {
-			return fmt.Errorf("%s: invalid value %q (use enabled or disabled)", name, v)
+			return apierror.Invalid(fmt.Sprintf("%s: invalid value %q (use enabled or disabled)", name, v))
 		}
 	}
 	return nil
@@ -78,7 +79,7 @@ func (d *IntegrationsStruct) Validate() error {
 func validateWebhookURL(raw string) error {
 	u, err := url.Parse(raw)
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
-		return fmt.Errorf("webhookUrl must be an http(s) URL, or \"disabled\" to remove it")
+		return apierror.Invalid("webhookUrl must be an http(s) URL, or \"disabled\" to remove it")
 	}
 	return nil
 }

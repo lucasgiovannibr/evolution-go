@@ -44,7 +44,7 @@ func (g *callHandler) RejectCall(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -75,7 +75,7 @@ func (g *callHandler) RejectCall(ctx *gin.Context) {
 func (g *callHandler) ActiveCalls(ctx *gin.Context) {
 	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -97,13 +97,13 @@ func callFailure(ctx *gin.Context, err error) {
 	case errors.Is(err, call_engine.ErrDialFailed):
 		status = http.StatusBadGateway
 	}
-	ctx.JSON(status, gin.H{"error": err.Error()})
+	apierror.RespondWith(ctx, err, status)
 }
 
 func instanceOf(ctx *gin.Context) (*instance_model.Instance, bool) {
 	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 	}
 	return instance, ok
 }
@@ -150,7 +150,7 @@ func (g *callHandler) AnswerCall(ctx *gin.Context) {
 	}
 	var data call_service.AnswerCallStruct
 	if err := ctx.ShouldBindJSON(&data); err != nil || data.CallID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "callId is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "callId is required")
 		return
 	}
 	info, err := g.callService.AnswerCall(&data, instance)
@@ -179,7 +179,7 @@ func (g *callHandler) HangupCall(ctx *gin.Context) {
 	}
 	var data call_service.HangupCallStruct
 	if err := ctx.ShouldBindJSON(&data); err != nil || data.CallID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "callId is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "callId is required")
 		return
 	}
 	if err := g.callService.HangupCall(&data, instance); err != nil {
@@ -207,7 +207,7 @@ func (g *callHandler) StreamTicket(ctx *gin.Context) {
 	}
 	var data call_service.StreamTicketStruct
 	if err := ctx.ShouldBindJSON(&data); err != nil || data.CallID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "callId is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "callId is required")
 		return
 	}
 	ticket, err := g.callService.IssueStreamTicket(instance, data.CallID, data.Video)
@@ -242,7 +242,7 @@ func (g *callHandler) DialCall(ctx *gin.Context) {
 	}
 	var data call_service.DialCallStruct
 	if err := ctx.ShouldBindJSON(&data); err != nil || data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "number is required (one number, not a list)"})
+		apierror.Fail(ctx, http.StatusBadRequest, "number is required (one number, not a list)")
 		return
 	}
 
@@ -275,7 +275,7 @@ func (g *callHandler) VideoCall(ctx *gin.Context) {
 	}
 	var data call_service.VideoCallStruct
 	if err := ctx.ShouldBindJSON(&data); err != nil || data.CallID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "callId and action are required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "callId and action are required")
 		return
 	}
 	info, err := g.callService.VideoCall(instance, &data)

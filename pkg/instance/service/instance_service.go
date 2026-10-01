@@ -6,6 +6,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"os"
 	"path/filepath"
@@ -142,7 +143,7 @@ func (i instances) Create(data *CreateStruct) (*instance_model.Instance, error) 
 	findInstance, _ := i.instanceRepository.GetInstanceByName(data.Name)
 
 	if findInstance != nil {
-		return nil, fmt.Errorf("instance already exists")
+		return nil, apierror.Conflict("instance already exists")
 	}
 
 	instance := instance_model.Instance{
@@ -401,7 +402,7 @@ func (i instances) GetQr(instance *instance_model.Instance) (*QrcodeStruct, erro
 	// PairSuccess) — PR #149.
 	if client != nil && client.IsLoggedIn() {
 		logger.LogInfo("[%s] Client is already logged in — returning 'session already logged in' (StartInstance skipped)", instance.Id)
-		return nil, fmt.Errorf("session already logged in")
+		return nil, apierror.Conflict("session already logged in")
 	}
 
 	// Se não há cliente, precisamos iniciar um novo cliente
@@ -423,7 +424,7 @@ func (i instances) GetQr(instance *instance_model.Instance) (*QrcodeStruct, erro
 		// Verificar novamente se há cliente
 		client = i.clientPointer.Get(instance.Id)
 		if client != nil && client.IsLoggedIn() {
-			return nil, fmt.Errorf("session already logged in")
+			return nil, apierror.Conflict("session already logged in")
 		}
 	} else if !client.IsConnected() {
 		// Se o cliente existe mas não está conectado, pode estar aguardando QR code
@@ -477,7 +478,7 @@ func (i instances) GetQr(instance *instance_model.Instance) (*QrcodeStruct, erro
 
 	parts := strings.Split(code, "|")
 	if len(parts) < 2 {
-		return nil, fmt.Errorf("invalid QR code format")
+		return nil, apierror.Invalid("invalid QR code format")
 	}
 
 	qr := &QrcodeStruct{
@@ -508,7 +509,7 @@ func (i instances) Pair(data *PairStruct, instance *instance_model.Instance) (*P
 
 	if client == nil || !client.IsConnected() {
 		if client != nil && client.IsLoggedIn() {
-			return nil, fmt.Errorf("instance is already authenticated")
+			return nil, apierror.Conflict("instance is already authenticated")
 		}
 		logger.LogInfo("[%s] No active connection, starting instance for phone pairing", instance.Id)
 		if err := i.whatsmeowService.StartInstance(instance.Id); err != nil {
@@ -529,7 +530,7 @@ func (i instances) Pair(data *PairStruct, instance *instance_model.Instance) (*P
 	}
 
 	if client.IsLoggedIn() {
-		return nil, fmt.Errorf("instance is already authenticated")
+		return nil, apierror.Conflict("instance is already authenticated")
 	}
 
 	code, err := client.PairPhone(context.Background(), data.Phone, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
@@ -631,15 +632,15 @@ func (i instances) SetProxy(id string, proxyConfig *ProxyConfig) error {
 
 	// Validate proxy configuration
 	if proxyConfig == nil {
-		return fmt.Errorf("proxy configuration cannot be nil")
+		return apierror.Invalid("proxy configuration cannot be nil")
 	}
 
 	if proxyConfig.Host == "" {
-		return fmt.Errorf("proxy host is required")
+		return apierror.Invalid("proxy host is required")
 	}
 
 	if proxyConfig.Port == "" {
-		return fmt.Errorf("proxy port is required")
+		return apierror.Invalid("proxy port is required")
 	}
 
 	proxyConfig.Protocol = utils.NormalizeProxyProtocol(proxyConfig.Protocol, proxyConfig.Port)
@@ -670,7 +671,7 @@ func (i instances) SetProxy(id string, proxyConfig *ProxyConfig) error {
 
 func (i instances) SetProxyFromStruct(id string, data *SetProxyStruct) error {
 	if data == nil {
-		return fmt.Errorf("proxy data cannot be nil")
+		return apierror.Invalid("proxy data cannot be nil")
 	}
 
 	proxyConfig := &ProxyConfig{
@@ -759,7 +760,7 @@ func (i instances) RemoveProxy(id string) error {
 
 func (i instances) ForceReconnect(instanceId string, number string) error {
 	if i.clientPointer.Get(instanceId).IsConnected() && i.clientPointer.Get(instanceId).IsLoggedIn() {
-		return fmt.Errorf("client already connected")
+		return apierror.Conflict("client already connected")
 	}
 
 	err := i.whatsmeowService.ForceUpdateJid(instanceId, number)

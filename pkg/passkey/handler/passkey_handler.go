@@ -44,13 +44,13 @@ func NewPasskeyHandler(svc whatsmeow_service.WhatsmeowService) *PasskeyHandler {
 func (h *PasskeyHandler) GetCeremony(c *gin.Context) {
 	token := c.Param("token")
 	if token == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "token is required"})
+		apierror.Fail(c, http.StatusBadRequest, "token is required")
 		return
 	}
 
 	store := h.whatsmeowService.PasskeyCeremonyStore()
 	if store == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "passkey ceremony unavailable"})
+		apierror.Fail(c, http.StatusServiceUnavailable, "passkey ceremony unavailable")
 		return
 	}
 
@@ -59,7 +59,7 @@ func (h *PasskeyHandler) GetCeremony(c *gin.Context) {
 		// Unknown/expired token. The extension treats an empty/cleared state
 		// after having started as "pairing concluded"; before that it keeps
 		// waiting. Return 404 so a never-valid token is distinguishable.
-		c.JSON(http.StatusNotFound, gin.H{"error": "ceremony not found or expired"})
+		apierror.Fail(c, http.StatusNotFound, "ceremony not found or expired")
 		return
 	}
 
@@ -98,19 +98,19 @@ func (h *PasskeyHandler) GetCeremony(c *gin.Context) {
 func (h *PasskeyHandler) SubmitResponse(c *gin.Context) {
 	token := c.Param("token")
 	if token == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "token is required"})
+		apierror.Fail(c, http.StatusBadRequest, "token is required")
 		return
 	}
 
 	store := h.whatsmeowService.PasskeyCeremonyStore()
 	if store == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "passkey ceremony unavailable"})
+		apierror.Fail(c, http.StatusServiceUnavailable, "passkey ceremony unavailable")
 		return
 	}
 
 	instanceID, ok := store.InstanceForToken(token)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ceremony not found or expired"})
+		apierror.Fail(c, http.StatusNotFound, "ceremony not found or expired")
 		return
 	}
 
@@ -146,19 +146,19 @@ func (h *PasskeyHandler) SubmitResponse(c *gin.Context) {
 func (h *PasskeyHandler) Confirm(c *gin.Context) {
 	token := c.Param("token")
 	if token == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "token is required"})
+		apierror.Fail(c, http.StatusBadRequest, "token is required")
 		return
 	}
 
 	store := h.whatsmeowService.PasskeyCeremonyStore()
 	if store == nil {
-		c.JSON(http.StatusServiceUnavailable, gin.H{"error": "passkey ceremony unavailable"})
+		apierror.Fail(c, http.StatusServiceUnavailable, "passkey ceremony unavailable")
 		return
 	}
 
 	instanceID, ok := store.InstanceForToken(token)
 	if !ok {
-		c.JSON(http.StatusNotFound, gin.H{"error": "ceremony not found or expired"})
+		apierror.Fail(c, http.StatusNotFound, "ceremony not found or expired")
 		return
 	}
 

@@ -35,7 +35,7 @@ func (c *communityHandler) CreateCommunity(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -47,7 +47,7 @@ func (c *communityHandler) CreateCommunity(ctx *gin.Context) {
 	}
 
 	if data.CommunityName == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "community name is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "community name is required")
 		return
 	}
 
@@ -76,7 +76,7 @@ func (c *communityHandler) CommunityAdd(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -88,12 +88,12 @@ func (c *communityHandler) CommunityAdd(ctx *gin.Context) {
 	}
 
 	if data.CommunityJID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "community jid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "community jid is required")
 		return
 	}
 
 	if len(data.GroupJID) == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "group jid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "group jid is required")
 		return
 	}
 
@@ -122,7 +122,7 @@ func (c *communityHandler) CommunityRemove(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -134,12 +134,12 @@ func (c *communityHandler) CommunityRemove(ctx *gin.Context) {
 	}
 
 	if data.CommunityJID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "community jid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "community jid is required")
 		return
 	}
 
 	if len(data.GroupJID) == 0 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "group jid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "group jid is required")
 		return
 	}
 

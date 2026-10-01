@@ -43,7 +43,7 @@ func (n *newsletterHandler) CreateNewsletter(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -55,7 +55,7 @@ func (n *newsletterHandler) CreateNewsletter(ctx *gin.Context) {
 	}
 
 	if data.Name == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "name is required")
 		return
 	}
 
@@ -82,7 +82,7 @@ func (n *newsletterHandler) ListNewsletter(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -111,7 +111,7 @@ func (n *newsletterHandler) GetNewsletter(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -123,7 +123,7 @@ func (n *newsletterHandler) GetNewsletter(ctx *gin.Context) {
 	}
 
 	if data.JID.String() == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "jid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "jid is required")
 		return
 	}
 
@@ -152,7 +152,7 @@ func (n *newsletterHandler) GetNewsletterInvite(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -164,7 +164,7 @@ func (n *newsletterHandler) GetNewsletterInvite(ctx *gin.Context) {
 	}
 
 	if data.Key == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "key is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "key is required")
 		return
 	}
 
@@ -193,7 +193,7 @@ func (n *newsletterHandler) SubscribeNewsletter(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -205,7 +205,7 @@ func (n *newsletterHandler) SubscribeNewsletter(ctx *gin.Context) {
 	}
 
 	if data.JID.String() == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "jid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "jid is required")
 		return
 	}
 
@@ -234,7 +234,7 @@ func (n *newsletterHandler) GetNewsletterMessages(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -246,7 +246,7 @@ func (n *newsletterHandler) GetNewsletterMessages(ctx *gin.Context) {
 	}
 
 	if data.JID.String() == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "jid is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "jid is required")
 		return
 	}
 

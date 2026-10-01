@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"image"
 	"image/jpeg"
@@ -552,13 +553,13 @@ func validateMessageFields(phone string, formatJid *bool, messageID *string, par
 
 	if messageID != nil {
 		if participant == nil {
-			return types.NewJID("", types.DefaultUserServer), errors.New("missing Participant in ContextInfo")
+			return types.NewJID("", types.DefaultUserServer), apierror.Invalid("missing Participant in ContextInfo")
 		}
 	}
 
 	if participant != nil {
 		if messageID == nil {
-			return types.NewJID("", types.DefaultUserServer), errors.New("missing StanzaId in ContextInfo")
+			return types.NewJID("", types.DefaultUserServer), apierror.Invalid("missing StanzaId in ContextInfo")
 		}
 	}
 
@@ -638,7 +639,7 @@ func (s *sendService) checkSingleUserExists(client *whatsmeow.Client, phone stri
 
 	// Verify if the number was found
 	if len(resp) == 0 {
-		return "", false, fmt.Errorf("number %s not found in WhatsApp response", phoneNumbers[0])
+		return "", false, apierror.NotFound(fmt.Sprintf("number %s not found in WhatsApp response", phoneNumbers[0]))
 	}
 
 	// Check if the first result indicates the number is on WhatsApp
@@ -1113,7 +1114,7 @@ func (s *sendService) prepareMediaFile(data *MediaStruct, fileData []byte) (*med
 	case "document":
 		uploadType = whatsmeow.MediaDocument
 	default:
-		return nil, errors.New("invalid media type")
+		return nil, apierror.Invalid("invalid media type")
 	}
 	return &mediaPrep{fileData: fileData, mimeType: mimeType, uploadType: uploadType, duration: duration}, nil
 }
@@ -1183,7 +1184,7 @@ func (s *sendService) prepareMediaURL(data *MediaStruct, instanceID string, star
 	case "document":
 		uploadType = whatsmeow.MediaDocument
 	default:
-		return nil, errors.New("invalid media type")
+		return nil, apierror.Invalid("invalid media type")
 	}
 	return &mediaPrep{fileData: fileData, mimeType: mimeType, uploadType: uploadType, duration: duration}, nil
 }
@@ -1397,7 +1398,7 @@ func (s *sendService) sendMediaFileWithRetry(data *MediaStruct, fileData []byte,
 
 			mediaType = "DocumentMessage"
 		default:
-			return nil, errors.New("invalid media type")
+			return nil, apierror.Invalid("invalid media type")
 		}
 
 		applyViewOnce(media, data.ViewOnce)
@@ -1650,7 +1651,7 @@ func (s *sendService) sendMediaUrlWithRetry(data *MediaStruct, instance *instanc
 
 			mediaType = "DocumentMessage"
 		default:
-			return nil, errors.New("invalid media type")
+			return nil, apierror.Invalid("invalid media type")
 		}
 
 		applyViewOnce(media, data.ViewOnce)
@@ -1765,7 +1766,7 @@ func (s *sendService) SendSticker(data *StickerStruct, instance *instance_model.
 			return nil, fmt.Errorf("failed to upload sticker: %v", err)
 		}
 	} else {
-		return nil, fmt.Errorf("invalid sticker URL")
+		return nil, apierror.Invalid("invalid sticker URL")
 	}
 
 	msg := &waE2E.Message{StickerMessage: &waE2E.StickerMessage{
@@ -2643,7 +2644,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 				}
 			}
 		default:
-			return nil, fmt.Errorf("invalid messageType: %s", messageType)
+			return nil, apierror.Invalid(fmt.Sprintf("invalid messageType: %s", messageType))
 		}
 	} else {
 		switch messageType {
@@ -2685,7 +2686,7 @@ func (s *sendService) SendMessage(instance *instance_model.Instance, msg *waE2E.
 		case "ButtonsMessage":
 			// Reply-only buttons: ContextInfo already set in SendButton
 		default:
-			return nil, fmt.Errorf("invalid messageType: %s", messageType)
+			return nil, apierror.Invalid(fmt.Sprintf("invalid messageType: %s", messageType))
 		}
 	}
 
@@ -2966,7 +2967,7 @@ func (s *sendService) SendCarousel(data *CarouselStruct, instance *instance_mode
 	recipient, ok = utils.ParseJID(data.Number)
 	if !ok && formatJid {
 		s.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return nil, errors.New("invalid phone number")
+		return nil, apierror.Invalid("invalid phone number")
 	} else if !ok && !formatJid {
 		recipient = types.JID{
 			User:   data.Number,
@@ -3158,7 +3159,7 @@ func (s *sendService) SendStatusText(data *StatusTextStruct, instance *instance_
 	}
 
 	if data.Text == "" {
-		return nil, errors.New("text is required")
+		return nil, apierror.Invalid("text is required")
 	}
 
 	msg := &waE2E.Message{
@@ -3214,10 +3215,10 @@ func (s *sendService) SendStatusMediaUrl(data *StatusMediaStruct, instance *inst
 	}
 
 	if data.Url == "" {
-		return nil, errors.New("url is required")
+		return nil, apierror.Invalid("url is required")
 	}
 	if data.Type != "image" && data.Type != "video" {
-		return nil, errors.New("type must be 'image' or 'video'")
+		return nil, apierror.Invalid("type must be 'image' or 'video'")
 	}
 
 	req, err := http.NewRequest("GET", data.Url, nil)
@@ -3255,7 +3256,7 @@ func (s *sendService) SendStatusMediaFile(data *StatusMediaStruct, fileData []by
 	}
 
 	if data.Type != "image" && data.Type != "video" {
-		return nil, errors.New("type must be 'image' or 'video'")
+		return nil, apierror.Invalid("type must be 'image' or 'video'")
 	}
 
 	return s.sendStatusMedia(client, data, fileData, instance)
@@ -3269,7 +3270,7 @@ func (s *sendService) sendStatusMedia(client *whatsmeow.Client, data *StatusMedi
 	switch data.Type {
 	case "image":
 		if mimeType != "image/jpeg" && mimeType != "image/png" && mimeType != "image/webp" {
-			return nil, fmt.Errorf("invalid file format: '%s'. Only 'image/jpeg', 'image/png' and 'image/webp' are accepted", mimeType)
+			return nil, apierror.Invalid(fmt.Sprintf("invalid file format: '%s'. Only 'image/jpeg', 'image/png' and 'image/webp' are accepted", mimeType))
 		}
 		if mimeType == "image/webp" {
 			mimeType = "image/jpeg"
@@ -3277,11 +3278,11 @@ func (s *sendService) sendStatusMedia(client *whatsmeow.Client, data *StatusMedi
 		uploadType = whatsmeow.MediaImage
 	case "video":
 		if mimeType != "video/mp4" {
-			return nil, fmt.Errorf("invalid file format: '%s'. Only 'video/mp4' is accepted", mimeType)
+			return nil, apierror.Invalid(fmt.Sprintf("invalid file format: '%s'. Only 'video/mp4' is accepted", mimeType))
 		}
 		uploadType = whatsmeow.MediaVideo
 	default:
-		return nil, errors.New("invalid media type")
+		return nil, apierror.Invalid("invalid media type")
 	}
 
 	uploaded, err := client.Upload(context.Background(), fileData, uploadType)

@@ -41,7 +41,7 @@ func (c *chatHandler) ChatPin(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -53,13 +53,13 @@ func (c *chatHandler) ChatPin(ctx *gin.Context) {
 	}
 
 	if data.Chat == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "chat is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "chat is required")
 		return
 	}
 
 	ts, err := c.chatService.ChatPin(data, instance)
 	if err != nil {
-		ctx.JSON(statusForChatError(err), gin.H{"error": err.Error()})
+		apierror.RespondWith(ctx, err, statusForChatError(err))
 		return
 	}
 
@@ -86,7 +86,7 @@ func (c *chatHandler) ChatUnpin(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -98,13 +98,13 @@ func (c *chatHandler) ChatUnpin(ctx *gin.Context) {
 	}
 
 	if data.Chat == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "chat is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "chat is required")
 		return
 	}
 
 	ts, err := c.chatService.ChatUnpin(data, instance)
 	if err != nil {
-		ctx.JSON(statusForChatError(err), gin.H{"error": err.Error()})
+		apierror.RespondWith(ctx, err, statusForChatError(err))
 		return
 	}
 
@@ -131,7 +131,7 @@ func (c *chatHandler) ChatArchive(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -143,13 +143,13 @@ func (c *chatHandler) ChatArchive(ctx *gin.Context) {
 	}
 
 	if data.Chat == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "chat is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "chat is required")
 		return
 	}
 
 	ts, err := c.chatService.ChatArchive(data, instance)
 	if err != nil {
-		ctx.JSON(statusForChatError(err), gin.H{"error": err.Error()})
+		apierror.RespondWith(ctx, err, statusForChatError(err))
 		return
 	}
 
@@ -176,7 +176,7 @@ func (c *chatHandler) ChatUnarchive(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -188,13 +188,13 @@ func (c *chatHandler) ChatUnarchive(ctx *gin.Context) {
 	}
 
 	if data.Chat == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "chat is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "chat is required")
 		return
 	}
 
 	ts, err := c.chatService.ChatUnarchive(data, instance)
 	if err != nil {
-		ctx.JSON(statusForChatError(err), gin.H{"error": err.Error()})
+		apierror.RespondWith(ctx, err, statusForChatError(err))
 		return
 	}
 
@@ -221,7 +221,7 @@ func (c *chatHandler) ChatMute(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -233,13 +233,13 @@ func (c *chatHandler) ChatMute(ctx *gin.Context) {
 	}
 
 	if data.Chat == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "chat is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "chat is required")
 		return
 	}
 
 	ts, err := c.chatService.ChatMute(data, instance)
 	if err != nil {
-		ctx.JSON(statusForChatError(err), gin.H{"error": err.Error()})
+		apierror.RespondWith(ctx, err, statusForChatError(err))
 		return
 	}
 
@@ -266,7 +266,7 @@ func (c *chatHandler) ChatUnmute(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -278,13 +278,13 @@ func (c *chatHandler) ChatUnmute(ctx *gin.Context) {
 	}
 
 	if data.Chat == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "chat is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "chat is required")
 		return
 	}
 
 	ts, err := c.chatService.ChatUnmute(data, instance)
 	if err != nil {
-		ctx.JSON(statusForChatError(err), gin.H{"error": err.Error()})
+		apierror.RespondWith(ctx, err, statusForChatError(err))
 		return
 	}
 
@@ -311,7 +311,7 @@ func (c *chatHandler) HistorySyncRequest(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 

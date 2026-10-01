@@ -65,33 +65,33 @@ func (i *instanceHandler) Create(ctx *gin.Context) {
 	}
 
 	if data.Name == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "name is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "name is required")
 		return
 	}
 
 	if data.Token == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "token is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "token is required")
 		return
 	}
 
 	if data.Proxy != nil {
 		if data.Proxy.Port == "" {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "proxy port is required"})
+			apierror.Fail(ctx, http.StatusBadRequest, "proxy port is required")
 			return
 		}
 
 		if data.Proxy.Password == "" {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "proxy password is required"})
+			apierror.Fail(ctx, http.StatusBadRequest, "proxy password is required")
 			return
 		}
 
 		if data.Proxy.Username == "" {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "proxy username is required"})
+			apierror.Fail(ctx, http.StatusBadRequest, "proxy username is required")
 			return
 		}
 
 		if data.Proxy.Host == "" {
-			ctx.JSON(http.StatusBadRequest, gin.H{"error": "proxy host is required"})
+			apierror.Fail(ctx, http.StatusBadRequest, "proxy host is required")
 			return
 		}
 	} else {
@@ -130,7 +130,7 @@ func (i *instanceHandler) Connect(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -172,7 +172,7 @@ func (i *instanceHandler) Reconnect(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -199,7 +199,7 @@ func (i *instanceHandler) Disconnect(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -228,7 +228,7 @@ func (i *instanceHandler) Logout(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusNotFound, "instance not found")
 		return
 	}
 
@@ -257,7 +257,7 @@ func (i *instanceHandler) Status(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusNotFound, "instance not found")
 		return
 	}
 
@@ -284,7 +284,7 @@ func (i *instanceHandler) Qr(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusNotFound, "instance not found")
 		return
 	}
 
@@ -313,7 +313,7 @@ func (i *instanceHandler) Pair(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -325,7 +325,7 @@ func (i *instanceHandler) Pair(ctx *gin.Context) {
 	}
 
 	if data.Phone == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone is required")
 		return
 	}
 
@@ -372,7 +372,7 @@ func (i *instanceHandler) Info(ctx *gin.Context) {
 	instanceId := ctx.Param("instanceId")
 
 	if instanceId == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "instanceId is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "instanceId is required")
 		return
 	}
 
@@ -400,7 +400,7 @@ func (i *instanceHandler) Delete(ctx *gin.Context) {
 	instanceId := ctx.Param("instanceId")
 
 	if instanceId == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "instanceId is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "instanceId is required")
 		return
 	}
 
@@ -429,7 +429,7 @@ func (i *instanceHandler) SetProxy(ctx *gin.Context) {
 	instanceId := ctx.Param("instanceId")
 
 	if instanceId == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "instanceId is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "instanceId is required")
 		return
 	}
 
@@ -442,12 +442,12 @@ func (i *instanceHandler) SetProxy(ctx *gin.Context) {
 
 	// Validate required fields
 	if data.Host == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "host is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "host is required")
 		return
 	}
 
 	if data.Port == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "port is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "port is required")
 		return
 	}
 
@@ -482,7 +482,7 @@ func (i *instanceHandler) DeleteProxy(ctx *gin.Context) {
 	instanceId := ctx.Param("instanceId")
 
 	if instanceId == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "id is required")
 		return
 	}
 
@@ -509,7 +509,7 @@ func (i *instanceHandler) GetProxyStatus(ctx *gin.Context) {
 	instanceId := ctx.Param("instanceId")
 
 	if instanceId == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "id is required")
 		return
 	}
 
@@ -535,7 +535,7 @@ func (i *instanceHandler) GetRuntime(ctx *gin.Context) {
 	instanceId := ctx.Param("instanceId")
 
 	if instanceId == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "id is required")
 		return
 	}
 
@@ -582,7 +582,7 @@ func (i *instanceHandler) ForceReconnect(ctx *gin.Context) {
 	instanceId := ctx.Param("instanceId")
 
 	if instanceId == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "instanceId is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "instanceId is required")
 		return
 	}
 
@@ -595,7 +595,7 @@ func (i *instanceHandler) ForceReconnect(ctx *gin.Context) {
 
 	var number string
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "number is required")
 		return
 	}
 
@@ -682,7 +682,7 @@ func (h *instanceHandler) GetAdvancedSettings(c *gin.Context) {
 	instanceId := c.Param("instanceId")
 
 	if instanceId == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "instanceId is required"})
+		apierror.Fail(c, http.StatusBadRequest, "instanceId is required")
 		return
 	}
 
@@ -712,7 +712,7 @@ func (h *instanceHandler) UpdateAdvancedSettings(c *gin.Context) {
 	instanceId := c.Param("instanceId")
 
 	if instanceId == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "instanceId is required"})
+		apierror.Fail(c, http.StatusBadRequest, "instanceId is required")
 		return
 	}
 
@@ -760,7 +760,7 @@ func (h *instanceHandler) UpdateAdvancedSettings(c *gin.Context) {
 func (h *instanceHandler) UpdateIntegrations(c *gin.Context) {
 	instanceId := c.Param("instanceId")
 	if _, err := uuid.Parse(instanceId); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "instanceId must be a valid UUID"})
+		apierror.Fail(c, http.StatusBadRequest, "instanceId must be a valid UUID")
 		return
 	}
 
@@ -777,7 +777,7 @@ func (h *instanceHandler) UpdateIntegrations(c *gin.Context) {
 	instance, err := h.instanceService.UpdateIntegrations(instanceId, &data)
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			c.JSON(http.StatusNotFound, gin.H{"error": "instance not found"})
+			apierror.Fail(c, http.StatusNotFound, "instance not found")
 			return
 		}
 		apierror.Respond(c, err)

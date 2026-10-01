@@ -3,6 +3,7 @@ package message_handler
 import (
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	message_service "github.com/evolution-foundation/evolution-go/pkg/message/service"
 	"github.com/gin-gonic/gin"
@@ -22,7 +23,7 @@ import (
 func (m *messageHandler) RerequestMessage(ctx *gin.Context) {
 	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -32,7 +33,7 @@ func (m *messageHandler) RerequestMessage(ctx *gin.Context) {
 		if err != nil {
 			msg = err.Error()
 		}
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		apierror.Fail(ctx, http.StatusBadRequest, msg)
 		return
 	}
 
@@ -42,7 +43,7 @@ func (m *messageHandler) RerequestMessage(ctx *gin.Context) {
 		if message_service.IsRequestError(err) {
 			status = http.StatusBadRequest
 		}
-		ctx.JSON(status, gin.H{"error": err.Error()})
+		apierror.RespondWith(ctx, err, status)
 		return
 	}
 

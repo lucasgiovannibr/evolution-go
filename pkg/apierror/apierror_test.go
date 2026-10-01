@@ -100,3 +100,29 @@ func TestBadRequest(t *testing.T) {
 		t.Fatalf("%d %s", w.Code, w.Body.String())
 	}
 }
+
+func TestFailAndAbortDeriveTheCodeFromTheStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for status, code := range map[int]string{401: "unauthorized", 403: "forbidden", 404: "not_found", 409: "conflict", 413: "payload_too_large", 429: "rate_limited", 500: "internal_error", 418: "error"} {
+		w := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(w)
+		Fail(c, status, "msg")
+		var b Body
+		_ = json.Unmarshal(w.Body.Bytes(), &b)
+		if w.Code != status || b.Code != code || b.Error != "msg" {
+			t.Errorf("%d: %d %+v", status, w.Code, b)
+		}
+	}
+	w := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(w)
+	Abort(c, 401, "nope")
+	if !c.IsAborted() || w.Code != 401 {
+		t.Fatal("Abort must stop the request")
+	}
+}
+
+func TestConflict(t *testing.T) {
+	if s, c := Classify(Conflict("already there")); s != 409 || c != "conflict" {
+		t.Fatalf("%d %s", s, c)
+	}
+}

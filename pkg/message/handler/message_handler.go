@@ -42,7 +42,7 @@ func (m *messageHandler) React(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -54,12 +54,12 @@ func (m *messageHandler) React(ctx *gin.Context) {
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
 	if data.Reaction == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "message reaction is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "message reaction is required")
 		return
 	}
 
@@ -88,7 +88,7 @@ func (m *messageHandler) ChatPresence(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -100,12 +100,12 @@ func (m *messageHandler) ChatPresence(ctx *gin.Context) {
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
 	if data.State == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "state is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "state is required")
 		return
 	}
 
@@ -138,7 +138,7 @@ func (m *messageHandler) SubscribePresence(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -155,7 +155,7 @@ func (m *messageHandler) SubscribePresence(ctx *gin.Context) {
 		if message_service.IsRequestError(err) {
 			status = http.StatusBadRequest
 		}
-		ctx.JSON(status, gin.H{"error": err.Error()})
+		apierror.RespondWith(ctx, err, status)
 		return
 	}
 
@@ -166,7 +166,7 @@ func (m *messageHandler) SubscribePresence(ctx *gin.Context) {
 			if r.Invalid {
 				status = http.StatusBadRequest
 			}
-			ctx.JSON(status, gin.H{"error": r.Error})
+			apierror.Fail(ctx, status, r.Error)
 			return
 		}
 		ctx.JSON(http.StatusOK, gin.H{"message": "success"})
@@ -203,7 +203,7 @@ func (m *messageHandler) MarkRead(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -215,12 +215,12 @@ func (m *messageHandler) MarkRead(ctx *gin.Context) {
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
 	if len(data.Id) < 1 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "id is required")
 		return
 	}
 
@@ -253,7 +253,7 @@ func (m *messageHandler) MarkPlayed(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -265,12 +265,12 @@ func (m *messageHandler) MarkPlayed(ctx *gin.Context) {
 	}
 
 	if data.Number == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "phone number is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "phone number is required")
 		return
 	}
 
 	if len(data.Id) < 1 {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "id is required")
 		return
 	}
 
@@ -303,7 +303,7 @@ func (m *messageHandler) DownloadMedia(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -344,7 +344,7 @@ func (m *messageHandler) GetMessageStatus(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -356,7 +356,7 @@ func (m *messageHandler) GetMessageStatus(ctx *gin.Context) {
 	}
 
 	if data.Id == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "id is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "id is required")
 		return
 	}
 
@@ -390,7 +390,7 @@ func (m *messageHandler) DeleteMessageEveryone(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -402,12 +402,12 @@ func (m *messageHandler) DeleteMessageEveryone(ctx *gin.Context) {
 	}
 
 	if data.Chat == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "chat is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "chat is required")
 		return
 	}
 
 	if data.MessageID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "messageId is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "messageId is required")
 		return
 	}
 
@@ -441,7 +441,7 @@ func (m *messageHandler) EditMessage(ctx *gin.Context) {
 
 	instance, ok := getInstance.(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -453,17 +453,17 @@ func (m *messageHandler) EditMessage(ctx *gin.Context) {
 	}
 
 	if data.Chat == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "chat is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "chat is required")
 		return
 	}
 
 	if data.Message == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "message is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "message is required")
 		return
 	}
 
 	if data.MessageID == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "messageId is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "messageId is required")
 		return
 	}
 

@@ -4,6 +4,7 @@ import (
 	"crypto/subtle"
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	"github.com/evolution-foundation/evolution-go/pkg/config"
 	instance_service "github.com/evolution-foundation/evolution-go/pkg/instance/service"
 	"github.com/gin-gonic/gin"
@@ -23,13 +24,13 @@ type middleware struct {
 func (m middleware) Auth(ctx *gin.Context) {
 	token := ctx.GetHeader("apikey")
 	if token == "" {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "not authorized"})
+		apierror.Abort(ctx, http.StatusUnauthorized, "not authorized")
 		return
 	}
 
 	instance, err := m.instanceService.GetInstanceByToken(token)
 	if err != nil {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "not authorized"})
+		apierror.Abort(ctx, http.StatusUnauthorized, "not authorized")
 		return
 	}
 
@@ -41,12 +42,12 @@ func (m middleware) Auth(ctx *gin.Context) {
 func (m middleware) AuthAdmin(ctx *gin.Context) {
 	token := ctx.GetHeader("apikey")
 	if token == "" {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "not authorized"})
+		apierror.Abort(ctx, http.StatusUnauthorized, "not authorized")
 		return
 	}
 
 	if !isGlobalKey(token, m.config.GlobalApiKey) {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "not authorized"})
+		apierror.Abort(ctx, http.StatusUnauthorized, "not authorized")
 		return
 	}
 
@@ -61,7 +62,7 @@ func (m middleware) AuthAdmin(ctx *gin.Context) {
 func (m middleware) AuthInstanceScoped(ctx *gin.Context) {
 	token := ctx.GetHeader("apikey")
 	if token == "" {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "not authorized"})
+		apierror.Abort(ctx, http.StatusUnauthorized, "not authorized")
 		return
 	}
 
@@ -72,12 +73,12 @@ func (m middleware) AuthInstanceScoped(ctx *gin.Context) {
 
 	instance, err := m.instanceService.GetInstanceByToken(token)
 	if err != nil {
-		ctx.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "not authorized"})
+		apierror.Abort(ctx, http.StatusUnauthorized, "not authorized")
 		return
 	}
 
 	if id := ctx.Param("instanceId"); id != "" && id != instance.Id {
-		ctx.AbortWithStatusJSON(http.StatusForbidden, gin.H{"error": "token does not belong to this instance"})
+		apierror.Abort(ctx, http.StatusForbidden, "token does not belong to this instance")
 		return
 	}
 

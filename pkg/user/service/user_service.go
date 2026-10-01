@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"sort"
 	"time"
@@ -163,7 +164,7 @@ func (u *userService) GetUser(ctx context.Context, data *CheckUserStruct, instan
 	for _, arg := range data.Number {
 		jid, ok := utils.ParseJID(arg)
 		if !ok {
-			return nil, errors.New("invalid phone number")
+			return nil, apierror.Invalid("invalid phone number")
 		}
 		// The usync query is a RAW IQ: the "+" that CreateJID adds makes WhatsApp
 		// ignore it and the request only ends at the timeout (see utils.CanonicalJID).
@@ -387,7 +388,7 @@ func (u *userService) ResolveLid(data *ResolveLidStruct, instance *instance_mode
 
 	lidJID, ok := utils.ParseJID(data.Lid)
 	if !ok || lidJID.Server != types.HiddenUserServer {
-		return nil, errors.New("invalid lid")
+		return nil, apierror.Invalid("invalid lid")
 	}
 
 	if client.Store.LIDs == nil {
@@ -404,7 +405,7 @@ func (u *userService) ResolveLid(data *ResolveLidStruct, instance *instance_mode
 	if pn.IsEmpty() && data.GroupJid != "" {
 		groupJID, ok := utils.ParseJID(data.GroupJid)
 		if !ok || groupJID.Server != types.GroupServer {
-			return nil, errors.New("invalid groupJid")
+			return nil, apierror.Invalid("invalid groupJid")
 		}
 
 		u.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] No cached phone number for lid %s, refreshing group %s as fallback", instance.Id, lidJID, groupJID)
@@ -449,7 +450,7 @@ func (u *userService) GetAvatar(ctx context.Context, data *GetAvatarStruct, inst
 
 	jid, ok := utils.ParseJID(data.Number)
 	if !ok {
-		return nil, errors.New("invalid phone number")
+		return nil, apierror.Invalid("invalid phone number")
 	}
 	// Profile picture IQ is a RAW node (Target=jid). CreateJID/ParseJID may
 	// prefix "+" which WhatsApp does not accept on this path — same class of
@@ -567,7 +568,7 @@ func (u *userService) BlockContact(data *BlockStruct, instance *instance_model.I
 
 	jid, ok := utils.ParseJID(data.Number)
 	if !ok {
-		return nil, errors.New("invalid phone number")
+		return nil, apierror.Invalid("invalid phone number")
 	}
 	// UpdateBlocklist resolves the LID of a phone number through the store and, when it
 	// is unknown, through a usync query. With the "+" that CreateJID adds, neither
@@ -591,7 +592,7 @@ func (u *userService) UnlockContact(data *BlockStruct, instance *instance_model.
 
 	jid, ok := utils.ParseJID(data.Number)
 	if !ok {
-		return nil, errors.New("invalid phone number")
+		return nil, apierror.Invalid("invalid phone number")
 	}
 	// UpdateBlocklist resolves the LID of a phone number through the store and, when it
 	// is unknown, through a usync query. With the "+" that CreateJID adds, neither

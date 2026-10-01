@@ -3,6 +3,7 @@ package newsletter_handler
 import (
 	"net/http"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
 	newsletter_service "github.com/evolution-foundation/evolution-go/pkg/newsletter/service"
 	"github.com/gin-gonic/gin"
@@ -13,7 +14,7 @@ import (
 func bindChannelAction[T any](ctx *gin.Context, act func(data *T, instance *instance_model.Instance) error) {
 	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -23,7 +24,7 @@ func bindChannelAction[T any](ctx *gin.Context, act func(data *T, instance *inst
 		if err != nil {
 			msg = err.Error()
 		}
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": msg})
+		apierror.Fail(ctx, http.StatusBadRequest, msg)
 		return
 	}
 
@@ -32,7 +33,7 @@ func bindChannelAction[T any](ctx *gin.Context, act func(data *T, instance *inst
 		if newsletter_service.IsNewsletterRequestError(err) {
 			status = http.StatusBadRequest
 		}
-		ctx.JSON(status, gin.H{"error": err.Error()})
+		apierror.RespondWith(ctx, err, status)
 		return
 	}
 

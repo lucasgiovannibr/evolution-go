@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"strings"
 	"time"
@@ -154,7 +155,7 @@ func (g *groupService) GetGroupInfo(data *GetGroupInfoStruct, instance *instance
 	recipient, ok := utils.ParseJID(data.GroupJID)
 	if !ok {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return nil, errors.New("invalid group jid")
+		return nil, apierror.Invalid("invalid group jid")
 	}
 
 	resp, err := client.GetGroupInfo(context.Background(), recipient)
@@ -175,7 +176,7 @@ func (g *groupService) GetGroupInviteLink(data *GetGroupInviteLinkStruct, instan
 	recipient, ok := utils.ParseJID(data.GroupJID)
 	if !ok {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return "", errors.New("invalid group jid")
+		return "", apierror.Invalid("invalid group jid")
 	}
 
 	resp, err := client.GetGroupInviteLink(context.Background(), recipient, data.Reset)
@@ -196,7 +197,7 @@ func (g *groupService) SetGroupPhoto(data *SetGroupPhotoStruct, instance *instan
 	recipient, ok := utils.ParseJID(data.GroupJID)
 	if !ok {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return "", errors.New("invalid group jid")
+		return "", apierror.Invalid("invalid group jid")
 	}
 
 	var fileData []byte
@@ -239,7 +240,7 @@ func (g *groupService) SetGroupName(data *SetGroupNameStruct, instance *instance
 	recipient, ok := utils.ParseJID(data.GroupJID)
 	if !ok {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return errors.New("invalid group jid")
+		return apierror.Invalid("invalid group jid")
 	}
 
 	g.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Attempting to set group name for %s", instance.Id, recipient.String())
@@ -267,7 +268,7 @@ func (g *groupService) SetGroupDescription(data *SetGroupDescriptionStruct, inst
 	recipient, ok := utils.ParseJID(data.GroupJID)
 	if !ok {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-		return errors.New("invalid group jid")
+		return apierror.Invalid("invalid group jid")
 	}
 
 	g.loggerWrapper.GetLogger(instance.Id).LogInfo("[%s] Attempting to set group description for %s", instance.Id, recipient.String())
@@ -299,7 +300,7 @@ func (g *groupService) CreateGroup(data *CreateGroupStruct, instance *instance_m
 		recipient, ok := utils.ParseJID(participant)
 		if !ok {
 			g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-			return nil, errors.New("invalid phone number")
+			return nil, apierror.Invalid("invalid phone number")
 		}
 		participants = append(participants, utils.CanonicalJID(recipient))
 	}
@@ -352,7 +353,7 @@ func (g *groupService) UpdateParticipant(data *AddParticipantStruct, instance *i
 		recipient, ok := utils.ParseJID(participant)
 		if !ok {
 			g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating message fields", instance.Id)
-			return nil, errors.New("invalid phone number")
+			return nil, apierror.Invalid("invalid phone number")
 		}
 		// Participant JIDs go into raw group IQ attributes: no "+" prefix.
 		participants = append(participants, utils.CanonicalJID(recipient))
@@ -431,7 +432,7 @@ func (g *groupService) UpdateGroupSettings(data *UpdateGroupSettingsStruct, inst
 	recipient, ok := utils.ParseJID(data.GroupJID)
 	if !ok {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating group jid", instance.Id)
-		return errors.New("invalid group jid")
+		return apierror.Invalid("invalid group jid")
 	}
 
 	// Validate action
@@ -448,7 +449,7 @@ func (g *groupService) UpdateGroupSettings(data *UpdateGroupSettingsStruct, inst
 
 	if !validActions[data.Action] {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Invalid action: %s", instance.Id, data.Action)
-		return errors.New("invalid action. Valid actions: announcement, not_announcement, locked, unlocked, approval_on, approval_off, admin_add, all_member_add")
+		return apierror.Invalid("invalid action. Valid actions: announcement, not_announcement, locked, unlocked, approval_on, approval_off, admin_add, all_member_add")
 	}
 
 	// Apply settings based on action
@@ -489,7 +490,7 @@ func (g *groupService) GetGroupRequestParticipants(data *GetGroupRequestParticip
 	recipient, ok := utils.ParseJID(data.GroupJID)
 	if !ok {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating group jid", instance.Id)
-		return nil, errors.New("invalid group jid")
+		return nil, apierror.Invalid("invalid group jid")
 	}
 
 	requests, err := client.GetGroupRequestParticipants(context.Background(), recipient)
@@ -560,7 +561,7 @@ func (g *groupService) UpdateGroupRequestParticipants(data *UpdateGroupRequestPa
 	recipient, ok := utils.ParseJID(data.GroupJID)
 	if !ok {
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating group jid", instance.Id)
-		return nil, errors.New("invalid group jid")
+		return nil, apierror.Invalid("invalid group jid")
 	}
 
 	// Validate action
@@ -572,7 +573,7 @@ func (g *groupService) UpdateGroupRequestParticipants(data *UpdateGroupRequestPa
 		action = whatsmeow.ParticipantChangeReject
 	default:
 		g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Invalid action: %s", instance.Id, data.Action)
-		return nil, errors.New("invalid action. Valid actions: approve, reject")
+		return nil, apierror.Invalid("invalid action. Valid actions: approve, reject")
 	}
 
 	// Parse participants JIDs
@@ -581,7 +582,7 @@ func (g *groupService) UpdateGroupRequestParticipants(data *UpdateGroupRequestPa
 		participantJID, ok := utils.ParseJID(participant)
 		if !ok {
 			g.loggerWrapper.GetLogger(instance.Id).LogError("[%s] Error validating participant jid: %s", instance.Id, participant)
-			return nil, errors.New("invalid participant jid: " + participant)
+			return nil, apierror.Invalid("invalid participant jid: " + participant)
 		}
 		participants = append(participants, utils.CanonicalJID(participantJID))
 	}

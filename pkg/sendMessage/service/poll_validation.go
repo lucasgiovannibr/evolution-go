@@ -1,8 +1,8 @@
 package send_service
 
 import (
-	"errors"
 	"fmt"
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	"strings"
 )
 
@@ -18,10 +18,10 @@ const maxPollOptions = 12
 //     (0 itself is kept: it is the documented "unlimited".)
 func (p *PollStruct) ValidatePoll() error {
 	if strings.TrimSpace(p.Question) == "" {
-		return errors.New("question is required")
+		return apierror.Invalid("question is required")
 	}
 	if len(p.Options) < 2 {
-		return errors.New("minimum 2 options are required")
+		return apierror.Invalid("minimum 2 options are required")
 	}
 	if len(p.Options) > maxPollOptions {
 		return fmt.Errorf("maximum %d options are allowed", maxPollOptions)
@@ -31,7 +31,7 @@ func (p *PollStruct) ValidatePoll() error {
 	for i, o := range p.Options {
 		name := strings.TrimSpace(o)
 		if name == "" {
-			return fmt.Errorf("option %d is empty", i+1)
+			return apierror.Invalid(fmt.Sprintf("option %d is empty", i+1))
 		}
 		if _, dup := seen[name]; dup {
 			return fmt.Errorf("option %q is repeated", name)
@@ -40,7 +40,7 @@ func (p *PollStruct) ValidatePoll() error {
 	}
 
 	if p.MaxAnswer < 0 || p.MaxAnswer > len(p.Options) {
-		return fmt.Errorf("maxAnswer must be between 0 (unlimited) and the number of options (%d)", len(p.Options))
+		return apierror.Invalid(fmt.Sprintf("maxAnswer must be between 0 (unlimited) and the number of options (%d)", len(p.Options)))
 	}
 	return nil
 }

@@ -23,7 +23,7 @@ import (
 func (c *chatHandler) SetDisappearing(ctx *gin.Context) {
 	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -33,12 +33,12 @@ func (c *chatHandler) SetDisappearing(ctx *gin.Context) {
 		return
 	}
 	if data.Chat == "" {
-		ctx.JSON(http.StatusBadRequest, gin.H{"error": "chat is required"})
+		apierror.Fail(ctx, http.StatusBadRequest, "chat is required")
 		return
 	}
 
 	if err := c.chatService.SetDisappearing(data, instance); err != nil {
-		ctx.JSON(statusForChatError(err), gin.H{"error": err.Error()})
+		apierror.RespondWith(ctx, err, statusForChatError(err))
 		return
 	}
 
@@ -59,7 +59,7 @@ func (c *chatHandler) SetDisappearing(ctx *gin.Context) {
 func (c *chatHandler) SetDefaultDisappearing(ctx *gin.Context) {
 	instance, ok := ctx.MustGet("instance").(*instance_model.Instance)
 	if !ok {
-		ctx.JSON(http.StatusInternalServerError, gin.H{"error": "instance not found"})
+		apierror.Fail(ctx, http.StatusInternalServerError, "instance not found")
 		return
 	}
 
@@ -70,7 +70,7 @@ func (c *chatHandler) SetDefaultDisappearing(ctx *gin.Context) {
 	}
 
 	if err := c.chatService.SetDefaultDisappearing(data, instance); err != nil {
-		ctx.JSON(statusForChatError(err), gin.H{"error": err.Error()})
+		apierror.RespondWith(ctx, err, statusForChatError(err))
 		return
 	}
 

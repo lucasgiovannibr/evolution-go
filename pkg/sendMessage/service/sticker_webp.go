@@ -26,6 +26,7 @@ import (
 
 	"github.com/chai2010/webp"
 
+	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
 )
 
@@ -69,7 +70,7 @@ func stickerWebP(ctx context.Context, url string) ([]byte, error) {
 		return nil, fmt.Errorf("failed to read image from URL: %v", err)
 	}
 	if len(raw) > maxStickerBytes {
-		return nil, fmt.Errorf("sticker exceeds %d bytes", maxStickerBytes)
+		return nil, apierror.Invalid(fmt.Sprintf("sticker exceeds %d bytes", maxStickerBytes))
 	}
 
 	return stickerFromBytes(raw)
