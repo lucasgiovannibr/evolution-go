@@ -20,7 +20,8 @@ Guia para resolver problemas comuns no Evolution GO.
 
 ```env
 # .env
-WADEBUG=DEBUG
+WADEBUG=DEBUG    # log do cliente WhatsApp (whatsmeow)
+LOG_LEVEL=debug  # log da aplicação: sem isso as linhas de debug não são escritas
 LOGTYPE=console  # ou 'file'
 ```
 
@@ -39,6 +40,14 @@ docker-compose logs -f evolution-go
 # Filtrar logs de erro
 docker-compose logs evolution-go | grep ERROR
 ```
+
+### Onde olhar primeiro
+
+- `GET /health`: prontidão (bancos com limite de 2 s, saturação do pool).
+- `GET /instance/{id}/runtime` e `GET /instance/runtimes`: o que o processo realmente roda por instância (cliente, supervisor, QR, proxy) comparado com o banco, com avisos codificados; inclui a fila de webhook.
+- `GET /metrics` (chave global): latência por rota, eventos recebidos, mensagens descartadas, envios limitados (`evolution_send_throttled_total`), fila de mídia (`evolution_media_pending`).
+- `X-Request-ID`: todo erro traz o cabeçalho; o mesmo valor aparece como `req=` na linha do log de acesso.
+- Os logs de cada instância são gravados por uma goroutine própria (fila limitada); se o disco não acompanha, o descarte é contado em vez de travar o processo.
 
 ### Níveis de Log
 
@@ -117,6 +126,8 @@ EOF
 ### 4. Erro: "invalid API key"
 
 **Causa**: API key incorreta ou não configurada.
+
+**Causa extra**: o servidor **não inicia** com uma `GLOBAL_API_KEY` publicada (as dos exemplos, `change-me`); a resposta de chave inválida é `401` com `"code": "unauthorized"`.
 
 **Solução**:
 

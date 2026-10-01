@@ -92,7 +92,15 @@ MINIO_REGION=us-east-1
 
 # Usar SSL (true/false)
 MINIO_USE_SSL=true
+
+# Validade das URLs presignadas em horas (padrão e máximo: 168)
+# MINIO_URL_TTL_HOURS=168
+
+# Tornar TODOS os objetos do bucket públicos (padrão: desligado)
+# MINIO_PUBLIC_BUCKET=true
 ```
+
+O bucket é criado se não existir. A política do bucket **não é alterada** (antes ela era substituída por uma política pública a cada partida, o que expunha tudo o que estivesse no bucket, inclusive a mídia de outros clientes); só com `MINIO_PUBLIC_BUCKET=true` o Evolution GO aplica a política pública, e ela **substitui** a que o bucket já tinha. Em provedores sem suporte a política (Backblaze B2) as URLs presignadas continuam funcionando.
 
 ### Exemplo: MinIO Local (Docker)
 
@@ -155,25 +163,28 @@ MINIO_USE_SSL=true
 
 ### Organização
 
-Arquivos são armazenados com estrutura organizada:
+Cada instância tem a sua pasta. O id de uma mensagem do WhatsApp não é único entre contas (duas instâncias no mesmo grupo recebem a mesma mensagem), então um caminho só com o id deixava uma instância sobrescrever o arquivo da outra, e não havia como remover os arquivos de uma instância só.
 
 ```
 bucket-name/
 └── evolution-go-medias/
-    ├── image-abc123.jpg
-    ├── video-def456.mp4
-    ├── audio-ghi789.ogg
-    └── document-jkl012.pdf
+    ├── <instanceId-A>/
+    │   ├── 3EB0A1B2C3.jpg
+    │   └── 3EB0D4E5F6.mp4
+    └── <instanceId-B>/
+        └── 3EB0A1B2C3.jpg
 ```
 
 ### Caminho dos Arquivos
 
-Todos os arquivos são armazenados automaticamente no diretório `evolution-go-medias/`:
+`evolution-go-medias/<instanceId>/<messageId><extensão>`
 
 **Exemplos**:
-- Arquivo: `photo-123.jpg` → Caminho: `evolution-go-medias/photo-123.jpg`
-- Arquivo: `video-456.mp4` → Caminho: `evolution-go-medias/video-456.mp4`
-- Arquivo: `document-789.pdf` → Caminho: `evolution-go-medias/document-789.pdf`
+- Instância `4f3c...`, mensagem `3EB0A1B2C3`, imagem → `evolution-go-medias/4f3c.../3EB0A1B2C3.jpg`
+
+### Remoção
+
+Ao apagar uma instância (`DELETE /instance/delete/...`) todos os arquivos da pasta dela são removidos do bucket. Arquivos gravados por versões anteriores (diretamente em `evolution-go-medias/`) não pertencem a nenhuma instância e ficam onde estão.
 
 ---
 
@@ -191,11 +202,11 @@ Todos os arquivos são armazenados automaticamente no diretório `evolution-go-m
 
 ### Como Funcionam
 
-Quando você armazena ou solicita acesso a um arquivo, o Evolution GO gera automaticamente uma URL presignada com validade de 7 dias.
+Quando você armazena ou solicita acesso a um arquivo, o Evolution GO gera automaticamente uma URL presignada com a validade configurada (`MINIO_URL_TTL_HOURS`, padrão 7 dias).
 
 **Exemplo de URL presignada**:
 ```
-https://s3.amazonaws.com/evolution-go-media/evolution-go-medias/photo-123.jpg?
+https://s3.amazonaws.com/evolution-go-media/evolution-go-medias/<instanceId>/photo-123.jpg?
 X-Amz-Algorithm=AWS4-HMAC-SHA256&
 X-Amz-Credential=AKIAIOSFODNN7EXAMPLE%2F20250111%2Fus-east-1%2Fs3%2Faws4_request&
 X-Amz-Date=20250111T100000Z&
@@ -206,7 +217,7 @@ X-Amz-Signature=abc123def456...
 
 ### Validade
 
-**Tempo de expiração**: 7 dias (168 horas)
+**Tempo de expiração**: `MINIO_URL_TTL_HOURS` (padrão e máximo: 7 dias = 168 horas)
 
 **Após expiração**:
 - A URL retorna erro `403 Forbidden`

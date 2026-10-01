@@ -13,7 +13,52 @@ Referência de códigos de erro HTTP e mensagens da aplicação.
 | `403` | Forbidden | Acesso negado ao recurso |
 | `404` | Not Found | Recurso não encontrado |
 | `409` | Conflict | Conflito com estado atual do recurso |
+| `413` | Payload Too Large | Corpo maior que `MAX_BODY_MB` / `MAX_MEDIA_BODY_MB` |
+| `429` | Too Many Requests | Limite de envio da instância ou do WhatsApp; vem com `Retry-After` |
 | `500` | Internal Server Error | Erro interno não tratado |
+| `502` | Bad Gateway | O WhatsApp recusou a operação |
+| `503` | Service Unavailable | A instância não está conectada |
+| `504` | Gateway Timeout | O WhatsApp não respondeu a tempo |
+
+---
+
+## Formato da resposta de erro
+
+Toda requisição que falha responde com o mesmo corpo:
+
+```json
+{
+  "error": "no active session found",
+  "code": "instance_not_connected"
+}
+```
+
+`error` é o texto para humanos (pode mudar de redação). `code` é estável e serve para o seu
+código decidir o que fazer. O status HTTP diz o tipo de falha: tentar de novo (`503`, `429`,
+`504`), corrigir a requisição (`400`, `404`, `409`) ou avisar quem opera (`500`).
+
+| `code` | Status | Quando | O que fazer |
+|--------|--------|--------|-------------|
+| `invalid_request` | 400 | JSON inválido, campo ausente ou valor inválido | Corrigir a requisição |
+| `unauthorized` | 401 | `apikey` ausente ou inválida | Enviar a chave certa |
+| `forbidden` | 403 | Token de outra instância | Usar o token da instância da URL |
+| `whatsapp_forbidden` | 403 | O WhatsApp negou a operação (sem permissão) | - |
+| `not_in_group` | 403 | A conta não participa do grupo | - |
+| `not_found` | 404 | Instância, grupo, item ou registro inexistente | Conferir o identificador |
+| `conflict` | 409 | Estado atual impede (ex.: instância já existe, já conectada) | - |
+| `instance_not_logged_in` | 409 | A instância não tem dispositivo pareado | Parear (QR code ou código) |
+| `instance_disconnected_by_user` | 409 | Foi desconectada pela API; nenhuma requisição a religa | `POST /instance/connect` |
+| `instance_on_another_replica` | 409 | Outra réplica executa a instância | Falar com a réplica dona (ou balancear por instância) |
+| `payload_too_large` | 413 | Corpo acima do limite (`maxBytes` vai junto) | Reduzir ou ajustar `MAX_BODY_MB` |
+| `rate_limited` | 429 | A instância passou do limite de envio | Esperar `Retry-After` segundos |
+| `whatsapp_rate_limited` | 429 | O WhatsApp limitou a consulta (`rate-overlimit`) | Esperar `Retry-After` |
+| `whatsapp_rejected` | 502 | O WhatsApp recusou a operação | Ver o texto de `error` |
+| `instance_not_connected` | 503 | Sem cliente ou sem conexão com o WhatsApp | Tentar de novo; ver `/instance/{id}/runtime` |
+| `instance_disconnected` | 503 | O cliente existe mas o socket caiu | Tentar de novo |
+| `whatsapp_timeout` / `timeout` | 504 | O WhatsApp (ou a operação) não respondeu a tempo | Tentar de novo |
+| `internal_error` | 500 | Erro não reconhecido | Ver os logs; abrir issue com o `X-Request-ID` |
+
+Todas as respostas trazem `X-Request-ID` (o mesmo valor aparece na linha do log de acesso).
 
 ---
 
@@ -23,7 +68,8 @@ Referência de códigos de erro HTTP e mensagens da aplicação.
 
 ```json
 {
-  "error": "Unauthorized"
+  "error": "not authorized",
+  "code": "unauthorized"
 }
 ```
 

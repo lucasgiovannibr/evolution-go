@@ -44,6 +44,21 @@ Conceder apenas permissões mínimas necessárias:
 - Logs de auditoria habilitados
 - Credenciais fortes exigidas
 
+### O que a aplicação já faz por você
+
+| Proteção | Como funciona | Ajuste |
+|----------|---------------|--------|
+| Chave global fraca | O servidor **não inicia** com uma `GLOBAL_API_KEY` publicada (exemplos, `change-me`...) | `ALLOW_INSECURE_API_KEY=true` só em desenvolvimento |
+| SSRF | URLs recebidas em requisições (mídia, figurinhas, preview de link, status) só podem apontar para endereços públicos; loopback e o endpoint de metadados da nuvem são sempre recusados. A verificação é feita na conexão, então redirecionamentos e DNS que mudam de resposta também são cobertos | `ALLOW_PRIVATE_URLS=true` libera redes privadas; webhooks podem apontar para a rede interna |
+| Token no webhook | O payload dos eventos **não** leva `instanceToken` (é a chave de API da instância) | `WEBHOOK_INCLUDE_TOKEN=true` |
+| Bucket S3/MinIO | Não é tornado público; a mídia fica em `evolution-go-medias/<instanceId>/` com URLs pré-assinadas e é apagada com a instância | `MINIO_PUBLIC_BUCKET`, `MINIO_URL_TTL_HOURS` |
+| Corpo das requisições | 4 MB (150 MB nas rotas que recebem arquivo); respondem `413` | `MAX_BODY_MB`, `MAX_MEDIA_BODY_MB` |
+| Imagens e conversões | Imagens com mais de 50 megapixels são recusadas antes de decodificar; ffmpeg/pdftoppm têm timeout, teto de saída e número máximo de execuções simultâneas | `MAX_IMAGE_MEGAPIXELS`, `MAX_CONCURRENT_CONVERSIONS` |
+| CORS | Segue `CORS_ORIGINS` (vazio ou `*` libera todas as origens: restrinja em produção) | `CORS_ORIGINS` |
+| Logs | A query string é removida do log de acesso; o diretório de logs de uma instância apagada é removido | `LOG_KEEP_DELETED` |
+| Senha do proxy | Nunca é devolvida pela API | - |
+| Painel (`/manager`) | CSP sem scripts inline, sem iframe, sessão em `sessionStorage` (acaba com a aba) | - |
+
 ### Requisitos por Ambiente
 
 | Ambiente | Segurança Mínima |
@@ -97,6 +112,8 @@ df16caad-d0d2-41b2-bec5-75b90048a0db
 5. Desabilitar chave antiga
 
 ### Rate Limiting
+
+O servidor já limita **os envios de cada instância** (é a conta de WhatsApp que sofre restrição, não o seu IP): `SEND_MAX_CONCURRENT` (padrão 4) e, opcionalmente, `SEND_RATE_PER_MIN`. Quem passa do limite espera a vez e, depois de `SEND_QUEUE_WAIT_SEC`, recebe `429` com `Retry-After` (`code: rate_limited`). O limite por chave de API na borda continua útil e é independente:
 
 Implementar limitação de requisições por API Key via NGINX:
 
@@ -291,19 +308,9 @@ services:
 
 ### Não Executar como Root
 
-```dockerfile
-FROM alpine:3.19.1
+A imagem oficial já roda como usuário sem privilégios (`evolution`, uid 10001): o entrypoint (`docker/entrypoint.sh`) ajusta o dono dos volumes (`/app/dbdata`, `/app/logs`, inclusive um volume criado por uma versão antiga como root) e passa para esse usuário com `su-exec` antes de iniciar o servidor. O binário é compilado com `-trimpath -s -w` e a imagem tem `HEALTHCHECK` em `/server/ok`.
 
-RUN addgroup -g 1000 evolution && \
-    adduser -D -u 1000 -G evolution evolution
-
-WORKDIR /app
-COPY --chown=evolution:evolution server .
-
-USER evolution
-
-ENTRYPOINT ["/app/server"]
-```
+Se você monta o volume de um diretório do host, dê a ele o uid 10001 (ou deixe o entrypoint fazer o `chown`).
 
 ### Filesystem Read-Only
 

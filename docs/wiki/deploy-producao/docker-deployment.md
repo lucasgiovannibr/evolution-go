@@ -49,9 +49,19 @@ Guia de deploy do Evolution GO usando Docker, Docker Compose, Swarm e Kubernetes
 
 - **Registry**: `evoapicloud/evolution-go`
 - **Tags**: `latest`, `v1.x.x`
-- **Base**: Alpine Linux 3.19.1
+- **Base**: Alpine Linux 3.24
+- **Usuário**: `evolution` (uid 10001), sem root; o entrypoint ajusta o dono dos volumes
+- **Healthcheck**: `GET /server/ok` (liveness); `GET /health` é a prontidão (bancos e saturação do pool)
 - **Tamanho**: ~50MB (compactada)
 - **Arquiteturas**: amd64, arm64
+- **Fork**: as imagens do fork são publicadas em `ghcr.io/<dono>/<repo>` pelo workflow do repositório
+
+### Parada, réplicas e métricas
+
+- **Parada ordenada**: ao receber SIGTERM o servidor para de aceitar requisições, desconecta os clientes (as instâncias continuam marcadas como conectadas e voltam no próximo start), grava as mensagens em fila, esvazia as filas de webhook, avisa os WebSockets e fecha RabbitMQ/NATS. Isso leva até ~25 s; use `stop_grace_period: 30s` (os exemplos de compose já têm). Com o padrão de 10 s do Docker, eventos em fila se perdem a cada deploy.
+- **Várias réplicas**: cada instância roda em uma réplica só (lock consultivo do Postgres, `INSTANCE_LOCK`, ligado por padrão). Uma requisição que chegue à réplica errada responde `409 instance_on_another_replica`; balanceie por instância (sticky) ou use `CLIENT_NAME` para dividir. Se uma réplica morre, as instâncias dela ficam livres imediatamente. Uma conexão do banco de usuários por réplica fica reservada para os locks.
+- **Métricas**: `GET /metrics` (formato Prometheus, exige a chave global): tráfego HTTP e latência por rota, eventos do WhatsApp, instâncias conectadas, filas de webhook, pools de banco, mensagens descartadas, tamanho dos lotes de gravação, envios limitados e fila de mídia. Toda resposta traz `X-Request-ID`, o mesmo valor do log de acesso.
+- **Partida em massa**: `CONNECT_ON_STARTUP` inicia uma instância a cada ~300 ms (`STARTUP_STAGGER_MS`), e a reconexão automática tem backoff (`RECONNECT_BACKOFF_*`).
 
 ---
 

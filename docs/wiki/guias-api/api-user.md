@@ -97,6 +97,8 @@ Verifica se um número existe no WhatsApp e retorna o JID correto para mensagens
 
 **Endpoint**: `POST /user/check`
 
+> Aceita até 100 números por chamada e lembra o resultado (`CHECK_USER_CACHE_TTL_MIN`, padrão 12 h; 5 min para "não registrado").
+
 **Body**:
 ```json
 {

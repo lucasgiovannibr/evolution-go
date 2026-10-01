@@ -53,7 +53,7 @@ Documentação dos endpoints: [`docs/wiki/guias-api/api-fork-additions.md`](docs
 |---|---|---|---|---|---|
 | 11 | **Thumbnail HQ em `/send/link`** (card grande de preview) | PR [#207](https://github.com/evolution-foundation/evolution-go/pull/207) (572 linhas), issue [#103](https://github.com/evolution-foundation/evolution-go/issues/103) | M | Envolve upload de mídia de link (`MediaLinkThumbnail`); precisa de teste em aparelho | ◐ |
 | 15 | **Histórico profundo no pareamento** (`HistorySyncConfig`: 10 anos / 2 GB) | parte do PR [#133](https://github.com/evolution-foundation/evolution-go/pull/133) | P | Aumenta banda/armazenamento e tempo de sync; deveria ser configurável por env, não constante | ◐ |
-| 16 | **Backoff do loop de reconexão** (até 30 min de espera) | PR [#197](https://github.com/evolution-foundation/evolution-go/pull/197) | M | Evita martelar o servidor com instância deslogada, mas atrasa recuperação legítima; janela e degraus deveriam ser configuráveis | ◐ |
+| 16 | **Backoff do loop de reconexão** (até 30 min de espera) | PR [#197](https://github.com/evolution-foundation/evolution-go/pull/197) | M | Evita martelar o servidor com instância deslogada, mas atrasa recuperação legítima; janela e degraus deveriam ser configuráveis | ✅ Feito no fork (PR #62), com degraus configuráveis e teto de 5 min |
 | 17 | **Redesenho do ciclo de vida** (restauração no startup, `GetQr` 409, backoff com jitter) | PRs [#145](https://github.com/evolution-foundation/evolution-go/pull/145), [#154](https://github.com/evolution-foundation/evolution-go/pull/154) | G | O núcleo (um runtime por instância, canal de kill próprio, restauração de `Reconnecting`, instância apagada não reinicia) **já foi feito** de forma cirúrgica. O que sobra é opcional | ◐ |
 
 ### Features grandes (avaliar valor de produto)
@@ -72,12 +72,12 @@ As sugestões 23 e 24 (diagnóstico do runtime e health check), 26 e 27 (resulta
 
 | # | Sugestão | Por quê | Esforço | Recomendação |
 |---|---|---|---|---|
-| 25 | **Métricas Prometheus** (instâncias conectadas, reconexões, eventos entregues/falhos, conexões do pool) | Observar uso prolongado e alertar antes de a instância cair | M | ◐ |
+| 25 | **Métricas Prometheus** (instâncias conectadas, reconexões, eventos entregues/falhos, conexões do pool) | Observar uso prolongado e alertar antes de a instância cair | M | ✅ Feito (`GET /metrics`, PR #38 em diante) |
 | 28 | **Remover contato via API** | Impossível hoje: o encoder de app state do whatsmeow só gera `SET` (conferido no código). Detalhes e outros limites duros em `docs/WHATSMEOW-CAPABILITIES.md` §2 | — | ✖ (depende da lib) |
-| 37 | **Erros de URL de mídia como 400** (hoje um 404 ou arquivo grande demais em `/send/media` responde 500) | Distingue erro do chamador de erro do servidor; pede separar os dois tipos em todos os fluxos de envio | P | ◐ |
+| 37 | **Erros de URL de mídia como 400** (hoje um 404 ou arquivo grande demais em `/send/media` responde 500) | Distingue erro do chamador de erro do servidor; pede separar os dois tipos em todos os fluxos de envio | P | 🟡 Parcial: erros de validação dos services são 400/404/409 (PR #72); falhas de download de URL ainda dependem de separar os tipos |
 | 38 | **Atualização parcial em `POST /user/privacy`** (hoje o handler exige todos os campos) | Mudar só "visto por último" sem reenviar o resto | P | ◐ |
 | 39 | **Enquetes no modo SQLite** (a tabela `poll_votes` usa `TEXT[]`, só Postgres) | Hoje `/send/pollVote` e os resultados não funcionam sem Postgres | M | ◐ |
-| 40 | **Remover código morto** apontado pelo `staticcheck` (`convertToWebP`, `stringPointer`, `sectionsToString`, dois campos do repositório de instâncias, uma atribuição no `Connect`) | Manutenção | P | ◐ |
+| 40 | **Remover código morto** apontado pelo `staticcheck` (`convertToWebP`, `stringPointer`, `sectionsToString`, dois campos do repositório de instâncias, uma atribuição no `Connect`) | Manutenção | P | ✅ Feito (golangci-lint no CI, PR #68) |
 | 41 | **`webhookUrl: ""` limpar o webhook** | Só depois de corrigir o manager embutido, que envia `""` em toda reconexão (o código-fonte do painel agora está em `manager/`) | M | ✖ por ora |
 
 ## 4. Documentação pendente
@@ -86,3 +86,19 @@ A documentação de tudo que está em §1 foi atualizada no preparo do release (
 
 - Botões e listas em conta pessoal: já registrado em `api-interactive.md`; revisar quando houver validação em aparelho.
 - README: instruções de Windows (PRs #201/#202 são um começo, mas duplicam o bloco "Setup").
+
+## 5. Ideias que sobraram da análise de outubro de 2026
+
+Não entraram na rodada de endurecimento (ver [CHANGELOG](CHANGELOG.md)); cada uma muda comportamento ou exige decisão.
+
+| # | Ideia | Por quê | Esforço | Recomendação |
+|---|---|---|---|---|
+| 42 | **Licença sem reaproveitar a `GLOBAL_API_KEY`** | O runtime de licença (`pkg/core`, ofuscado, do upstream) usa a chave global como chave para o servidor de licença e a guarda em claro em `runtime_configs`. Mexer nisso é mexer no mecanismo do fornecedor | — | ✖ decisão sua / do upstream |
+| 43 | **TTL e limite de tamanho nas filas RabbitMQ** | Fila sem consumidor cresce até o broker reagir. Mudar os argumentos de uma fila existente faz o broker recusar a declaração; precisa de opt-in e nota de migração (ou *policy* no broker) | M | ◐ |
+| 44 | **Criptografar o proxy (e outros segredos) no banco** | Hoje fica em claro na coluna `instances.proxy`; a API já não o devolve | M | ◐ |
+| 45 | **Migrações versionadas** (goose/golang-migrate) com lock | `AutoMigrate` roda a cada partida em todas as réplicas | M | ◐ |
+| 46 | **Retenção de `messages`** e índice por `source`/`timestamp` | A tabela só cresce; `timestamp` é texto | M | ◐ |
+| 47 | **`labels` com chave única `(instance_id, label_id)`** | `UpdateLabel` nunca atualiza e a corrida cria duplicatas | P | ◐ |
+| 48 | **Fila de envio por instância** (em vez de limite + 429) | Quem manda rajadas receberia a mensagem em ordem, sem tratar 429 | G | ◐ |
+| 49 | **Escrita do estado de pareamento/QR em um passo só e ownership por lease com heartbeat** | O lock atual vale enquanto a sessão do banco vive; um lease com heartbeat tolera falhas parciais de rede melhor | G | ◐ |
+| 50 | **Padronizar os 500 restantes dos handlers** (`instance not found` etc.) com `apierror` e quebrar o `handleEvent` em mapa de handlers por tipo de evento | Continuidade da refatoração (restam ~640 linhas) | M | ◐ |
