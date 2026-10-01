@@ -1877,21 +1877,12 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					}
 
 					if err == nil {
-						webpReader := bytes.NewReader(data)
-						img, decErr := webp.Decode(webpReader)
-						if decErr != nil {
-							mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Failed to decode webp sticker, keeping raw webp: %v", mycli.userID, decErr)
+						if pngData, convErr := stickerAsPNG(data); convErr != nil {
+							mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Could not convert the sticker to PNG, keeping raw webp: %v", mycli.userID, convErr)
 							extension = ".webp"
 							mimeType = "image/webp"
 						} else {
-							var pngBuffer bytes.Buffer
-							if encErr := png.Encode(&pngBuffer, img); encErr != nil {
-								mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Failed to encode png from sticker, keeping raw webp: %v", mycli.userID, encErr)
-								extension = ".webp"
-								mimeType = "image/webp"
-							} else {
-								data = pngBuffer.Bytes()
-							}
+							data = pngData
 						}
 					}
 					// Handle associated child media messages
@@ -1922,21 +1913,12 @@ func (mycli *MyClient) myEventHandler(rawEvt interface{}) {
 					mycli.loggerWrapper.GetLogger(mycli.userID).LogInfo("[%s] Processing associated child sticker message", mycli.userID)
 
 					if err == nil {
-						webpReader := bytes.NewReader(data)
-						img, decErr := webp.Decode(webpReader)
-						if decErr != nil {
-							mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Failed to decode webp sticker, keeping raw webp: %v", mycli.userID, decErr)
+						if pngData, convErr := stickerAsPNG(data); convErr != nil {
+							mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Could not convert the sticker to PNG, keeping raw webp: %v", mycli.userID, convErr)
 							extension = ".webp"
 							mimeType = "image/webp"
 						} else {
-							var pngBuffer bytes.Buffer
-							if encErr := png.Encode(&pngBuffer, img); encErr != nil {
-								mycli.loggerWrapper.GetLogger(mycli.userID).LogWarn("[%s] Failed to encode png from associated sticker, keeping raw webp: %v", mycli.userID, encErr)
-								extension = ".webp"
-								mimeType = "image/webp"
-							} else {
-								data = pngBuffer.Bytes()
-							}
+							data = pngData
 						}
 					}
 				}
@@ -3360,4 +3342,22 @@ func parseProxyConfig(raw string) (ProxyConfig, error) {
 	}
 	err := json.Unmarshal([]byte(raw), &cfg)
 	return cfg, err
+}
+
+// stickerAsPNG converts a received WebP sticker to PNG for the webhook payload. The sticker
+// comes from any WhatsApp contact, and a crafted one can declare enormous dimensions (a
+// decoder allocates for what the header says), so its size is checked before it is decoded.
+func stickerAsPNG(data []byte) ([]byte, error) {
+	if err := utils.CheckImageDimensions(data, utils.MaxStickerPixels); err != nil {
+		return nil, err
+	}
+	img, err := webp.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	if err := png.Encode(&buf, img); err != nil {
+		return nil, err
+	}
+	return buf.Bytes(), nil
 }
