@@ -212,7 +212,8 @@ Análise do stream de chamadas contra a biblioteca, o Twilio Media Streams e a A
 - **Histórico** (#80): só metadados, desligado por padrão, com retenção de 90 dias. **Gravar chamadas ficou de fora, por decisão**: risco legal e de privacidade.
 - **Métricas** `evolution_call*` (#75, #80).
 - **Achados**: um aparelho mudo ou em silêncio continua mandando 2 a 3 quadros por segundo (por isso o áudio de entrada não é contínuo e quem grava precisa posicionar pelo `timestamp`); o WhatsApp informa `rejected` quando o outro lado recusa uma chamada discada.
-- **Ficou de fora**: página de chamadas no manager (#62), testes em outros aparelhos (#63: só um iPhone foi testado), gateway WebRTC, UDP por proxy, fork da biblioteca e chamadas em grupo (#64–#67, decisões suas).
+- **Painel** (#62): aba **Chamadas** na instância, com as chamadas ao vivo, o telefone no navegador (atender, ligar e falar com o microfone da página), o histórico e o interruptor `callsEnabled` em Comportamento. Testado ao vivo no navegador do desktop.
+- **Ficou de fora**: testes em outros aparelhos (#63: só um iPhone foi testado), gateway WebRTC, UDP por proxy, fork da biblioteca e chamadas em grupo (#64–#67, decisões suas).
 
 ### Validação ao vivo (instância real, 29/09/2026)
 

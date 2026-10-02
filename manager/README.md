@@ -26,7 +26,8 @@ src/
   components/
     ui/         primitivos (Button, Dialog, Menu, Switch, Tabs, Badge...), sem regra de negócio
     layout/     AppShell, Sidebar, PageHeader
-  features/     uma pasta por área: auth, overview, instances, instance-detail, explorer
+  features/     uma pasta por área: auth, overview, instances, instance-detail, explorer, calls
+                (calls: telefone no navegador, chamadas ao vivo, histórico; o áudio é puro em audio.ts, com testes)
   hooks/        React Query (instâncias, saúde), rascunho de formulário
   lib/          http, formatação, catálogo de eventos, cURL
   stores/       zustand: sessão (persistida em "evolution-auth") e UI (tema, menu)
@@ -40,6 +41,10 @@ src/
 - **Diálogos e menus** usam portal próprio (não `<dialog>`), para os toasts ficarem sempre acima.
 - **Catálogo de eventos** em `src/lib/events.ts` espelha `pkg/internal/event_types` no servidor; ao criar um
   evento novo no Go, inclua-o aqui.
+- **Áudio das chamadas**: o microfone é lido por um AudioWorklet (`features/calls/capture-worklet.ts`) que o Vite
+  emite como arquivo próprio em `dist/assets`; a política de segurança (`script-src 'self'`) não aceitaria um worklet
+  criado na hora. O WebSocket do stream exige a origem da página em `CALL_STREAM_ORIGINS` quando ela difere da da API
+  (no `npm run dev`, a origem é `localhost:5173`).
 - **Estado de servidor** vive no React Query; formulários editam uma cópia (`useDraft`) que só é
   substituída por dados novos quando não há edição pendente.
 - O login preserva o fluxo de licença (`/license/status` → `/license/register` → `/manager/license/callback`

@@ -361,6 +361,16 @@ where noted. The guide is `docs/wiki/guias-api/api-call.md`.
   `evolution_call_engines`, stream frames and drops, keyframe requests, stalls and the history
   counters, with bounded labels.
 
+**Manager**
+- **Calls tab** on the instance: the calls the engine follows right now (answer, reject, hang
+  up, timer, stream counters, "no audio" warning), a dial box and the call history (filters,
+  paging, erase). A **browser phone** puts the page's microphone and speakers on a call
+  through the stream (binary PCM 16 kHz, speech events, playout by timestamp); the stream is
+  opened before answering, and a refused microphone does not answer the call. The microphone
+  is read by an AudioWorklet emitted as its own file because the panel's CSP does not allow a
+  Blob worklet. The Behavior tab gets the `callsEnabled` switch. Tried live in a desktop browser: answer
+  from the page, mute, hang up, and dial from the page.
+
 ### Hardening and scale round (October 2026, PRs #38–#72)
 Result of a full analysis of the system (security, scalability, memory, send speed, error
 returns); every change below has tests, and the structural gains were measured.
