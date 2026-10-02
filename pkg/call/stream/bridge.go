@@ -40,7 +40,7 @@ const (
 type bridge struct {
 	stats *call_engine.StreamStats
 
-	toClient chan []float32 // peer audio, read by the socket writer
+	toClient chan audioFrame // peer audio, read by the socket writer
 
 	mu       sync.Mutex
 	pending  []float32 // client audio not yet sent to the peer
@@ -65,10 +65,16 @@ type pendingMark struct {
 	at   uint64
 }
 
+// audioFrame is a piece of the peer's audio and when it reached the stream.
+type audioFrame struct {
+	samples []float32
+	at      time.Time
+}
+
 func newBridge(stats *call_engine.StreamStats) *bridge {
 	return &bridge{
 		stats:     stats,
-		toClient:  make(chan []float32, toClientFrames),
+		toClient:  make(chan audioFrame, toClientFrames),
 		done:      make(chan struct{}),
 		now:       time.Now,
 		markReady: make(chan struct{}, 1),
@@ -81,10 +87,10 @@ func (b *bridge) WriteFrame(frame []float32) error {
 		return nil
 	}
 	// The library may reuse its buffer once this returns.
-	frame = append([]float32(nil), frame...)
+	af := audioFrame{samples: append([]float32(nil), frame...), at: b.now()}
 
 	select {
-	case b.toClient <- frame:
+	case b.toClient <- af:
 	default:
 		// full: make room by dropping the oldest frame
 		select {
@@ -93,7 +99,7 @@ func (b *bridge) WriteFrame(frame []float32) error {
 		default:
 		}
 		select {
-		case b.toClient <- frame:
+		case b.toClient <- af:
 		default:
 			b.stats.DroppedToClient.Add(1)
 		}
@@ -151,19 +157,35 @@ func (b *bridge) Push(pcm []byte) {
 		b.odd = []byte{pcm[len(pcm)-1]}
 		pcm = pcm[:len(pcm)-1]
 	}
-	samples := len(pcm) / 2
-	if samples == 0 {
-		return
+	samples := make([]float32, len(pcm)/2)
+	for i := range samples {
+		samples[i] = float32(int16(binary.LittleEndian.Uint16(pcm[2*i:]))) / 32768.0
 	}
-	if len(b.pending)+samples > maxOutboundSamples {
-		b.stats.DroppedFromClient.Add(uint64((samples + frameSamples - 1) / frameSamples))
-		return
-	}
+	b.pushLocked(samples)
+}
 
-	for i := 0; i < samples; i++ {
-		b.pending = append(b.pending, float32(int16(binary.LittleEndian.Uint16(pcm[2*i:])))/32768.0)
+// PushSamples queues audio for the peer that is already 16 kHz mono floats (the
+// stream converts other formats before it gets here). Audio that does not fit within
+// maxOutboundSamples is dropped.
+func (b *bridge) PushSamples(samples []float32) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return
 	}
-	b.pushed += uint64(samples)
+	b.pushLocked(samples)
+}
+
+func (b *bridge) pushLocked(samples []float32) {
+	if len(samples) == 0 {
+		return
+	}
+	if len(b.pending)+len(samples) > maxOutboundSamples {
+		b.stats.DroppedFromClient.Add(uint64((len(samples) + frameSamples - 1) / frameSamples))
+		return
+	}
+	b.pending = append(b.pending, samples...)
+	b.pushed += uint64(len(samples))
 	b.lastPush = b.now()
 }
 

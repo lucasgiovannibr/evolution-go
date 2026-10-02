@@ -149,8 +149,8 @@ func TestPeerAudioIsDroppedOldestFirstWhenTheClientIsSlow(t *testing.T) {
 		t.Fatalf("DroppedToClient = %d, want 10", got)
 	}
 	first := <-b.toClient
-	if first[0] != 10 {
-		t.Fatalf("oldest kept frame is #%v, want #10: the oldest audio must go first", first[0])
+	if first.samples[0] != 10 {
+		t.Fatalf("oldest kept frame is #%v, want #10: the oldest audio must go first", first.samples[0])
 	}
 }
 
@@ -175,7 +175,7 @@ func TestWriteFrameCopiesTheLibrarysBuffer(t *testing.T) {
 	buf := []float32{1, 2, 3}
 	b.WriteFrame(buf)
 	buf[0] = 99
-	if got := (<-b.toClient)[0]; got != 1 {
+	if got := (<-b.toClient).samples[0]; got != 1 {
 		t.Fatalf("frame changed after the library reused its buffer: %v", got)
 	}
 }

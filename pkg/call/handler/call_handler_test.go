@@ -478,3 +478,98 @@ func TestAVideoControlTheLibraryRefusesIs409WithItsReason(t *testing.T) {
 		t.Fatalf("status %d: %s", w.Code, w.Body.String())
 	}
 }
+
+func TestStreamTicketAsksForAnAudioFormat(t *testing.T) {
+	e := newEnv(t)
+	e.ringing("C1")
+
+	w := e.call("POST", "/call/stream-ticket", "inst", map[string]interface{}{"callId": "C1", "encoding": "mulaw"})
+	var ticket call_service.StreamTicket
+	decode(t, w, &ticket)
+	if w.Code != http.StatusOK || ticket.Encoding != call_stream.EncodingMulaw || ticket.SampleRate != 8000 {
+		t.Fatalf("ticket: %d %s", w.Code, w.Body.String())
+	}
+	if _, o, ok := e.tickets.RedeemWith(ticket.Ticket, "C1"); !ok || o.Format != (call_stream.AudioFormat{Encoding: call_stream.EncodingMulaw, SampleRate: 8000}) {
+		t.Fatalf("the ticket carries %+v (%v)", o, ok)
+	}
+
+	// without a format the ticket says what the default is
+	w = e.call("POST", "/call/stream-ticket", "inst", map[string]interface{}{"callId": "C1"})
+	decode(t, w, &ticket)
+	if ticket.Encoding != call_stream.EncodingPCM || ticket.SampleRate != 16000 {
+		t.Fatalf("default ticket: %s", w.Body.String())
+	}
+}
+
+func TestAnUnsupportedAudioFormatIsA400(t *testing.T) {
+	e := newEnv(t)
+	e.ringing("C1")
+
+	for _, body := range []map[string]interface{}{
+		{"callId": "C1", "encoding": "opus"},
+		{"callId": "C1", "sampleRate": 44100},
+		{"callId": "C1", "encoding": "alaw", "sampleRate": 16000},
+	} {
+		if w := e.call("POST", "/call/stream-ticket", "inst", body); w.Code != http.StatusBadRequest {
+			t.Errorf("%v: status %d, want 400 (%s)", body, w.Code, w.Body.String())
+		}
+	}
+}
+
+// A bad format must be refused before the phone rings, not after.
+func TestDialWithABadStreamFormatPlacesNoCall(t *testing.T) {
+	e := newEnv(t)
+
+	w := e.call("POST", "/call/dial", "inst", map[string]interface{}{"number": "5511999990000", "stream": true, "encoding": "opus"})
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("status %d, want 400 (%s)", w.Code, w.Body.String())
+	}
+	if len(e.dialed) != 0 {
+		t.Fatalf("placed calls to %v", e.dialed)
+	}
+
+	// the format is only read when a stream is asked for
+	if w := e.call("POST", "/call/dial", "inst", map[string]interface{}{"number": "5511999990000", "encoding": "opus"}); w.Code != http.StatusOK {
+		t.Fatalf("dial without a stream: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestDialCanAskForTheAudioFormatOfItsStream(t *testing.T) {
+	e := newEnv(t)
+
+	w := e.call("POST", "/call/dial", "inst", map[string]interface{}{"number": "5511999990000", "stream": true, "encoding": "alaw"})
+	var result call_service.DialResult
+	decode(t, w, &result)
+	if w.Code != http.StatusOK || result.StreamTicket == nil || result.StreamTicket.Encoding != call_stream.EncodingAlaw {
+		t.Fatalf("dial: %d %s", w.Code, w.Body.String())
+	}
+}
+
+func TestStreamTicketAsksForBinaryFrames(t *testing.T) {
+	e := newEnv(t)
+	e.ringing("C1")
+
+	w := e.call("POST", "/call/stream-ticket", "inst", map[string]interface{}{"callId": "C1", "binary": true})
+	var ticket call_service.StreamTicket
+	decode(t, w, &ticket)
+	if w.Code != http.StatusOK || !ticket.Binary {
+		t.Fatalf("ticket: %d %s", w.Code, w.Body.String())
+	}
+	if _, o, ok := e.tickets.RedeemWith(ticket.Ticket, "C1"); !ok || !o.Binary {
+		t.Fatalf("the ticket carries %+v (%v)", o, ok)
+	}
+
+	w = e.call("POST", "/call/stream-ticket", "inst", map[string]interface{}{"callId": "C1"})
+	decode(t, w, &ticket)
+	if ticket.Binary {
+		t.Fatalf("a ticket that did not ask for binary frames says it uses them: %s", w.Body.String())
+	}
+
+	// dial hands the option on to its ticket
+	w = e.call("POST", "/call/dial", "inst", map[string]interface{}{"number": "5511999990000", "stream": true, "binary": true})
+	var result call_service.DialResult
+	decode(t, w, &result)
+	if w.Code != http.StatusOK || result.StreamTicket == nil || !result.StreamTicket.Binary {
+		t.Fatalf("dial: %d %s", w.Code, w.Body.String())
+	}
+}
