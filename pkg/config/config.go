@@ -102,6 +102,12 @@ type Config struct {
 	CallMediaStall int
 	// CallMediaStallHangup also hangs such a call up (CALL_MEDIA_STALL_HANGUP=true).
 	CallMediaStallHangup bool
+	// CallMaxDuration is how many seconds an answered call may last before it is hung up
+	// (CALL_MAX_DURATION); zero, the default, is no limit.
+	CallMaxDuration int
+	// CallSilenceTimeout is how many seconds a call with a stream may go without a sound
+	// from either side before it is hung up (CALL_SILENCE_TIMEOUT); zero never does.
+	CallSilenceTimeout int
 	// CallStreamOrigins are the browser origins allowed to open the audio stream
 	// besides the server's own; clients that send no Origin (servers, scripts) always may.
 	CallStreamOrigins []string
@@ -377,6 +383,8 @@ func Load() *Config {
 	callRingTimeout, _ := strconv.Atoi(os.Getenv(config_env.CALL_RING_TIMEOUT))
 	callStreamGrace, _ := strconv.Atoi(os.Getenv(config_env.CALL_STREAM_GRACE))
 	callDialLimit, _ := strconv.Atoi(os.Getenv(config_env.CALL_DIAL_LIMIT))
+	callMaxDuration, _ := strconv.Atoi(strings.TrimSpace(os.Getenv(config_env.CALL_MAX_DURATION)))
+	callSilenceTimeout, _ := strconv.Atoi(strings.TrimSpace(os.Getenv(config_env.CALL_SILENCE_TIMEOUT)))
 	var callStreamOrigins []string
 	for _, origin := range strings.Split(os.Getenv(config_env.CALL_STREAM_ORIGINS), ",") {
 		if origin = strings.TrimSpace(origin); origin != "" {
@@ -495,6 +503,8 @@ func Load() *Config {
 		CallRingTimeout:      max(callRingTimeout, 0),
 		CallStreamGrace:      max(callStreamGrace, 0),
 		CallDialLimit:        max(callDialLimit, 0),
+		CallMaxDuration:      max(callMaxDuration, 0),
+		CallSilenceTimeout:   max(callSilenceTimeout, 0),
 		CallMediaStall:       callMediaStall(),
 		CallMediaStallHangup: strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.CALL_MEDIA_STALL_HANGUP)), "true"),
 		CallStreamOrigins:    callStreamOrigins,

@@ -96,7 +96,11 @@ func (m *Manager) AttachStream(instanceID, callID string, ep Endpoints, stats *S
 		sink = activitySink{AudioSink: sink, t: t, now: m.now}
 	}
 	t.call.Receive(sink)
-	t.call.Play(ep.Source)
+	src := ep.Source
+	if src != nil {
+		src = activitySource{AudioSource: src, t: t, now: m.now}
+	}
+	t.call.Play(src)
 	if ep.Video != nil {
 		t.call.ReceiveVideo(ep.Video)
 	}

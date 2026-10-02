@@ -2539,6 +2539,8 @@ func NewWhatsmeowService(
 		DialsPerMinute:   config.CallDialLimit,
 		MediaStall:       time.Duration(config.CallMediaStall) * time.Second,
 		MediaStallHangup: config.CallMediaStallHangup,
+		MaxDuration:      time.Duration(config.CallMaxDuration) * time.Second,
+		SilenceTimeout:   time.Duration(config.CallSilenceTimeout) * time.Second,
 		Notify:           svc.publishCallEvent,
 	})
 	return svc
