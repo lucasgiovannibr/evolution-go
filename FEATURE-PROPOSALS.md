@@ -102,3 +102,29 @@ Não entraram na rodada de endurecimento (ver [CHANGELOG](CHANGELOG.md)); cada u
 | 48 | **Fila de envio por instância** (em vez de limite + 429) | Quem manda rajadas receberia a mensagem em ordem, sem tratar 429 | G | ◐ |
 | 49 | **Escrita do estado de pareamento/QR em um passo só e ownership por lease com heartbeat** | O lock atual vale enquanto a sessão do banco vive; um lease com heartbeat tolera falhas parciais de rede melhor | G | ◐ |
 | 50 | **Padronizar os 500 restantes dos handlers** (`instance not found` etc.) com `apierror` e quebrar o `handleEvent` em mapa de handlers por tipo de evento | Continuidade da refatoração (restam ~640 linhas) | M | ◐ |
+
+## 6. Melhorias das chamadas (análise de 02/10/2026)
+
+Análise do stream de chamadas (WebSocket) contra a documentação do `meowcaller`, do Twilio Media Streams e da OpenAI Realtime. Ponto de partida: o WebSocket só existe entre o cliente e o servidor; entre o servidor e o WhatsApp a mídia vai por SRTP/UDP dentro da `meowcaller`. Trocar o WebSocket por WebRTC só ajuda quem usa navegador pela internet (o TCP trava o áudio inteiro quando um pacote se perde); para um agente de IA no mesmo servidor ou rede o WebSocket serve.
+
+**Não conferido:** se a `meowcaller` expõe DTMF e estatísticas de RTP (perda, jitter, RTT). O código-fonte dela só existe dentro do Docker de build; vale um spike antes de planejar os itens que dependem disso.
+
+| # | Ideia | Por quê | Esforço | Status |
+|---|---|---|---|---|
+| 51 | **Métricas de chamada em `/metrics`** | Não havia nenhuma. Chamadas ativas por fase, iniciadas/encerradas por direção e motivo, duração, discagens por resultado, quadros e descartes do stream, pedidos de keyframe | P | ◐ em andamento (`feat/call-metrics-stall-watchdog`) |
+| 52 | **Detector de mídia parada** | Os issues abertos da `meowcaller` citam "o peer manda 8 pacotes de silêncio e para" e "sem áudio de entrada". Chamada ativa sem áudio de entrada por N s gera `CallMediaStalled` (e `CallMediaResumed`); desligar é opt-in, porque um peer mudo pode não mandar pacotes (DTX) e isso **não foi testado ao vivo** | P | ◐ em andamento (mesma branch) |
+| 53 | **`mark` como no Twilio** | Hoje só há `clear`. Com `mark` o servidor avisa quando o áudio enviado foi realmente tocado; é o que um agente de IA precisa para saber até onde falou antes de ser interrompido | P | ◐ |
+| 54 | **Fila de áudio de entrada menor** | `toClientFrames = 50` guarda 3 s antes de descartar: um cliente lento acumula até 3 s de atraso. 10 a 15 quadros (600 a 900 ms) é mais próximo de conversa ao vivo | P | ◐ |
+| 55 | **Quadros binários no stream** (opt-in no ticket) | Base64 em JSON infla 33% e custa codificação; o JSON fica só para controle | M | ◐ |
+| 56 | **Formato de áudio negociável** (`format` no ticket: 8 kHz μ-law, 16 kHz, 24 kHz) | A OpenAI Realtime usa 24 kHz e telefonia μ-law 8 kHz: hoje cada cliente reamostra | M | ◐ |
+| 57 | **Duração máxima e timeout por silêncio** (opcionais) | Uma chamada atendida hoje pode durar para sempre. Estava em "não feito de propósito" | P | ◐ |
+| 58 | **Timestamp nas mensagens de entrada** | Hoje só há `seq`; ajuda a sincronizar e gravar | P | ◐ |
+| 59 | **Histórico de chamadas no banco** | Hoje só existem os eventos `CallReady`/`CallEnded`/`CallVideoState` | M | ◐ |
+| 60 | **Gravação por chamada** (`record: true`: WAV estéreo entrada/saída, vídeo `.h264`, disco ou MinIO) | Precisa de aviso de consentimento (LGPD) | M | ◐ |
+| 61 | **Eventos de fala** (`speech_start`/`speech_end`, VAD por energia) | Cada cliente deixaria de implementar a interrupção | M | ◐ |
+| 62 | **Página de chamadas no manager** (lista ao vivo, atender/rejeitar/desligar, softphone de teste com microfone via AudioWorklet em 16 kHz) | Funciona com o WebSocket atual, sem WebRTC; serve também de ferramenta de teste | M | ◐ |
+| 63 | **Matriz de testes ao vivo**: Android, WhatsApp Business, peer com vários aparelhos, contatos por LID, contas em coexistência | Só testamos um iPhone; os issues da `meowcaller` apontam SRTP chaveado para o aparelho errado em multi-device e aparelhos que continuam tocando depois que um atende | M | ◐ |
+| 64 | **Gateway WebRTC (Pion)** para um telefone no navegador de verdade | O vídeo H.264 passa sem transcodificar. O áudio exige Opus↔PCM: o decoder da Pion é maduro, o encoder está em v0.1.0 (sem controle de bitrate); alternativas são `tphakala/go-opus` ou libopus via CGO | G | ✖ decisão sua (feature nova; só compensa para navegador pela internet) |
+| 65 | **UDP por proxy SOCKS5** | Hoje instâncias com proxy ficam sem chamadas. Exige um `PacketConn` injetável na biblioteca (fork ou PR) | G | ✖ decisão sua |
+| 66 | **Fork da `meowcaller`** | Pré-aceite seletivo (hoje toda chamada recebida é pré-aceita), base do whatsmeow fixa (a `main` deles migrou para o `hypermeow`) e acompanhar o Opus, que é "em andamento" lá | G | ✖ decisão sua |
+| 67 | **Chamadas em grupo** | O commit fixado já traz suporte experimental; hoje fica de fora de propósito | G | ✖ por ora |
