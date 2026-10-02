@@ -18,6 +18,7 @@ type rig struct {
 	video   bool        // whether the tickets the rig issues ask for video
 	format  AudioFormat // the audio format the tickets ask for (zero: the default)
 	binary  bool        // whether the tickets ask for binary frames
+	speech  bool        // whether the tickets ask for speech events
 	t       *testing.T
 	engine  *call_engine.Manager
 	tickets *Tickets
@@ -50,7 +51,7 @@ func (r *rig) url(callID, ticket string) string {
 }
 
 func (r *rig) dial(instance, callID string, header http.Header) (*websocket.Conn, *http.Response, error) {
-	token, _, err := r.tickets.IssueWith(instance, callID, StreamOptions{Video: r.video, Format: r.format, Binary: r.binary})
+	token, _, err := r.tickets.IssueWith(instance, callID, StreamOptions{Video: r.video, Format: r.format, Binary: r.binary, Speech: r.speech})
 	if err != nil {
 		r.t.Fatal(err)
 	}

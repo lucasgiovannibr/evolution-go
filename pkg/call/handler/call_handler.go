@@ -191,7 +191,7 @@ func (g *callHandler) HangupCall(ctx *gin.Context) {
 
 // Stream ticket
 // @Summary Ticket for the audio stream of a call
-// @Description Returns a one-time ticket, valid for a few seconds, for one call. Open a WebSocket to "path" on this server with it: GET /call/stream/{callId}?ticket=... . Audio is 16 kHz mono 16-bit little-endian PCM in base64 JSON messages by default (see the "start" message); "encoding" and "sampleRate" ask for 8, 16 or 24 kHz PCM, or 8 kHz G.711 mu-law or A-law, and the server converts. With "binary": true the audio and video travel as binary WebSocket frames instead of base64 in JSON (a third smaller); the control messages stay JSON. With "video": true the stream also carries the call's video as H.264 access units (Annex-B) in "video" messages, and asks for keyframes with "keyframe_request".
+// @Description Returns a one-time ticket, valid for a few seconds, for one call. Open a WebSocket to "path" on this server with it: GET /call/stream/{callId}?ticket=... . Audio is 16 kHz mono 16-bit little-endian PCM in base64 JSON messages by default (see the "start" message); "encoding" and "sampleRate" ask for 8, 16 or 24 kHz PCM, or 8 kHz G.711 mu-law or A-law, and the server converts. With "binary": true the audio and video travel as binary WebSocket frames instead of base64 in JSON (a third smaller); the control messages stay JSON. With "speechEvents": true the stream also says when the peer begins and stops talking (speech_start, speech_end). With "video": true the stream also carries the call's video as H.264 access units (Annex-B) in "video" messages, and asks for keyframes with "keyframe_request".
 // @Tags Call
 // @Accept json
 // @Produce json
@@ -215,7 +215,7 @@ func (g *callHandler) StreamTicket(ctx *gin.Context) {
 		callFailure(ctx, err)
 		return
 	}
-	ticket, err := g.callService.IssueStreamTicket(instance, data.CallID, call_stream.StreamOptions{Video: data.Video, Format: format, Binary: data.Binary})
+	ticket, err := g.callService.IssueStreamTicket(instance, data.CallID, call_stream.StreamOptions{Video: data.Video, Format: format, Binary: data.Binary, Speech: data.SpeechEvents})
 	if err != nil {
 		callFailure(ctx, err)
 		return

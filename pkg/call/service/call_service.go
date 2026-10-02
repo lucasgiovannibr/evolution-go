@@ -53,6 +53,8 @@ type DialCallStruct struct {
 	SampleRate int    `json:"sampleRate,omitempty"`
 	// Binary: see StreamTicketStruct.
 	Binary bool `json:"binary,omitempty"`
+	// SpeechEvents: see StreamTicketStruct.
+	SpeechEvents bool `json:"speechEvents,omitempty"`
 }
 
 // DialResult is the answer of POST /call/dial: the call, and its stream ticket when one
@@ -87,6 +89,10 @@ type StreamTicketStruct struct {
 	// base64 in JSON: a third smaller and no encoding on either side. The control messages
 	// stay JSON. The frame layout is described in the "start" message documentation.
 	Binary bool `json:"binary,omitempty"`
+	// SpeechEvents makes the stream say when the peer begins and stops talking
+	// (speech_start and speech_end messages), so a client that answers by voice does not
+	// need a detector of its own.
+	SpeechEvents bool `json:"speechEvents,omitempty"`
 }
 
 // VideoCallStruct is the body of POST /call/video.
@@ -112,6 +118,8 @@ type StreamTicket struct {
 	SampleRate int    `json:"sampleRate"`
 	// Binary says whether the stream will use binary frames for audio and video.
 	Binary bool `json:"binary"`
+	// SpeechEvents says whether the stream will report when the peer talks.
+	SpeechEvents bool `json:"speechEvents"`
 }
 
 // ActiveCallsResult is the answer of GET /call/active.
@@ -226,7 +234,7 @@ func (c *callService) DialCall(ctx context.Context, data *DialCallStruct, instan
 			return DialResult{}, err
 		}
 	}
-	streamOpts := call_stream.StreamOptions{Video: data.Video, Format: format, Binary: data.Binary}
+	streamOpts := call_stream.StreamOptions{Video: data.Video, Format: format, Binary: data.Binary, Speech: data.SpeechEvents}
 
 	t, err := engine.Dial(ctx, instance.Id, target, call_engine.DialOptions{Video: data.Video})
 	if err != nil {
@@ -284,6 +292,7 @@ func (c *callService) IssueStreamTicket(instance *instance_model.Instance, callI
 		Encoding:         format.Encoding,
 		SampleRate:       format.SampleRate,
 		Binary:           opts.Binary,
+		SpeechEvents:     opts.Speech,
 	}, nil
 }
 

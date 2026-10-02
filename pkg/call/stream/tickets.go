@@ -39,6 +39,9 @@ type StreamOptions struct {
 	// base64 in JSON (see the protocol description in handler.go). Control messages stay
 	// JSON.
 	Binary bool
+	// Speech adds the speech_start and speech_end events: the stream says when the peer
+	// begins and stops talking.
+	Speech bool
 }
 
 type ticket struct {
