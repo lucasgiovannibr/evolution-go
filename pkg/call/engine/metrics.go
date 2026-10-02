@@ -18,12 +18,11 @@ import (
 // server would grow a series per number), and a reason WhatsApp sends in free text is
 // folded into "other".
 type callMetrics struct {
-	started  *prometheus.CounterVec   // direction, video
-	ended    *prometheus.CounterVec   // direction, reason
-	talk     *prometheus.HistogramVec // direction: from media ready to the end
-	dials    *prometheus.CounterVec   // result
-	stalls   prometheus.Counter
-	collects []prometheus.Collector
+	started *prometheus.CounterVec   // direction, video
+	ended   *prometheus.CounterVec   // direction, reason
+	talk    *prometheus.HistogramVec // direction: from media ready to the end
+	dials   *prometheus.CounterVec   // result
+	stalls  prometheus.Counter
 
 	streamMu sync.Mutex
 	live     map[*StreamStats]struct{} // streams attached right now
