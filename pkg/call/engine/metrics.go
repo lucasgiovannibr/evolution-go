@@ -55,7 +55,7 @@ func newCallMetrics() *callMetrics {
 		}, []string{"direction", "video"}),
 		ended: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "evolution_calls_ended_total",
-			Help: "Calls that ended, by direction and reason (peer_hangup, hangup, rejected, rejected_busy, ring_timeout, stream_closed, media_stalled, instance_stopped, server, other).",
+			Help: "Calls that ended, by direction and reason (peer_hangup, hangup, rejected, rejected_busy, ring_timeout, stream_closed, media_stalled, max_duration, silence_timeout, instance_stopped, server, other).",
 		}, []string{"direction", "reason"}),
 		talk: prometheus.NewHistogramVec(prometheus.HistogramOpts{
 			Name:    "evolution_call_talk_seconds",
@@ -77,6 +77,7 @@ func newCallMetrics() *callMetrics {
 var knownReasons = map[string]bool{
 	ReasonPeerHangup: true, "hangup": true, "rejected": true, "rejected_busy": true,
 	"ring_timeout": true, "stream_closed": true, ReasonMediaStalled: true,
+	ReasonMaxDuration: true, ReasonSilenceTimeout: true,
 	"instance_stopped": true, "ended": true,
 }
 
