@@ -117,7 +117,7 @@ Análise do stream de chamadas (WebSocket) contra a documentação do `meowcalle
 | 54 | **Fila de áudio de entrada menor** | `toClientFrames = 50` guarda 3 s antes de descartar: um cliente lento acumula até 3 s de atraso. 10 a 15 quadros (600 a 900 ms) é mais próximo de conversa ao vivo | P | ◐ |
 | 55 | **Quadros binários no stream** (opt-in no ticket) | Base64 em JSON infla 33% e custa codificação; o JSON fica só para controle | M | ◐ |
 | 56 | **Formato de áudio negociável** (`format` no ticket: 8 kHz μ-law, 16 kHz, 24 kHz) | A OpenAI Realtime usa 24 kHz e telefonia μ-law 8 kHz: hoje cada cliente reamostra | M | ◐ |
-| 57 | **Duração máxima e timeout por silêncio** (opcionais) | Uma chamada atendida hoje pode durar para sempre. Estava em "não feito de propósito" | P | ◐ |
+| 57 | **Duração máxima e timeout por silêncio** (opcionais) | Uma chamada atendida hoje pode durar para sempre. Estava em "não feito de propósito" | P | ✅ PR aberto (`feat/call-limits`); testado ao vivo: `silence_timeout` e `max_duration`. Padrão desligado (`CALL_MAX_DURATION`, `CALL_SILENCE_TIMEOUT`) |
 | 58 | **Timestamp nas mensagens de entrada** | Hoje só há `seq`; ajuda a sincronizar e gravar | P | ◐ |
 | 59 | **Histórico de chamadas no banco** | Hoje só existem os eventos `CallReady`/`CallEnded`/`CallVideoState` | M | ◐ |
 | 60 | **Gravação por chamada** (`record: true`: WAV estéreo entrada/saída, vídeo `.h264`, disco ou MinIO) | Precisa de aviso de consentimento (LGPD). O áudio não chega em ritmo constante (em silêncio vêm ~2 quadros/s): quem grava precisa preencher os vazios com silêncio pelo tempo, senão o WAV sai mais curto que a chamada (o script de teste gravou 29 s de uma chamada de 68 s) | M | ◐ |
