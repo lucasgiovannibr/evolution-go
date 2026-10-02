@@ -541,3 +541,72 @@ func TestAStreamThatLeavesTakesItsVideoSinkAway(t *testing.T) {
 
 	eventually(t, "the video sink to go", func() bool { return call.VideoSink() == nil })
 }
+
+func TestMarksComeBackWhenTheAudioBeforeThemHasBeenPlayed(t *testing.T) {
+	r := newRig(t, Config{})
+	call := r.track("inst", "MK1")
+	conn := r.mustDial("inst", "MK1")
+	read(t, conn) // start
+	eventually(t, "the source", func() bool { return call.Source() != nil })
+
+	chunk := make([]byte, call_engine.FrameSamples*2*2) // two frames
+	if err := conn.WriteJSON(message{Event: "media", Payload: base64.StdEncoding.EncodeToString(chunk)}); err != nil {
+		t.Fatal(err)
+	}
+	if err := conn.WriteJSON(message{Event: "mark", Name: "sentence-1"}); err != nil {
+		t.Fatal(err)
+	}
+	// the library's send loop takes the two frames
+	eventually(t, "the first frame", func() bool { f, _ := call.Source().ReadFrame(); return f != nil })
+	eventually(t, "the second frame", func() bool { f, _ := call.Source().ReadFrame(); return f != nil })
+
+	if m := read(t, conn); m.Event != "mark" || m.Name != "sentence-1" {
+		t.Fatalf("got %+v, want the mark sentence-1", m)
+	}
+}
+
+func TestClearGivesTheMarksBackAtOnce(t *testing.T) {
+	r := newRig(t, Config{})
+	call := r.track("inst", "MK2")
+	conn := r.mustDial("inst", "MK2")
+	read(t, conn)
+	eventually(t, "the source", func() bool { return call.Source() != nil })
+
+	chunk := make([]byte, call_engine.FrameSamples*2*10)
+	_ = conn.WriteJSON(message{Event: "media", Payload: base64.StdEncoding.EncodeToString(chunk)})
+	_ = conn.WriteJSON(message{Event: "mark", Name: "interrupted"})
+	_ = conn.WriteJSON(message{Event: "clear"})
+
+	if m := read(t, conn); m.Event != "mark" || m.Name != "interrupted" {
+		t.Fatalf("got %+v, want the mark interrupted", m)
+	}
+}
+
+func TestAClientThatReadsTooSlowlyIsToldOnce(t *testing.T) {
+	r := newRig(t, Config{})
+	call := r.track("inst", "LAG1")
+	conn := r.mustDial("inst", "LAG1")
+	read(t, conn)
+	eventually(t, "the sink", func() bool { return call.Sink() != nil })
+
+	// far more frames than the queue holds, faster than the socket can write them
+	frame := make([]float32, call_engine.FrameSamples)
+	for i := 0; i < 3000; i++ {
+		call.Sink().WriteFrame(frame)
+	}
+
+	warnings := 0
+	for deadline := time.Now().Add(5 * time.Second); time.Now().Before(deadline); {
+		_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+		var m message
+		if err := conn.ReadJSON(&m); err != nil {
+			break
+		}
+		if m.Event == "error" && m.Code == "inbound_overflow" {
+			warnings++
+		}
+	}
+	if warnings != 1 {
+		t.Fatalf("the client was warned %d times, want once", warnings)
+	}
+}

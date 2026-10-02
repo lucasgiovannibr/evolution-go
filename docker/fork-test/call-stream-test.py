@@ -180,10 +180,16 @@ async def main(args):
         else:
             print("stream open; waiting for the other side to pick up (Ctrl+C hangs up)")
 
+        marks_sent = {}
+
         async def send_tone():
             for frame in tone_frames(args.tone):
                 await ws.send(json.dumps({"event": "media", "payload": base64.b64encode(frame).decode()}))
-                await asyncio.sleep(FRAME_MS / 1000)
+                if not args.tone_burst:
+                    await asyncio.sleep(FRAME_MS / 1000)
+            marks_sent["tone-end"] = time.time()
+            await ws.send(json.dumps({"event": "mark", "name": "tone-end"}))
+            print(f"[{time.time()-t0:6.1f}s] tone queued; mark tone-end sent")
 
         async def send_video(units):
             await asyncio.sleep(2)  # let the call come up
@@ -233,6 +239,10 @@ async def main(args):
                         keyframes += 1
                         if keyframes == 1:
                             print(f"first video keyframe (orientation {msg.get('orientation')})")
+                elif event == "mark":
+                    waited = time.time() - marks_sent.get(msg.get("name"), time.time())
+                    print(f"[{time.time()-t0:6.1f}s] mark {msg.get('name')!r} came back {waited:.1f}s after it was sent"
+                          + (f" (the tone is {args.tone:.1f}s long)" if args.tone_burst else ""))
                 elif event == "keyframe_request":
                     restart.set()
                 elif event == "video_state":
@@ -281,7 +291,8 @@ if __name__ == "__main__":
     p.add_argument("--dial", metavar="NUMBER", help="place a call to NUMBER instead of waiting for one")
     p.add_argument("--record", help="WAV file for the caller's audio (default call-<id>.wav)")
     p.add_argument("--echo", action="store_true", help="send the caller's audio back")
-    p.add_argument("--tone", type=float, default=0, metavar="SECONDS", help="play a 440 Hz tone")
+    p.add_argument("--tone", type=float, default=0, metavar="SECONDS", help="play a 440 Hz tone, then send a mark")
+    p.add_argument("--tone-burst", action="store_true", help="queue the whole tone at once instead of in real time: the mark then comes back when the tone has been played (up to 30 s)")
     p.add_argument("--video", action="store_true", help="carry the call's video too (with --dial: place a video call)")
     p.add_argument("--video-in", metavar="FILE", help="send this Annex-B H.264 file as video (implies --video)")
     p.add_argument("--fps", type=float, default=15, help="pictures per second of --video-in")

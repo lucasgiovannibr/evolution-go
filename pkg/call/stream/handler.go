@@ -59,6 +59,7 @@ type Config struct {
 //	                  "orientation" is the device's as the peer reports it and does not follow
 //	                  the camera in use
 //	{"event":"keyframe_request"}                                                        the next video you send must be an IDR
+//	{"event":"mark", "name"}                                                            the audio you sent before that mark has been handed to the call
 //	{"event":"error", "code", "message"}
 //	{"event":"stop",  "reason"}                                                         the call ended
 //
@@ -66,6 +67,10 @@ type Config struct {
 //
 //	{"event":"media", "payload":"<base64 pcm>"}     audio for the peer, any chunk size
 //	{"event":"video", "payload":"<base64 access unit>"}   one H.264 access unit for the peer (video streams only)
+//	{"event":"mark", "name":"..."}                  asks for the same mark back once the audio sent so far has
+//	                                                 been played to the peer (at once when nothing is queued);
+//	                                                 "clear" gives back every waiting mark immediately, and at
+//	                                                 most 64 marks may wait
 //	{"event":"clear"}                               drop the audio queued for the peer
 //	{"event":"stop"}                                close the stream (the call is kept for a while)
 //
@@ -93,6 +98,7 @@ type message struct {
 	State       string `json:"state,omitempty"`
 	StateCode   *int   `json:"stateCode,omitempty"`
 	Reason      string `json:"reason,omitempty"`
+	Name        string `json:"name,omitempty"`
 	Code        string `json:"code,omitempty"`
 	Message     string `json:"message,omitempty"`
 }
@@ -288,6 +294,16 @@ func (s *session) sendFrame(seq *uint64, frame []float32) error {
 	return err
 }
 
+// sendMarks tells the client which of its marks have been played.
+func (s *session) sendMarks() error {
+	for _, name := range s.bridge.FinishedMarks() {
+		if err := s.send(message{Event: "mark", Name: name}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func (s *session) sendVideo(seq *uint64, f videoFrame) error {
 	*seq++
 	err := s.send(message{
@@ -314,10 +330,24 @@ func (s *session) writeLoop() {
 	}
 
 	var seq, videoSeq uint64
+	var warnedLag bool
 	for {
 		select {
 		case frame := <-s.bridge.toClient:
 			if err := s.sendFrame(&seq, frame); err != nil {
+				s.conn.Close()
+				return
+			}
+			// Said once, when the client is reading again: the writer is the only place
+			// that knows it was behind.
+			if !warnedLag && s.stats.DroppedToClient.Load() > 0 {
+				warnedLag = true
+				_ = s.send(message{Event: "error", Code: "inbound_overflow",
+					Message: "the peer's audio arrived faster than it was read; the oldest of it was dropped (the queue holds under a second)"})
+			}
+
+		case <-s.bridge.markReady:
+			if err := s.sendMarks(); err != nil {
 				s.conn.Close()
 				return
 			}
@@ -355,6 +385,7 @@ func (s *session) writeLoop() {
 					drained = true
 				}
 			}
+			_ = s.sendMarks()
 			_ = s.send(message{Event: "stop", Reason: s.call.Reason()})
 			s.closeWith(websocket.CloseNormalClosure, "call ended")
 			s.conn.Close() // ends readLoop
@@ -403,6 +434,10 @@ func (s *session) readLoop() {
 			}
 		case "video":
 			s.clientVideo(m)
+		case "mark":
+			if !s.bridge.Mark(m.Name) {
+				s.sendError("too_many_marks", "too many marks are waiting for audio to be played; wait for some to come back")
+			}
 		case "clear":
 			s.bridge.Clear()
 		case "stop":
