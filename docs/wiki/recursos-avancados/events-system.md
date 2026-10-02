@@ -613,7 +613,7 @@ O Evolution GO usa dois níveis de classificação de eventos:
 | `SEND_MESSAGE` | `SendMessage` |
 | `READ_RECEIPT` | `Receipt` |
 | `GROUP` | `GroupInfo`, `JoinedGroup` |
-| `CALL` | `CallOffer`, `CallAccept`, `CallTerminate`, `CallReady`, `CallEnded`, `CallVideoState` (e os demais de chamada) |
+| `CALL` | `CallOffer`, `CallAccept`, `CallTerminate`, `CallReady`, `CallEnded`, `CallVideoState`, `CallMediaStalled`, `CallMediaResumed` (e os demais de chamada) |
 | `CONNECTION` | `Connected`, `Disconnected`, `LoggedOut` |
 | `QRCODE` | `PairSuccess`, `Disconnected` (com QR) |
 | `ALL` | Todos os eventos |
@@ -658,8 +658,10 @@ O Evolution GO usa dois níveis de classificação de eventos:
 - `CallReady` - A mídia da chamada subiu (motor de chamadas)
 - `CallEnded` - A chamada terminou, com o `reason` e a duração (motor de chamadas)
 - `CallVideoState` - O outro lado mudou o vídeo, com `state` e `stateCode` (motor de chamadas)
+- `CallMediaStalled` - Uma chamada ativa com stream ficou sem receber áudio do outro lado por `CALL_MEDIA_STALL` segundos (motor de chamadas)
+- `CallMediaResumed` - O áudio voltou depois de um `CallMediaStalled` (motor de chamadas)
 
-`CallReady`, `CallEnded` e `CallVideoState` só saem em instâncias com `callsEnabled`. Os campos e os motivos de fim estão em [API de Chamadas](../guias-api/api-call.md#eventos).
+`CallReady`, `CallEnded`, `CallVideoState`, `CallMediaStalled` e `CallMediaResumed` só saem em instâncias com `callsEnabled`. Os campos e os motivos de fim estão em [API de Chamadas](../guias-api/api-call.md#eventos).
 
 ### Eventos de Conexão
 

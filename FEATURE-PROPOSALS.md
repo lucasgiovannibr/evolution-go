@@ -128,3 +128,7 @@ Análise do stream de chamadas (WebSocket) contra a documentação do `meowcalle
 | 65 | **UDP por proxy SOCKS5** | Hoje instâncias com proxy ficam sem chamadas. Exige um `PacketConn` injetável na biblioteca (fork ou PR) | G | ✖ decisão sua |
 | 66 | **Fork da `meowcaller`** | Pré-aceite seletivo (hoje toda chamada recebida é pré-aceita), base do whatsmeow fixa (a `main` deles migrou para o `hypermeow`) e acompanhar o Opus, que é "em andamento" lá | G | ✖ decisão sua |
 | 67 | **Chamadas em grupo** | O commit fixado já traz suporte experimental; hoje fica de fora de propósito | G | ✖ por ora |
+
+**Achado no teste da `main` combinada (02/10/2026), corrigido no PR #82:** a biblioteca pede áudio ao cliente desde o início da chamada, inclusive tocando, e o jogava fora; uma saudação enfileirada antes de o outro lado atender se perdia e o `mark` voltava como "tocado". O áudio agora espera a chamada ficar ativa.
+
+**Documentação** de #51–#59, #61 e #82 feita em 02/10/2026: `docs/wiki/guias-api/api-call.md` (opções do stream, histórico, limites, métricas, erros), variáveis, eventos, CHANGELOG, FORK-TRIAGE e Swagger.
