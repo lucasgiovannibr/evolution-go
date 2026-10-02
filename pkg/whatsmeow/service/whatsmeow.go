@@ -2222,7 +2222,7 @@ func globalEventTypeFor(eventType string) string {
 		return "HISTORY_SYNC"
 	case "ChatPresence", "Archive", "Mute", "Pin", "Star", "MarkChatAsRead", "ClearChat", "DeleteChat", "DeleteForMe", "UnarchiveChatsSetting", "UserStatusMute":
 		return "CHAT_PRESENCE"
-	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency", "CallPreAccept", "CallReject", "CallTransport", "UnknownCallEvent", "CallReady", "CallEnded", "CallVideoState":
+	case "CallOffer", "CallAccept", "CallTerminate", "CallOfferNotice", "CallRelayLatency", "CallPreAccept", "CallReject", "CallTransport", "UnknownCallEvent", "CallReady", "CallEnded", "CallVideoState", "CallMediaStalled", "CallMediaResumed":
 		return "CALL"
 	case "Connected", "PairSuccess", "TemporaryBan", "LoggedOut", "ConnectFailure", "Disconnected", "KeepAliveTimeout", "KeepAliveRestored", "ReachoutTimelock", "StreamError", "ClientOutdated", "CATRefreshError", "OfflineSyncPreview":
 		return "CONNECTION"
@@ -2533,11 +2533,13 @@ func NewWhatsmeowService(
 		passkeyCeremony:    ceremony.NewStore(),
 	}
 	svc.callEngine = call_engine.NewManager(call_engine.Options{
-		MaxConcurrent:  config.CallMaxConcurrent,
-		RingTimeout:    time.Duration(config.CallRingTimeout) * time.Second,
-		StreamGrace:    time.Duration(config.CallStreamGrace) * time.Second,
-		DialsPerMinute: config.CallDialLimit,
-		Notify:         svc.publishCallEvent,
+		MaxConcurrent:    config.CallMaxConcurrent,
+		RingTimeout:      time.Duration(config.CallRingTimeout) * time.Second,
+		StreamGrace:      time.Duration(config.CallStreamGrace) * time.Second,
+		DialsPerMinute:   config.CallDialLimit,
+		MediaStall:       time.Duration(config.CallMediaStall) * time.Second,
+		MediaStallHangup: config.CallMediaStallHangup,
+		Notify:           svc.publishCallEvent,
 	})
 	return svc
 }

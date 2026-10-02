@@ -269,6 +269,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	metrics.RegisterDBStats("auth", firstSQLDB(authDB, sqliteDB))
 	metrics.RegisterInstances(clientPointer)
 	metrics.RegisterWebhookQueues(whatsmeowService.WebhookStats)
+	metrics.Registry.MustRegister(whatsmeowService.CallEngine().Collectors()...)
 	r.GET("/metrics", auth_middleware.NewMiddleware(config, instanceService).AuthAdmin, metrics.Handler())
 
 	if config.PprofEnabled {

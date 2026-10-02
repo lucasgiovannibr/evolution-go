@@ -10,6 +10,7 @@ import (
 	"github.com/DATA-DOG/go-sqlmock"
 	"github.com/gin-gonic/gin"
 
+	call_engine "github.com/evolution-foundation/evolution-go/pkg/call/engine"
 	producer_interfaces "github.com/evolution-foundation/evolution-go/pkg/events/interfaces"
 )
 
@@ -111,4 +112,26 @@ func grepLines(s, sub string) string {
 		}
 	}
 	return strings.Join(out, "\n")
+}
+
+// The call engine registers its metrics next to everything else in main; a name that
+// collides with an existing one would panic at start-up.
+func TestCallEngineMetricsRegisterAndAreServed(t *testing.T) {
+	Registry.MustRegister(call_engine.NewManager(call_engine.Options{}).Collectors()...)
+
+	gin.SetMode(gin.TestMode)
+	r := gin.New()
+	r.GET("/metrics", Handler())
+	body := scrape(t, r)
+	for _, want := range []string{
+		`evolution_calls_active{phase="active"} 0`,
+		`evolution_call_engines{state="active"} 0`,
+		`evolution_call_media_stalled 0`,
+		`evolution_call_stream_frames_total{direction="to_client",kind="audio"} 0`,
+		`evolution_call_media_stalls_total 0`,
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("/metrics lacks %q", want)
+		}
+	}
 }

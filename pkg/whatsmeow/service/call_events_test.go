@@ -56,7 +56,7 @@ func TestCallLifecycleEventsReachCallSubscribers(t *testing.T) {
 }
 
 func TestCallLifecycleEventsAreCallEvents(t *testing.T) {
-	for _, name := range []string{"CallReady", "CallEnded", "CallVideoState"} {
+	for _, name := range []string{"CallReady", "CallEnded", "CallVideoState", "CallMediaStalled", "CallMediaResumed"} {
 		if got := globalEventTypeFor(name); got != "CALL" {
 			t.Errorf("globalEventTypeFor(%q) = %q, want CALL", name, got)
 		}

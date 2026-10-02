@@ -42,12 +42,15 @@ func (m *Manager) Dial(ctx context.Context, instanceID, target string, opts Dial
 	m.mu.RUnlock()
 
 	if rt == nil || rt.status.State != StateActive || (rt.dial == nil && m.opts.Dial == nil) {
+		m.metrics.dials.WithLabelValues("unavailable").Inc()
 		return nil, ErrEngineUnavailable
 	}
 	if open >= m.opts.MaxConcurrent {
+		m.metrics.dials.WithLabelValues("busy").Inc()
 		return nil, ErrTooManyCalls
 	}
 	if !m.allowDial(instanceID) {
+		m.metrics.dials.WithLabelValues("rate_limited").Inc()
 		return nil, ErrDialRateLimited
 	}
 
@@ -59,6 +62,7 @@ func (m *Manager) Dial(ctx context.Context, instanceID, target string, opts Dial
 	}
 	c, err := dial(ctx, target, opts)
 	if err != nil {
+		m.metrics.dials.WithLabelValues("failed").Inc()
 		return nil, fmt.Errorf("%w: %v", ErrDialFailed, err)
 	}
 
@@ -66,8 +70,10 @@ func (m *Manager) Dial(ctx context.Context, instanceID, target string, opts Dial
 	if err != nil {
 		// Another call took the last slot while this one was being placed.
 		_ = c.Hangup()
+		m.metrics.dials.WithLabelValues("busy").Inc()
 		return nil, err
 	}
+	m.metrics.dials.WithLabelValues("ok").Inc()
 	return t, nil
 }
 

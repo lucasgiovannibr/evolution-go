@@ -80,6 +80,7 @@ func (m *Manager) AttachStream(instanceID, callID string, ep Endpoints, stats *S
 	default:
 	}
 	t.attached = true
+	t.attachedAt = m.now()
 	t.stats = stats
 	t.onVideoState = ep.OnVideoState
 	t.onKeyframe = ep.OnKeyframeRequest
@@ -88,8 +89,13 @@ func (m *Manager) AttachStream(instanceID, callID string, ep Endpoints, stats *S
 		t.grace = nil
 	}
 	t.mu.Unlock()
+	m.metrics.streamAttached(stats)
 
-	t.call.Receive(ep.Sink)
+	sink := ep.Sink
+	if sink != nil {
+		sink = activitySink{AudioSink: sink, t: t, now: m.now}
+	}
+	t.call.Receive(sink)
 	t.call.Play(ep.Source)
 	if ep.Video != nil {
 		t.call.ReceiveVideo(ep.Video)
@@ -110,6 +116,7 @@ func (m *Manager) streamDetached(instanceID string, t *Tracked, hadVideo bool) {
 	t.attached = false
 	t.onVideoState = nil
 	t.onKeyframe = nil
+	m.metrics.streamDetached(t.stats)
 	select {
 	case <-t.done:
 		t.mu.Unlock()
