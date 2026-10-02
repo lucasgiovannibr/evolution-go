@@ -151,19 +151,35 @@ func (b *bridge) Push(pcm []byte) {
 		b.odd = []byte{pcm[len(pcm)-1]}
 		pcm = pcm[:len(pcm)-1]
 	}
-	samples := len(pcm) / 2
-	if samples == 0 {
-		return
+	samples := make([]float32, len(pcm)/2)
+	for i := range samples {
+		samples[i] = float32(int16(binary.LittleEndian.Uint16(pcm[2*i:]))) / 32768.0
 	}
-	if len(b.pending)+samples > maxOutboundSamples {
-		b.stats.DroppedFromClient.Add(uint64((samples + frameSamples - 1) / frameSamples))
-		return
-	}
+	b.pushLocked(samples)
+}
 
-	for i := 0; i < samples; i++ {
-		b.pending = append(b.pending, float32(int16(binary.LittleEndian.Uint16(pcm[2*i:])))/32768.0)
+// PushSamples queues audio for the peer that is already 16 kHz mono floats (the
+// stream converts other formats before it gets here). Audio that does not fit within
+// maxOutboundSamples is dropped.
+func (b *bridge) PushSamples(samples []float32) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return
 	}
-	b.pushed += uint64(samples)
+	b.pushLocked(samples)
+}
+
+func (b *bridge) pushLocked(samples []float32) {
+	if len(samples) == 0 {
+		return
+	}
+	if len(b.pending)+len(samples) > maxOutboundSamples {
+		b.stats.DroppedFromClient.Add(uint64((len(samples) + frameSamples - 1) / frameSamples))
+		return
+	}
+	b.pending = append(b.pending, samples...)
+	b.pushed += uint64(len(samples))
 	b.lastPush = b.now()
 }
 

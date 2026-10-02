@@ -25,8 +25,9 @@ type CallService interface {
 	GetCall(instance *instance_model.Instance, callID string) (call_engine.Info, error)
 	AnswerCall(data *AnswerCallStruct, instance *instance_model.Instance) (call_engine.Info, error)
 	HangupCall(data *HangupCallStruct, instance *instance_model.Instance) error
-	// IssueStreamTicket creates the one-time ticket that opens the audio stream of a call.
-	IssueStreamTicket(instance *instance_model.Instance, callID string, video bool) (StreamTicket, error)
+	// IssueStreamTicket creates the one-time ticket that opens the audio stream of a call,
+	// with the audio format the stream will carry (see call_stream.ParseAudioFormat).
+	IssueStreamTicket(instance *instance_model.Instance, callID string, video bool, format call_stream.AudioFormat) (StreamTicket, error)
 	// VideoCall does one video action (start, accept, stop, enable, disable, orientation).
 	VideoCall(instance *instance_model.Instance, data *VideoCallStruct) (call_engine.Info, error)
 	// DialCall places an outgoing call.
@@ -46,6 +47,10 @@ type DialCallStruct struct {
 	Stream bool `json:"stream"`
 	// Video places a video call. With Stream, the stream carries the video too.
 	Video bool `json:"video"`
+	// Encoding and SampleRate are the audio format of the stream (only read with Stream);
+	// see StreamTicketStruct.
+	Encoding   string `json:"encoding,omitempty"`
+	SampleRate int    `json:"sampleRate,omitempty"`
 }
 
 // DialResult is the answer of POST /call/dial: the call, and its stream ticket when one
@@ -70,6 +75,12 @@ type StreamTicketStruct struct {
 	CallID string `json:"callId"`
 	// Video makes the stream carry the call's video besides its audio.
 	Video bool `json:"video"`
+	// Encoding is the audio encoding of the stream: "audio/pcm-s16le" (default),
+	// "audio/x-mulaw" or "audio/x-alaw" (also written pcm, mulaw, alaw, pcmu, pcma).
+	Encoding string `json:"encoding,omitempty"`
+	// SampleRate is the audio rate of the stream: 8000, 16000 (default) or 24000 for PCM,
+	// 8000 for mu-law and A-law. The server converts; the call itself runs at 16 kHz.
+	SampleRate int `json:"sampleRate,omitempty"`
 }
 
 // VideoCallStruct is the body of POST /call/video.
@@ -89,6 +100,10 @@ type StreamTicket struct {
 	Ticket           string `json:"ticket"`
 	ExpiresInSeconds int    `json:"expiresInSeconds"`
 	Path             string `json:"path"`
+	// Encoding and SampleRate are the audio format the stream will carry, as the "start"
+	// message will report it.
+	Encoding   string `json:"encoding"`
+	SampleRate int    `json:"sampleRate"`
 }
 
 // ActiveCallsResult is the answer of GET /call/active.
@@ -196,6 +211,13 @@ func (c *callService) DialCall(ctx context.Context, data *DialCallStruct, instan
 	if err != nil {
 		return DialResult{}, err
 	}
+	// Checked before the phone rings: a bad format must not leave a call dialled.
+	var format call_stream.AudioFormat
+	if data.Stream {
+		if format, err = call_stream.ParseAudioFormat(data.Encoding, data.SampleRate); err != nil {
+			return DialResult{}, err
+		}
+	}
 
 	t, err := engine.Dial(ctx, instance.Id, target, call_engine.DialOptions{Video: data.Video})
 	if err != nil {
@@ -205,7 +227,7 @@ func (c *callService) DialCall(ctx context.Context, data *DialCallStruct, instan
 	result := DialResult{Info: t.Info()}
 
 	if data.Stream {
-		ticket, err := c.IssueStreamTicket(instance, result.CallID, data.Video)
+		ticket, err := c.IssueStreamTicket(instance, result.CallID, data.Video, format)
 		if err != nil {
 			// The caller asked for a stream it cannot have: do not leave the call ringing.
 			_, _ = engine.Hangup(instance.Id, result.CallID)
@@ -229,7 +251,7 @@ func (c *callService) VideoCall(instance *instance_model.Instance, data *VideoCa
 	return t.Info(), nil
 }
 
-func (c *callService) IssueStreamTicket(instance *instance_model.Instance, callID string, video bool) (StreamTicket, error) {
+func (c *callService) IssueStreamTicket(instance *instance_model.Instance, callID string, video bool, format call_stream.AudioFormat) (StreamTicket, error) {
 	engine, err := c.engine(instance)
 	if err != nil {
 		return StreamTicket{}, err
@@ -237,14 +259,20 @@ func (c *callService) IssueStreamTicket(instance *instance_model.Instance, callI
 	if _, ok := engine.Get(instance.Id, callID); !ok {
 		return StreamTicket{}, call_engine.ErrCallNotFound
 	}
-	token, ttl, err := c.tickets.Issue(instance.Id, callID, video)
+	token, ttl, err := c.tickets.IssueFormat(instance.Id, callID, video, format)
 	if err != nil {
 		return StreamTicket{}, err
+	}
+
+	if format.Encoding == "" {
+		format = call_stream.DefaultAudioFormat
 	}
 	return StreamTicket{
 		Ticket:           token,
 		ExpiresInSeconds: int(ttl.Seconds()),
 		Path:             "/call/stream/" + callID + "?ticket=" + token,
+		Encoding:         format.Encoding,
+		SampleRate:       format.SampleRate,
 	}, nil
 }
 

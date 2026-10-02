@@ -32,6 +32,7 @@ type ticket struct {
 	instanceID string
 	callID     string
 	video      bool
+	format     AudioFormat
 	expires    time.Time
 }
 
@@ -52,8 +53,13 @@ func tokenKey(token string) string {
 }
 
 // Issue creates a ticket for a call of an instance. video says whether the stream it
-// opens carries the call's video besides its audio.
+// opens carries the call's video besides its audio. Its audio is the default format.
 func (t *Tickets) Issue(instanceID, callID string, video bool) (token string, ttl time.Duration, err error) {
+	return t.IssueFormat(instanceID, callID, video, DefaultAudioFormat)
+}
+
+// IssueFormat is Issue with the audio format the stream will carry (see ParseAudioFormat).
+func (t *Tickets) IssueFormat(instanceID, callID string, video bool, format AudioFormat) (token string, ttl time.Duration, err error) {
 	raw := make([]byte, 24)
 	if _, err := rand.Read(raw); err != nil {
 		return "", 0, err
@@ -74,7 +80,7 @@ func (t *Tickets) Issue(instanceID, callID string, video bool) (token string, tt
 			return "", 0, ErrTooManyTickets
 		}
 	}
-	t.m[tokenKey(token)] = ticket{instanceID: instanceID, callID: callID, video: video, expires: now.Add(TicketTTL)}
+	t.m[tokenKey(token)] = ticket{instanceID: instanceID, callID: callID, video: video, format: format.normalized(), expires: now.Add(TicketTTL)}
 	return token, TicketTTL, nil
 }
 
@@ -83,8 +89,14 @@ func (t *Tickets) Issue(instanceID, callID string, video bool) (token string, tt
 // been used and was issued for callID. A ticket is spent by any attempt to redeem it,
 // right or wrong.
 func (t *Tickets) Redeem(token, callID string) (instanceID string, video bool, ok bool) {
+	instanceID, video, _, ok = t.RedeemFormat(token, callID)
+	return instanceID, video, ok
+}
+
+// RedeemFormat is Redeem that also returns the audio format the ticket asked for.
+func (t *Tickets) RedeemFormat(token, callID string) (instanceID string, video bool, format AudioFormat, ok bool) {
 	if token == "" {
-		return "", false, false
+		return "", false, AudioFormat{}, false
 	}
 	key := tokenKey(token)
 
@@ -96,10 +108,10 @@ func (t *Tickets) Redeem(token, callID string) (instanceID string, video bool, o
 	t.mu.Unlock()
 
 	if !found || !t.now().Before(tk.expires) {
-		return "", false, false
+		return "", false, AudioFormat{}, false
 	}
 	if subtle.ConstantTimeCompare([]byte(tk.callID), []byte(callID)) != 1 {
-		return "", false, false
+		return "", false, AudioFormat{}, false
 	}
-	return tk.instanceID, tk.video, true
+	return tk.instanceID, tk.video, tk.format, true
 }

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -73,6 +74,12 @@ type Config struct {
 //	                                                 most 64 marks may wait
 //	{"event":"clear"}                               drop the audio queued for the peer
 //	{"event":"stop"}                                close the stream (the call is kept for a while)
+//
+// Audio is 16 kHz mono 16-bit PCM unless the ticket asked for another format (see
+// ParseAudioFormat): 8 or 24 kHz PCM, or 8 kHz G.711 mu-law or A-law. The "start"
+// message reports what the stream carries ("encoding", "sampleRate") and both directions
+// use it; "frameMs" stays 60, so a frame is 480, 960 or 1440 samples. The call itself
+// runs at 16 kHz and the stream converts.
 //
 // Video is H.264 in Annex-B framing, one access unit (one picture) per message, with
 // the SPS and PPS in front of every keyframe. Send a keyframe first and again whenever
@@ -145,7 +152,7 @@ func (h *handler) checkOrigin(r *http.Request) bool {
 func (h *handler) serve(c *gin.Context) {
 	callID := c.Param("callId")
 
-	instanceID, video, ok := h.tickets.Redeem(c.Query("ticket"), callID)
+	instanceID, video, format, ok := h.tickets.RedeemFormat(c.Query("ticket"), callID)
 	if !ok {
 		apierror.Fail(c, http.StatusUnauthorized, "invalid or expired ticket")
 		return
@@ -159,7 +166,7 @@ func (h *handler) serve(c *gin.Context) {
 	if err != nil {
 		return // Upgrade already answered
 	}
-	(&session{engine: h.engine, conn: conn, instanceID: instanceID, callID: callID, video: video}).run()
+	(&session{engine: h.engine, conn: conn, instanceID: instanceID, callID: callID, video: video, format: format}).run()
 }
 
 // session is one open socket attached to one call.
@@ -169,6 +176,8 @@ type session struct {
 	instanceID string
 	callID     string
 	video      bool // the ticket asked for video
+	format     AudioFormat
+	conv       *converter // nil for the default format: the call's audio goes through as it is
 
 	stats  call_engine.StreamStats
 	bridge *bridge
@@ -227,6 +236,9 @@ func (s *session) run() {
 	s.errorSent = map[string]bool{}
 	s.ctrl = make(chan message, controlQueue)
 	s.bridge = newBridge(&s.stats)
+	if !s.format.isDefault() {
+		s.conv = newConverter(s.format)
+	}
 
 	ep := call_engine.Endpoints{
 		Sink: s.bridge, Source: s.bridge,
@@ -258,7 +270,7 @@ func (s *session) run() {
 	video, videoStream := info.Video, s.video
 	if err := s.send(message{
 		Event: "start", CallID: s.callID,
-		SampleRate: call_engine.SampleRate, Channels: 1, Encoding: "audio/pcm-s16le",
+		SampleRate: s.format.normalized().SampleRate, Channels: 1, Encoding: s.format.normalized().Encoding,
 		FrameMs:   call_engine.FrameSamples * 1000 / call_engine.SampleRate,
 		Direction: string(info.Direction), Video: &video, VideoStream: &videoStream,
 	}); err != nil {
@@ -284,9 +296,13 @@ func (s *session) closeWith(code int, text string) {
 
 func (s *session) sendFrame(seq *uint64, frame []float32) error {
 	*seq++
+	payload := pcm16(frame)
+	if s.conv != nil {
+		payload = s.conv.encode(frame)
+	}
 	err := s.send(message{
 		Event: "media", Track: "inbound", Seq: *seq,
-		Payload: base64.StdEncoding.EncodeToString(pcm16(frame)),
+		Payload: base64.StdEncoding.EncodeToString(payload),
 	})
 	if err == nil {
 		s.stats.ToClient.Add(1)
@@ -424,11 +440,15 @@ func (s *session) readLoop() {
 			}
 			pcm, err := base64.StdEncoding.DecodeString(m.Payload)
 			if err != nil {
-				s.sendError("bad_payload", "payload must be base64 of 16-bit little-endian mono PCM at 16 kHz")
+				s.sendError("bad_payload", "payload must be base64 of audio in the format of the \"start\" message ("+s.format.normalized().Encoding+", "+strconv.Itoa(s.format.normalized().SampleRate)+" Hz, mono)")
 				continue
 			}
 			before := s.stats.DroppedFromClient.Load()
-			s.bridge.Push(pcm)
+			if s.conv != nil {
+				s.bridge.PushSamples(s.conv.decode(pcm))
+			} else {
+				s.bridge.Push(pcm)
+			}
 			if s.stats.DroppedFromClient.Load() != before {
 				s.sendError("outbound_overflow", "too much audio is queued for the peer; it is being dropped")
 			}
