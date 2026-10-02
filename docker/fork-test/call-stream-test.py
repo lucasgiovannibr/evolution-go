@@ -106,6 +106,33 @@ def alaw_decode(a):
     return t if a & 0x80 else -t
 
 
+async def send_audio(ws, data, binary):
+    """Audio for the peer: a binary frame (0x01 | audio) or a JSON message."""
+    if binary:
+        await ws.send(b"\x01" + data)
+    else:
+        await ws.send(json.dumps({"event": "media", "payload": base64.b64encode(data).decode()}))
+
+
+async def send_video_unit(ws, unit, binary):
+    """One H.264 access unit for the peer: 0x02 | access unit, or JSON."""
+    if binary:
+        await ws.send(b"\x02" + unit)
+    else:
+        await ws.send(json.dumps({"event": "video", "payload": base64.b64encode(unit).decode()}))
+
+
+def parse_binary(raw):
+    """A binary frame from the server as the dict its JSON counterpart would be, with the
+    bytes under "raw" (layout: see the protocol description in handler.go)."""
+    if raw[0] == 0x01:
+        return {"event": "media", "raw": raw[9:], "seq": int.from_bytes(raw[1:5], "big"), "timestamp": int.from_bytes(raw[5:9], "big")}
+    if raw[0] == 0x02:
+        return {"event": "video", "raw": raw[10:], "keyframe": bool(raw[1] & 1), "orientation": (raw[1] >> 1) & 3,
+                "seq": int.from_bytes(raw[2:6], "big"), "timestamp": int.from_bytes(raw[6:10], "big")}
+    return {"event": "unknown"}
+
+
 def to_pcm16(data):
     """What the stream sent, as 16-bit PCM for the WAV file."""
     if STREAM_ENCODING == "audio/x-mulaw":
@@ -197,7 +224,7 @@ def is_keyframe(au):
 async def main(args):
     global STREAM_ENCODING, STREAM_RATE
     STREAM_ENCODING, STREAM_RATE = FORMATS[args.format]
-    audio = {"encoding": STREAM_ENCODING, "sampleRate": STREAM_RATE}
+    audio = {"encoding": STREAM_ENCODING, "sampleRate": STREAM_RATE, "binary": args.binary}
     outgoing = bool(args.dial)
     want_video = args.video or bool(args.video_in)
     if outgoing:
@@ -251,7 +278,7 @@ async def main(args):
 
         async def send_tone():
             for frame in tone_frames(args.tone):
-                await ws.send(json.dumps({"event": "media", "payload": base64.b64encode(frame).decode()}))
+                await send_audio(ws, frame, args.binary)
                 if not args.tone_burst:
                     await asyncio.sleep(FRAME_MS / 1000)
             marks_sent["tone-end"] = time.time()
@@ -270,7 +297,7 @@ async def main(args):
                     restart.clear()
                     i = 0
                     print("WhatsApp asked for a keyframe: starting the file over")
-                await ws.send(json.dumps({"event": "video", "payload": base64.b64encode(units[i]).decode()}))
+                await send_video_unit(ws, units[i], args.binary)
                 sent += 1
                 i = (i + 1) % len(units)
                 await asyncio.sleep(1 / args.fps)
@@ -287,16 +314,25 @@ async def main(args):
 
         try:
             async for raw in ws:
-                msg = json.loads(raw)
+                msg = parse_binary(raw) if isinstance(raw, bytes) else json.loads(raw)
                 event = msg["event"]
                 if event == "media":
-                    pcm = to_pcm16(base64.b64decode(msg["payload"]))
+                    data = msg["raw"] if "raw" in msg else base64.b64decode(msg["payload"])
+                    pcm = to_pcm16(data)
+                    # Audio is not steady (a quiet peer sends two or three frames a second):
+                    # place each frame by its timestamp and fill the gap with silence, so
+                    # the file is as long as the call.
+                    if msg.get("timestamp") is not None:
+                        gap = int(msg["timestamp"] * STREAM_RATE / 1000) - received
+                        if gap > STREAM_RATE * FRAME_MS // 1000:
+                            wav.writeframes(b"\x00\x00" * gap)
+                            received += gap
                     wav.writeframes(pcm)
                     received += len(pcm) // 2
                     if args.echo:
-                        await ws.send(json.dumps({"event": "media", "payload": msg["payload"]}))
+                        await send_audio(ws, data, args.binary)
                 elif event == "video":
-                    video_file.write(base64.b64decode(msg["payload"]))
+                    video_file.write(msg["raw"] if "raw" in msg else base64.b64decode(msg["payload"]))
                     orient_file.write(f"{video_units} {time.time()-t0:.2f} {int(bool(msg.get('keyframe')))} {msg.get('orientation')}" + chr(10))
                     if msg.get("orientation") != last_frame_orient:
                         last_frame_orient = msg.get("orientation")
@@ -358,6 +394,7 @@ if __name__ == "__main__":
     p.add_argument("--dial", metavar="NUMBER", help="place a call to NUMBER instead of waiting for one")
     p.add_argument("--record", help="WAV file for the caller's audio (default call-<id>.wav)")
     p.add_argument("--format", choices=sorted(FORMATS), default="pcm16", help="audio format of the stream: PCM at 16 (default), 8 or 24 kHz, or G.711 mu-law/A-law at 8 kHz; the WAV file keeps that rate")
+    p.add_argument("--binary", action="store_true", help="carry audio and video as binary WebSocket frames instead of base64 JSON")
     p.add_argument("--echo", action="store_true", help="send the caller's audio back")
     p.add_argument("--tone", type=float, default=0, metavar="SECONDS", help="play a 440 Hz tone, then send a mark")
     p.add_argument("--tone-burst", action="store_true", help="queue the whole tone at once instead of in real time: the mark then comes back when the tone has been played (up to 30 s)")
