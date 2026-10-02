@@ -40,7 +40,7 @@ const (
 type bridge struct {
 	stats *call_engine.StreamStats
 
-	toClient chan []float32 // peer audio, read by the socket writer
+	toClient chan audioFrame // peer audio, read by the socket writer
 
 	mu       sync.Mutex
 	pending  []float32 // client audio not yet sent to the peer
@@ -65,10 +65,16 @@ type pendingMark struct {
 	at   uint64
 }
 
+// audioFrame is a piece of the peer's audio and when it reached the stream.
+type audioFrame struct {
+	samples []float32
+	at      time.Time
+}
+
 func newBridge(stats *call_engine.StreamStats) *bridge {
 	return &bridge{
 		stats:     stats,
-		toClient:  make(chan []float32, toClientFrames),
+		toClient:  make(chan audioFrame, toClientFrames),
 		done:      make(chan struct{}),
 		now:       time.Now,
 		markReady: make(chan struct{}, 1),
@@ -81,10 +87,10 @@ func (b *bridge) WriteFrame(frame []float32) error {
 		return nil
 	}
 	// The library may reuse its buffer once this returns.
-	frame = append([]float32(nil), frame...)
+	af := audioFrame{samples: append([]float32(nil), frame...), at: b.now()}
 
 	select {
-	case b.toClient <- frame:
+	case b.toClient <- af:
 	default:
 		// full: make room by dropping the oldest frame
 		select {
@@ -93,7 +99,7 @@ func (b *bridge) WriteFrame(frame []float32) error {
 		default:
 		}
 		select {
-		case b.toClient <- frame:
+		case b.toClient <- af:
 		default:
 			b.stats.DroppedToClient.Add(1)
 		}

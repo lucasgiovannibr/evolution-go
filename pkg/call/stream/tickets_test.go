@@ -112,13 +112,13 @@ func TestATicketRemembersWhetherItAsksForVideo(t *testing.T) {
 
 func TestATicketCarriesTheAudioFormat(t *testing.T) {
 	tickets := NewTickets()
-	mulaw, _, _ := tickets.IssueFormat("inst", "C1", false, AudioFormat{EncodingMulaw, 8000})
+	mulaw, _, _ := tickets.IssueWith("inst", "C1", StreamOptions{Format: AudioFormat{EncodingMulaw, 8000}, Binary: true})
 	plain, _, _ := tickets.Issue("inst", "C1", false)
 
-	if _, _, f, ok := tickets.RedeemFormat(mulaw, "C1"); !ok || f != (AudioFormat{EncodingMulaw, 8000}) {
-		t.Fatalf("format = %+v, %v", f, ok)
+	if _, o, ok := tickets.RedeemWith(mulaw, "C1"); !ok || o.Format != (AudioFormat{EncodingMulaw, 8000}) || !o.Binary {
+		t.Fatalf("options = %+v, %v", o, ok)
 	}
-	if _, _, f, ok := tickets.RedeemFormat(plain, "C1"); !ok || f != DefaultAudioFormat {
-		t.Fatalf("a ticket without a format carries %+v", f)
+	if _, o, ok := tickets.RedeemWith(plain, "C1"); !ok || o.Format != DefaultAudioFormat || o.Binary {
+		t.Fatalf("a ticket without options carries %+v", o)
 	}
 }

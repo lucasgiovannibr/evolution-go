@@ -35,6 +35,7 @@ type videoFrame struct {
 	data        []byte
 	keyframe    bool
 	orientation int
+	at          time.Time // when it reached the stream
 }
 
 // videoIn is the peer-to-client side of the video of a stream: the VideoSink the
@@ -72,7 +73,7 @@ func (v *videoIn) WriteVideo(au []byte) error {
 		v.stats.VideoDroppedToClient.Add(1)
 		return nil
 	}
-	frame := videoFrame{data: append([]byte(nil), au...), keyframe: key, orientation: int(v.orientation.Load())}
+	frame := videoFrame{data: append([]byte(nil), au...), keyframe: key, orientation: int(v.orientation.Load()), at: time.Now()}
 
 	select {
 	case v.frames <- frame:
