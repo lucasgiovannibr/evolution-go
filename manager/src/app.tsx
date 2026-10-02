@@ -13,6 +13,7 @@ import { InstanceActionsProvider } from '@/features/instances/actions';
 import { InstancesPage } from '@/features/instances/instances-page';
 import { InstancePage } from '@/features/instance-detail/instance-page';
 import { TabBehavior } from '@/features/instance-detail/tab-behavior';
+import { TabCalls } from '@/features/instance-detail/tab-calls';
 import { TabGeneral } from '@/features/instance-detail/tab-general';
 import { TabTest } from '@/features/instance-detail/tab-test';
 import { TabWebhook } from '@/features/instance-detail/tab-webhook';
@@ -86,6 +87,7 @@ export function App() {
                 <Route index element={<TabGeneral />} />
                 <Route path="webhook" element={<TabWebhook />} />
                 <Route path="behavior" element={<TabBehavior />} />
+                <Route path="calls" element={<TabCalls />} />
                 <Route path="test" element={<TabTest />} />
               </Route>
               <Route path="instances/:instanceId/settings" element={<LegacySettingsRedirect />} />

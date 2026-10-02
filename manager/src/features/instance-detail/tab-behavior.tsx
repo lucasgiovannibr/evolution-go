@@ -1,4 +1,4 @@
-import { CheckCheck, CircleDashed, PhoneOff, Users, Wifi } from 'lucide-react';
+import { CheckCheck, CircleDashed, PhoneCall, PhoneOff, Users, Wifi } from 'lucide-react';
 import type { BehaviorSettings } from '@/api/types';
 import { useDraft } from '@/hooks/use-draft';
 import { useSaveBehavior } from '@/hooks/use-instances';
@@ -49,6 +49,13 @@ export function TabBehavior() {
               </div>
             ) : null}
           </div>
+          <SwitchRow
+            icon={<PhoneCall />}
+            title="Chamadas"
+            description="Liga o motor de chamadas: atender, discar, ouvir e falar pela API e por esta página. Vale na próxima conexão da instância, e não funciona com proxy. Quando ligado, toda chamada recebida é pré-atendida pela biblioteca."
+            checked={draft.callsEnabled}
+            onChange={(v) => patch({ callsEnabled: v })}
+          />
           <SwitchRow
             icon={<CheckCheck />}
             title="Marcar como lidas"

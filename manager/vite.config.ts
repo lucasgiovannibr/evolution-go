@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '');
   const target = env.VITE_API_TARGET || 'http://localhost:8080';
-  const apiPaths = ['/instance', '/send', '/license', '/swagger', '/health', '/server', '/user', '/chat', '/group', '/message'];
+  const apiPaths = ['/instance', '/send', '/license', '/swagger', '/health', '/server', '/user', '/chat', '/group', '/message', '/call'];
 
   return {
     base: '/',
