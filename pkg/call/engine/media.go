@@ -56,6 +56,13 @@ func (s activitySink) WriteFrame(frame []float32) error {
 
 // activitySource passes the client's audio on and notes when it last carried sound, for
 // the silence timeout: a call is idle only when neither side is making any.
+//
+// It also holds the client's audio back until the call is active. The library asks for a
+// frame every 60 ms from the moment the call exists, ringing included, and sends what it
+// gets into a call that is not connected yet: a greeting queued while the phone rings was
+// consumed (and lost) before the other side picked up, and a mark set after it came back as
+// "played" for audio nobody heard. Until then it answers silence and leaves the audio where
+// it is, so it plays when the other side answers.
 type activitySource struct {
 	AudioSource
 	t   *Tracked
@@ -63,6 +70,9 @@ type activitySource struct {
 }
 
 func (s activitySource) ReadFrame() ([]float32, error) {
+	if s.t.call.Phase() != PhaseActive {
+		return nil, nil
+	}
 	frame, err := s.AudioSource.ReadFrame()
 	if len(frame) > 0 && frameRMS(frame) > voiceRMS {
 		s.t.lastVoice.set(s.now())
