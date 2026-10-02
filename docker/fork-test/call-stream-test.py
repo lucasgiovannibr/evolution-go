@@ -56,6 +56,73 @@ SAMPLE_RATE = 16000
 FRAME_MS = 60
 FRAME_SAMPLES = SAMPLE_RATE * FRAME_MS // 1000
 
+# --format: what the stream carries (the call itself always runs at 16 kHz)
+FORMATS = {
+    "pcm16": ("audio/pcm-s16le", 16000),
+    "pcm8": ("audio/pcm-s16le", 8000),
+    "pcm24": ("audio/pcm-s16le", 24000),
+    "mulaw": ("audio/x-mulaw", 8000),
+    "alaw": ("audio/x-alaw", 8000),
+}
+STREAM_ENCODING, STREAM_RATE = FORMATS["pcm16"]
+
+
+def mulaw_encode(v):
+    sign = 0x80 if v < 0 else 0
+    v = min(abs(v), 32635) + 0x84
+    exp = 7
+    mask = 0x4000
+    while not v & mask and exp > 0:
+        exp -= 1
+        mask >>= 1
+    return ~(sign | exp << 4 | ((v >> (exp + 3)) & 0x0F)) & 0xFF
+
+
+def mulaw_decode(u):
+    u = ~u & 0xFF
+    v = (((u & 0x0F) << 3) + 0x84) << ((u >> 4) & 7)
+    v -= 0x84
+    return -v if u & 0x80 else v
+
+
+def alaw_encode(v):
+    v >>= 3
+    mask = 0xD5
+    if v < 0:
+        mask = 0x55
+        v = -v - 1
+    seg = next((i for i, end in enumerate((0x1F, 0x3F, 0x7F, 0xFF, 0x1FF, 0x3FF, 0x7FF, 0xFFF)) if v <= end), 8)
+    if seg >= 8:
+        return 0x7F ^ mask
+    a = seg << 4 | ((v >> 1) & 0x0F if seg < 2 else (v >> seg) & 0x0F)
+    return a ^ mask
+
+
+def alaw_decode(a):
+    a ^= 0x55
+    t = (a & 0x0F) << 4
+    seg = (a & 0x70) >> 4
+    t = t + 8 if seg == 0 else (t + 0x108 if seg == 1 else (t + 0x108) << (seg - 1))
+    return t if a & 0x80 else -t
+
+
+def to_pcm16(data):
+    """What the stream sent, as 16-bit PCM for the WAV file."""
+    if STREAM_ENCODING == "audio/x-mulaw":
+        return b"".join(struct.pack("<h", mulaw_decode(b)) for b in data)
+    if STREAM_ENCODING == "audio/x-alaw":
+        return b"".join(struct.pack("<h", alaw_decode(b)) for b in data)
+    return data
+
+
+def encode_samples(samples):
+    """16-bit samples (ints) in the stream's encoding."""
+    if STREAM_ENCODING == "audio/x-mulaw":
+        return bytes(mulaw_encode(v) for v in samples)
+    if STREAM_ENCODING == "audio/x-alaw":
+        return bytes(alaw_encode(v) for v in samples)
+    return b"".join(struct.pack("<h", v) for v in samples)
+
 
 def api(base, apikey, method, path, body=None):
     data = json.dumps(body).encode() if body is not None else None
@@ -95,13 +162,10 @@ def wait_for_ringing_call(base, apikey):
 
 
 def tone_frames(seconds):
-    total = int(seconds * SAMPLE_RATE)
-    pcm = b"".join(
-        struct.pack("<h", int(12000 * math.sin(2 * math.pi * 440 * i / SAMPLE_RATE)))
-        for i in range(total)
-    )
-    step = FRAME_SAMPLES * 2
-    return [pcm[i : i + step] for i in range(0, len(pcm), step)]
+    total = int(seconds * STREAM_RATE)
+    samples = [int(12000 * math.sin(2 * math.pi * 440 * i / STREAM_RATE)) for i in range(total)]
+    step = STREAM_RATE * FRAME_MS // 1000
+    return [encode_samples(samples[i : i + step]) for i in range(0, len(samples), step)]
 
 
 START_CODE = re.compile(b"\x00\x00\x01")
@@ -131,12 +195,15 @@ def is_keyframe(au):
 
 
 async def main(args):
+    global STREAM_ENCODING, STREAM_RATE
+    STREAM_ENCODING, STREAM_RATE = FORMATS[args.format]
+    audio = {"encoding": STREAM_ENCODING, "sampleRate": STREAM_RATE}
     outgoing = bool(args.dial)
     want_video = args.video or bool(args.video_in)
     if outgoing:
         status, call = api(
             args.base, args.apikey, "POST", "/call/dial",
-            {"number": args.dial, "stream": True, "video": want_video},
+            {"number": args.dial, "stream": True, "video": want_video, **audio},
         )
         if status != 200:
             sys.exit(f"dial failed: {status} {call}")
@@ -147,7 +214,7 @@ async def main(args):
         print(f"Call {call['callId']} from {call.get('peer')} (video={call.get('video')})")
         status, ticket = api(
             args.base, args.apikey, "POST", "/call/stream-ticket",
-            {"callId": call["callId"], "video": want_video},
+            {"callId": call["callId"], "video": want_video, **audio},
         )
         if status != 200:
             sys.exit(f"stream-ticket failed: {status} {ticket}")
@@ -223,7 +290,7 @@ async def main(args):
                 msg = json.loads(raw)
                 event = msg["event"]
                 if event == "media":
-                    pcm = base64.b64decode(msg["payload"])
+                    pcm = to_pcm16(base64.b64decode(msg["payload"]))
                     wav.writeframes(pcm)
                     received += len(pcm) // 2
                     if args.echo:
@@ -263,7 +330,7 @@ async def main(args):
                 t.cancel()
             if video_file:
                 video_file.close()
-    print(f"received {received / SAMPLE_RATE:.1f} s of audio -> {wav_path}")
+    print(f"received {received / STREAM_RATE:.1f} s of audio -> {wav_path}")
     if want_video:
         print(f"received {video_units} video pictures ({keyframes} keyframes) -> {h264_path}")
 
@@ -276,7 +343,7 @@ class _wav:
         self.w = wave.open(self.path, "wb")
         self.w.setnchannels(1)
         self.w.setsampwidth(2)
-        self.w.setframerate(SAMPLE_RATE)
+        self.w.setframerate(STREAM_RATE)
         return self.w
 
     async def __aexit__(self, *exc):
@@ -290,6 +357,7 @@ if __name__ == "__main__":
     p.add_argument("--call-id", help="use this call instead of waiting for a ringing one")
     p.add_argument("--dial", metavar="NUMBER", help="place a call to NUMBER instead of waiting for one")
     p.add_argument("--record", help="WAV file for the caller's audio (default call-<id>.wav)")
+    p.add_argument("--format", choices=sorted(FORMATS), default="pcm16", help="audio format of the stream: PCM at 16 (default), 8 or 24 kHz, or G.711 mu-law/A-law at 8 kHz; the WAV file keeps that rate")
     p.add_argument("--echo", action="store_true", help="send the caller's audio back")
     p.add_argument("--tone", type=float, default=0, metavar="SECONDS", help="play a 440 Hz tone, then send a mark")
     p.add_argument("--tone-burst", action="store_true", help="queue the whole tone at once instead of in real time: the mark then comes back when the tone has been played (up to 30 s)")

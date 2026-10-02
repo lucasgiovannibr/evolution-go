@@ -15,7 +15,8 @@ import (
 )
 
 type rig struct {
-	video   bool // whether the tickets the rig issues ask for video
+	video   bool        // whether the tickets the rig issues ask for video
+	format  AudioFormat // the audio format the tickets ask for (zero: the default)
 	t       *testing.T
 	engine  *call_engine.Manager
 	tickets *Tickets
@@ -48,7 +49,7 @@ func (r *rig) url(callID, ticket string) string {
 }
 
 func (r *rig) dial(instance, callID string, header http.Header) (*websocket.Conn, *http.Response, error) {
-	token, _, err := r.tickets.Issue(instance, callID, r.video)
+	token, _, err := r.tickets.IssueFormat(instance, callID, r.video, r.format)
 	if err != nil {
 		r.t.Fatal(err)
 	}
@@ -608,5 +609,97 @@ func TestAClientThatReadsTooSlowlyIsToldOnce(t *testing.T) {
 	}
 	if warnings != 1 {
 		t.Fatalf("the client was warned %d times, want once", warnings)
+	}
+}
+
+// formatCase runs the stream in a non-default format against a call, with a tone going
+// each way, and checks what the client receives and what the call is given.
+func TestTheStreamConvertsToTheFormatOfTheTicket(t *testing.T) {
+	for _, c := range []struct {
+		name      string
+		format    AudioFormat
+		frameSize int // bytes of a 60 ms frame in steady state
+	}{
+		{"mu-law 8 kHz", AudioFormat{EncodingMulaw, 8000}, 480},
+		{"A-law 8 kHz", AudioFormat{EncodingAlaw, 8000}, 480},
+		{"PCM 8 kHz", AudioFormat{EncodingPCM, 8000}, 960},
+		{"PCM 24 kHz", AudioFormat{EncodingPCM, 24000}, 2880},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			r := newRig(t, Config{})
+			r.format = c.format
+			call := r.track("inst", "FMT")
+			conn := r.mustDial("inst", "FMT")
+
+			start := read(t, conn)
+			if start.Encoding != c.format.Encoding || start.SampleRate != c.format.SampleRate || start.FrameMs != 60 || start.Channels != 1 {
+				t.Fatalf("start = %+v, want %+v at 60 ms", start, c.format)
+			}
+
+			// the peer's audio: a second of a 1 kHz tone, in the library's 60 ms frames
+			eventually(t, "the sink", func() bool { return call.Sink() != nil })
+			for _, frame := range framesOf(tone(1000, 0.5, 16000, 1)) {
+				call.Sink().WriteFrame(frame)
+			}
+			conv := newConverter(c.format)
+			var heard []float32
+			sizes := map[int]int{}
+			for i := 0; i < 16; i++ {
+				m := read(t, conn)
+				if m.Event != "media" {
+					t.Fatalf("got %+v", m)
+				}
+				data, err := base64.StdEncoding.DecodeString(m.Payload)
+				if err != nil {
+					t.Fatal(err)
+				}
+				sizes[len(data)]++
+				heard = append(heard, conv.decode(data)...)
+			}
+			if sizes[c.frameSize] < 12 {
+				t.Errorf("frame sizes %v: most frames should be %d bytes", sizes, c.frameSize)
+			}
+			if level, want := rms(heard, 1000), 0.5/1.4142; level < 0.9*want || level > 1.1*want {
+				t.Errorf("the client heard a tone with rms %.3f, want about %.3f", level, want)
+			}
+
+			// the client's audio: the same tone in the stream's format reaches the call
+			eventually(t, "the source", func() bool { return call.Source() != nil })
+			sent := newConverter(c.format)
+			var payload []byte
+			for _, frame := range framesOf(tone(1000, 0.5, 16000, 1)) {
+				payload = append(payload, sent.encode(frame)...)
+			}
+			if err := conn.WriteJSON(message{Event: "media", Payload: base64.StdEncoding.EncodeToString(payload)}); err != nil {
+				t.Fatal(err)
+			}
+			var played []float32
+			eventually(t, "the call to be given the audio", func() bool {
+				frame, _ := call.Source().ReadFrame()
+				if len(frame) == call_engine.FrameSamples {
+					played = append(played, frame...)
+				}
+				return len(played) >= 12*call_engine.FrameSamples
+			})
+			if level, want := rms(played, 1000), 0.5/1.4142; level < 0.9*want || level > 1.1*want {
+				t.Errorf("the call was given a tone with rms %.3f, want about %.3f", level, want)
+			}
+		})
+	}
+}
+
+func TestTheDefaultFormatIsReportedAndNotConverted(t *testing.T) {
+	r := newRig(t, Config{})
+	call := r.track("inst", "DEF")
+	conn := r.mustDial("inst", "DEF")
+
+	if start := read(t, conn); start.Encoding != EncodingPCM || start.SampleRate != 16000 {
+		t.Fatalf("start = %+v", start)
+	}
+	eventually(t, "the sink", func() bool { return call.Sink() != nil })
+	call.Sink().WriteFrame([]float32{0.5, -0.5})
+	m := read(t, conn)
+	if data, _ := base64.StdEncoding.DecodeString(m.Payload); len(data) != 4 {
+		t.Fatalf("a 2-sample frame became %d bytes: the default format must pass through unchanged", len(data))
 	}
 }

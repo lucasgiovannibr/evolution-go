@@ -92,7 +92,7 @@ func callFailure(ctx *gin.Context, err error) {
 		status = http.StatusConflict
 	case errors.Is(err, call_stream.ErrTooManyTickets), errors.Is(err, call_engine.ErrTooManyCalls), errors.Is(err, call_engine.ErrDialRateLimited):
 		status = http.StatusTooManyRequests
-	case errors.Is(err, call_service.ErrInvalidNumber), errors.Is(err, call_engine.ErrInvalidVideoRequest):
+	case errors.Is(err, call_service.ErrInvalidNumber), errors.Is(err, call_engine.ErrInvalidVideoRequest), errors.Is(err, call_stream.ErrInvalidAudioFormat):
 		status = http.StatusBadRequest
 	case errors.Is(err, call_engine.ErrDialFailed):
 		status = http.StatusBadGateway
@@ -191,7 +191,7 @@ func (g *callHandler) HangupCall(ctx *gin.Context) {
 
 // Stream ticket
 // @Summary Ticket for the audio stream of a call
-// @Description Returns a one-time ticket, valid for a few seconds, for one call. Open a WebSocket to "path" on this server with it: GET /call/stream/{callId}?ticket=... . Audio is 16 kHz mono 16-bit little-endian PCM in base64 JSON messages (see the "start" message). With "video": true the stream also carries the call's video as H.264 access units (Annex-B) in "video" messages, and asks for keyframes with "keyframe_request".
+// @Description Returns a one-time ticket, valid for a few seconds, for one call. Open a WebSocket to "path" on this server with it: GET /call/stream/{callId}?ticket=... . Audio is 16 kHz mono 16-bit little-endian PCM in base64 JSON messages by default (see the "start" message); "encoding" and "sampleRate" ask for 8, 16 or 24 kHz PCM, or 8 kHz G.711 mu-law or A-law, and the server converts. With "video": true the stream also carries the call's video as H.264 access units (Annex-B) in "video" messages, and asks for keyframes with "keyframe_request".
 // @Tags Call
 // @Accept json
 // @Produce json
@@ -210,7 +210,12 @@ func (g *callHandler) StreamTicket(ctx *gin.Context) {
 		apierror.Fail(ctx, http.StatusBadRequest, "callId is required")
 		return
 	}
-	ticket, err := g.callService.IssueStreamTicket(instance, data.CallID, data.Video)
+	format, err := call_stream.ParseAudioFormat(data.Encoding, data.SampleRate)
+	if err != nil {
+		callFailure(ctx, err)
+		return
+	}
+	ticket, err := g.callService.IssueStreamTicket(instance, data.CallID, data.Video, format)
 	if err != nil {
 		callFailure(ctx, err)
 		return
