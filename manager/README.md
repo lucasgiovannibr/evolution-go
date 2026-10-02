@@ -41,6 +41,7 @@ src/
 - **Diálogos e menus** usam portal próprio (não `<dialog>`), para os toasts ficarem sempre acima.
 - **Catálogo de eventos** em `src/lib/events.ts` espelha `pkg/internal/event_types` no servidor; ao criar um
   evento novo no Go, inclua-o aqui.
+- **Vídeo das chamadas**: o navegador codifica e decodifica H.264 com WebCodecs (`features/calls/video.ts` recebe e desenha, `video-send.ts` captura, recorta para 360×640 e codifica). O servidor não converte nada. As partes puras (NAL, SPS, giro, recorte, cadência de keyframes) têm testes; para testar o envio sem câmera, abra o Edge ou o Chrome com `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream`.
 - **Áudio das chamadas**: o microfone é lido por um AudioWorklet (`features/calls/capture-worklet.ts`) que o Vite
   emite como arquivo próprio em `dist/assets`; a política de segurança (`script-src 'self'`) não aceitaria um worklet
   criado na hora. O WebSocket do stream exige a origem da página em `CALL_STREAM_ORIGINS` quando ela difere da da API

@@ -493,21 +493,27 @@ Para rejeitar só algumas (fora do horário, de números fora de uma lista, ou s
 No `/manager`, a instância ganhou a aba **Chamadas**: dá para atender, ligar e **conversar com o microfone e o alto-falante da própria página**, sem escrever código.
 
 - **Chamadas agora**: as chamadas que o servidor acompanha na instância, atualizadas a cada 2 s, com a fase, o relógio, os contadores do stream e o aviso de "sem áudio do outro lado". Para cada uma: **Atender no navegador** (e **Rejeitar**) numa chamada que toca, **Falar pelo navegador** e **Desligar** nas demais.
-- **Ligar**: o número com DDI e DDD; o telefone toca e o áudio é o da página. O painel liga **só áudio** (vídeo continua pela API).
+- **Ligar**: o número com DDI e DDD; o telefone toca e o áudio é o da página. Com a chave **Videochamada** (aparece quando o navegador sabe codificar e decodificar vídeo) a chamada sai como videochamada e a câmera do computador é ligada.
+- **Vídeo**: numa chamada com vídeo, a imagem do outro lado aparece na página, girada para ficar em pé, e a sua câmera aparece pequena no canto. O botão **Iniciar vídeo** (ou **Ligar câmera**/**Desligar câmera**) liga a sua câmera: numa chamada de áudio ele pede ao outro lado para passar a vídeo (`POST /call/video` com `start`), e quando o outro lado pede, aparece **Aceitar vídeo** (`accept`). Atender uma videochamada pelo painel liga a câmera; se ela for negada ou não existir, a chamada segue recebendo.
 - **Histórico**: o [histórico de chamadas](#histórico-de-chamadas) com filtros por direção, resultado e contato, "Carregar mais" e **Apagar tudo**. Se o servidor não guarda histórico (`CALL_HISTORY`), a aba explica como ligar.
 - **Comportamento**: o interruptor **Chamadas** (`callsEnabled`) agora está no painel. Vale na próxima conexão da instância.
 
-O telefone do navegador usa o stream desta página: PCM 16 kHz em quadros binários, com os eventos de fala (o painel mostra "Falando" quando o outro lado fala) e a reprodução posicionada pelos `timestamp`, para que as pausas continuem pausas. O stream é aberto **antes** de atender, para o áudio de uma chamada atendida sem stream não se perder. Se o microfone for negado, a chamada **não** é atendida.
+O telefone do navegador usa o stream desta página: PCM 16 kHz em quadros binários, com os eventos de fala (o painel mostra "Falando" quando o outro lado fala) e a reprodução posicionada pelos `timestamp`, para que as pausas continuem pausas.
+
+O **vídeo** é H.264 em Annex-B, como o stream o carrega, e o navegador faz a codificação e a decodificação com **WebCodecs** (o servidor só leva o vídeo, não converte). Recebido: o painel espera um keyframe antes de decodificar, tira o codec do SPS do keyframe e recomeça no próximo keyframe depois de uma perda; o navegador não pode pedir um keyframe ao WhatsApp, então uma perda pode congelar a imagem por alguns segundos. Enviado: a câmera é recortada para **360×640 em pé** (a tela da chamada no celular é em pé; uma imagem deitada aparece pequena, com faixas), codificada em H.264 baseline a 15 quadros por segundo e uns 500 kbit/s, com um keyframe a cada 2 s e sempre que o WhatsApp pede. O delimitador de acesso que o codificador do Chrome e do Edge põe no começo de cada imagem é retirado antes do envio. A câmera só envia quando a chamada pode carregar vídeo (uma videochamada, ou um upgrade que o outro lado aceitou). O stream é aberto **antes** de atender, para o áudio de uma chamada atendida sem stream não se perder. Se o microfone for negado, a chamada **não** é atendida.
 
 **Requisitos e limites**
 - **Fones de ouvido**: sem eles o alto-falante volta para o microfone e o outro lado se ouve de volta (o navegador cancela parte do eco, não todo).
 - O navegador só libera o microfone em **página segura**: `https` ou `localhost`. Em `http` por um IP de rede o painel avisa.
 - Se o painel é servido por um endereço diferente do da API, a origem da página precisa estar em `CALL_STREAM_ORIGINS` (o `Origin` do WebSocket é o da página).
+- **Vídeo** exige um navegador com WebCodecs e H.264 (Chrome, Edge ou Safari recentes). Sem isso o painel avisa e a chamada segue só com áudio; sem câmera, a chamada segue recebendo vídeo, mas não envia.
 - **Uma chamada por vez** no telefone do navegador; as outras aparecem na lista e podem ser atendidas pela API.
 - Sair da página ou fechar a aba **solta o áudio**, e a chamada cai em `CALL_STREAM_GRACE` segundos.
 - O áudio é capturado por um AudioWorklet que o build coloca num arquivo próprio (`manager/dist/assets/capture-worklet-*.js`): a política de segurança do painel (`script-src 'self'`) não aceitaria um worklet criado na hora.
 
 Validado ao vivo (02/10/2026, navegador de desktop, número real e iPhone): atender uma chamada recebida pelo painel, silenciar e reativar o microfone, desligar, e ligar pelo card **Ligar**. O navegador manda áudio contínuo (13 s de conversa, 221 quadros de 60 ms no servidor).
+
+**Vídeo, o que foi verificado:** receber a videochamada do iPhone e mostrá-la na página (143 e depois 240 imagens entregues, nenhuma descartada); atender e discar videochamadas; e **enviar vídeo**, testado com a câmera falsa do Edge (`--use-fake-device-for-media-stream`) porque o computador de teste não tem câmera: o iPhone mostrou a imagem de teste **em pé, preenchendo a tela**, e o servidor contou 258 imagens enviadas em 16 s (15 quadros por segundo pedidos), nenhuma descartada. **Não verificado:** uma câmera de verdade (só a falsa), o botão **Iniciar vídeo** numa chamada de voz, o pedido de vídeo vindo do iPhone com **Aceitar vídeo**, ligar e desligar a câmera durante a chamada, e outros navegadores além do Edge.
 
 ---
 

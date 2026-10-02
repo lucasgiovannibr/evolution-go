@@ -370,6 +370,15 @@ where noted. The guide is `docs/wiki/guias-api/api-call.md`.
   is read by an AudioWorklet emitted as its own file because the panel's CSP does not allow a
   Blob worklet. The Behavior tab gets the `callsEnabled` switch. Tried live in a desktop browser: answer
   from the page, mute, hang up, and dial from the page.
+- **Video in the browser phone**: the other side's video is decoded with WebCodecs and drawn on
+  the page (turned upright by the quarter turns the server reports); the camera is cropped to
+  portrait 360x640, encoded to H.264 baseline and sent (the encoder's access unit delimiters are
+  stripped). A "Videochamada" switch on the dial card, a camera button (on an audio call it asks
+  the other side to upgrade), and Accept when the other side asks. Receiving was tried with an
+  iPhone; sending was tried with the browser's **fake camera** (the test computer has none): the
+  iPhone showed the test pattern upright and filling the screen, 258 pictures in 16 s, none
+  dropped. Not tried: a real camera, "Start video" on a voice call, accepting the iPhone's
+  request, and browsers other than Edge.
 
 ### Hardening and scale round (October 2026, PRs #38–#72)
 Result of a full analysis of the system (security, scalability, memory, send speed, error
