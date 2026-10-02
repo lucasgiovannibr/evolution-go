@@ -34,6 +34,9 @@ type Info struct {
 	PeerVideo *VideoState `json:"peerVideo,omitempty"`
 	// Stream describes the stream of the call; absent when none ever attached.
 	Stream *StreamInfo `json:"stream,omitempty"`
+	// MediaStalled: the call is active and has a stream but the peer's audio has stopped
+	// arriving (see Options.MediaStall).
+	MediaStalled bool `json:"mediaStalled"`
 }
 
 // Tracked is a call the Manager follows from its start until it ends, whoever ends it
@@ -56,6 +59,11 @@ type Tracked struct {
 	stats    *StreamStats // of the last audio stream that attached
 	attached bool         // an audio stream is attached right now
 	grace    *time.Timer  // hangs the call up when its stream does not come back
+
+	attachedAt time.Time // when the current stream attached
+	readyAt    unixNano  // when the media became ready (OnReady)
+	lastAudio  unixNano  // when the peer's audio last reached the stream
+	stalled    atomic.Bool
 
 	// hadVideo: the call has had video at some point (it started with video, an upgrade
 	// went through, or the peer's camera was on). Video the client muted still counts,
@@ -99,6 +107,7 @@ func (t *Tracked) Info() Info {
 
 		VideoSending:   t.call.IsSendingVideo(),
 		VideoReceiving: t.call.IsReceivingVideo(),
+		MediaStalled:   t.stalled.Load(),
 	}
 	t.mu.Lock()
 	if t.peerVideo != nil {
@@ -156,6 +165,7 @@ func (m *Manager) Track(instanceID string, c Call, dir Direction) (*Tracked, err
 	}
 	t := &Tracked{call: c, direction: dir, startedAt: time.Now(), done: make(chan struct{})}
 	t.hadVideo.Store(c.IsVideo())
+	m.metrics.callStarted(dir, c.IsVideo())
 	t.timer = time.AfterFunc(m.opts.RingTimeout, func() { m.ringExpired(instanceID, t) })
 	if per == nil {
 		per = make(map[string]*Tracked)
@@ -166,10 +176,16 @@ func (m *Manager) Track(instanceID string, c Call, dir Direction) (*Tracked, err
 
 	// Registered after the call is in the map, so an end that arrives right away finds
 	// something to remove.
-	c.OnReady(func() { m.notify(instanceID, "CallReady", t.eventData()) })
+	c.OnReady(func() {
+		t.readyAt.set(m.now())
+		m.notify(instanceID, "CallReady", t.eventData())
+	})
 	c.OnVideoState(func(v VideoState) { m.videoStateChanged(instanceID, t, v) })
 	c.OnVideoKeyframeRequest(t.keyframeRequested)
 	c.OnEnd(func(reason string) { m.finish(instanceID, t, reason) })
+	if m.opts.MediaStall > 0 {
+		go m.watchMedia(instanceID, t)
+	}
 	if c.Phase() == PhaseEnded {
 		m.finish(instanceID, t, "ended")
 	}
@@ -230,6 +246,8 @@ func (m *Manager) onIncoming(instanceID string, c Call) {
 	if errors.Is(err, ErrTooManyCalls) {
 		m.logOf(instanceID).LogWarn("[%s] Rejecting call %s: the instance already has %d calls", instanceID, c.ID(), m.opts.MaxConcurrent)
 		_ = c.Reject()
+		m.metrics.callStarted(Incoming, c.IsVideo())
+		m.metrics.callEnded(Incoming, "rejected_busy", 0, false)
 		data := map[string]interface{}{
 			"callId": c.ID(), "peer": c.Peer().String(), "direction": string(Incoming), "video": c.IsVideo(),
 			"reason": "rejected_busy", "durationSeconds": 0,
@@ -267,6 +285,13 @@ func (m *Manager) finish(instanceID string, t *Tracked, libReason string) {
 		}
 		t.mu.Unlock()
 		close(t.done)
+
+		var talk time.Duration
+		readyAt := t.readyAt.get()
+		if !readyAt.IsZero() {
+			talk = m.now().Sub(readyAt)
+		}
+		m.metrics.callEnded(t.direction, reason, talk, !readyAt.IsZero())
 
 		data := t.eventData()
 		data["reason"] = reason

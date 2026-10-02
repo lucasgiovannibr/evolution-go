@@ -96,6 +96,12 @@ type Config struct {
 	CallStreamGrace int
 	// CallDialLimit is how many calls one instance may place per minute.
 	CallDialLimit int
+	// CallMediaStall is how many seconds an active call with a stream may receive no audio
+	// from the peer before CallMediaStalled is published. Zero is the engine default, a
+	// negative value turns the check off (CALL_MEDIA_STALL=0).
+	CallMediaStall int
+	// CallMediaStallHangup also hangs such a call up (CALL_MEDIA_STALL_HANGUP=true).
+	CallMediaStallHangup bool
 	// CallStreamOrigins are the browser origins allowed to open the audio stream
 	// besides the server's own; clients that send no Origin (servers, scripts) always may.
 	CallStreamOrigins []string
@@ -489,6 +495,8 @@ func Load() *Config {
 		CallRingTimeout:      max(callRingTimeout, 0),
 		CallStreamGrace:      max(callStreamGrace, 0),
 		CallDialLimit:        max(callDialLimit, 0),
+		CallMediaStall:       callMediaStall(),
+		CallMediaStallHangup: strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.CALL_MEDIA_STALL_HANGUP)), "true"),
 		CallStreamOrigins:    callStreamOrigins,
 		CheckUserExists:      checkUserExists != "false", // Default true, set to false to disable
 		CheckUserCacheTTL:    checkUserCacheTTL(),
@@ -612,4 +620,18 @@ func validateAMQPURL(amqpURL string) error {
 
 	logger.LogInfo("[CONFIG] AMQP URL validation successful: %s://%s", parsedURL.Scheme, parsedURL.Host)
 	return nil
+}
+
+// callMediaStall reads CALL_MEDIA_STALL. Unlike the other call settings 0 means "off"
+// (reported as -1, since the engine reads 0 as "use the default"); unset or not a number
+// keeps the default.
+func callMediaStall() int {
+	n, err := strconv.Atoi(strings.TrimSpace(os.Getenv(config_env.CALL_MEDIA_STALL)))
+	switch {
+	case err != nil:
+		return 0
+	case n <= 0:
+		return -1
+	}
+	return n
 }
