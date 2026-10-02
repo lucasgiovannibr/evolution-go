@@ -1,4 +1,4 @@
-import { Mic, MicOff, PhoneOff, Video, Volume2, X } from 'lucide-react';
+import { Mic, MicOff, PhoneOff, Video, VideoOff, Volume2, X } from 'lucide-react';
 import { useNow } from '@/hooks/use-now';
 import { cn } from '@/lib/cn';
 import { Alert, Spinner } from '@/components/ui/feedback';
@@ -30,12 +30,24 @@ function LevelBar({ label, icon, level, active }: { label: string; icon: React.R
   );
 }
 
-/** The other side's picture, with a note on what its camera is doing. */
+/** The other side's picture (with ours small in the corner), and a note on what its camera is doing. */
 function VideoStage({ video, onCanvas }: { video: PhoneVideo; onCanvas: (el: HTMLCanvasElement | null) => void }) {
   const peer = peerVideoLabel(video.peer?.state);
   return (
     <div className="space-y-2">
       <div className="relative flex min-h-44 items-center justify-center overflow-hidden rounded-card bg-black ring-1 ring-line">
+        {video.camera ? (
+          <video
+            className="absolute right-2 bottom-2 z-10 h-28 -scale-x-100 rounded-md object-cover shadow-lg ring-1 ring-white/30"
+            aria-label="Sua câmera"
+            autoPlay
+            muted
+            playsInline
+            ref={(el) => {
+              if (el && el.srcObject !== video.preview) el.srcObject = video.preview;
+            }}
+          />
+        ) : null}
         {/* kept in the page even while hidden: the receiver draws on it as soon as pictures arrive */}
         <canvas ref={onCanvas} className={cn('block max-h-[60vh] w-auto max-w-full', !video.active && 'hidden')} />
         {!video.active ? (
@@ -47,6 +59,7 @@ function VideoStage({ video, onCanvas }: { video: PhoneVideo; onCanvas: (el: HTM
       </div>
       <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
         {video.active ? <Badge tone="ok" dot>Recebendo vídeo · {video.width}×{video.height}</Badge> : null}
+        {video.camera ? <Badge tone="brand" icon={<Video />}>Sua câmera está no ar</Badge> : null}
         {peer ? <span>{peer}</span> : null}
       </p>
     </div>
@@ -59,10 +72,12 @@ interface PhonePanelProps {
   onToggleMute: () => void;
   onDismiss: () => void;
   onCanvas: (el: HTMLCanvasElement | null) => void;
+  onToggleCamera: () => void;
+  onAcceptVideo: () => void;
 }
 
 /** The call that is going on through the audio of this page: timer, levels, mute and hang up. */
-export function PhonePanel({ session, onHangup, onToggleMute, onDismiss, onCanvas }: PhonePanelProps) {
+export function PhonePanel({ session, onHangup, onToggleMute, onDismiss, onCanvas, onToggleCamera, onAcceptVideo }: PhonePanelProps) {
   const now = useNow();
   const over = session.state === 'ended' || session.state === 'error';
   const live = session.state === 'live';
@@ -107,7 +122,22 @@ export function PhonePanel({ session, onHangup, onToggleMute, onDismiss, onCanva
                 A chamada tem vídeo, mas este navegador não decodifica H.264 (WebCodecs). O áudio funciona; para ver o vídeo, use um navegador recente do Chrome, Edge ou Safari.
               </Alert>
             ) : null}
-            {session.video.hasVideo && session.video.supported ? <VideoStage video={session.video} onCanvas={onCanvas} /> : null}
+            {session.video.peer?.state === 'upgrade_request' && live ? (
+              <Alert
+                tone="info"
+                title="O outro lado quer passar a chamada para vídeo"
+                action={
+                  <Button size="sm" variant="primary" onClick={onAcceptVideo}>
+                    <Video className="size-3.5" />
+                    Aceitar vídeo
+                  </Button>
+                }
+              >
+                {session.video.canSend ? 'Ao aceitar, a sua câmera também é ligada.' : 'Este navegador só mostra o vídeo dele: não envia a sua câmera.'}
+              </Alert>
+            ) : null}
+            {session.video.cameraError ? <Alert tone="warn" title="A câmera não foi ligada">{session.video.cameraError}</Alert> : null}
+            {session.video.supported && (session.video.hasVideo || session.video.camera) ? <VideoStage video={session.video} onCanvas={onCanvas} /> : null}
             <div className="space-y-2.5">
               <LevelBar label={session.muted ? 'Você (mudo)' : 'Você'} icon={session.muted ? <MicOff /> : <Mic />} level={session.muted ? 0 : session.mic} />
               <LevelBar label="Outro lado" icon={<Volume2 />} level={session.peer} active={session.peerSpeaking} />
@@ -118,6 +148,12 @@ export function PhonePanel({ session, onHangup, onToggleMute, onDismiss, onCanva
                 {session.muted ? <MicOff className="size-4" /> : <Mic className="size-4" />}
                 {session.muted ? 'Ativar microfone' : 'Silenciar'}
               </Button>
+              {session.video.supported && session.video.canSend ? (
+                <Button onClick={onToggleCamera} disabled={!live} variant={session.video.camera ? 'primary' : 'secondary'}>
+                  {session.video.camera ? <VideoOff className="size-4" /> : <Video className="size-4" />}
+                  {session.video.camera ? 'Desligar câmera' : session.video.hasVideo ? 'Ligar câmera' : 'Iniciar vídeo'}
+                </Button>
+              ) : null}
               <Button variant="danger" onClick={onHangup}>
                 <PhoneOff className="size-4" />
                 Desligar

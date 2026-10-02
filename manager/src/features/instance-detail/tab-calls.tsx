@@ -4,6 +4,8 @@ import { DialCard, EngineCard, LiveCalls } from '@/features/calls/live-calls';
 import { HistoryCard } from '@/features/calls/history-card';
 import { PhonePanel } from '@/features/calls/phone-panel';
 import { usePhone } from '@/features/calls/use-phone';
+import { canDecodeVideo } from '@/features/calls/video';
+import { canEncodeVideo } from '@/features/calls/video-send';
 import { useInstanceContext } from './instance-page';
 
 /** Calls of one instance: what rings now, answering and dialling from the browser, and the history. */
@@ -22,7 +24,11 @@ export function TabCalls() {
     <div className="space-y-4">
       <EngineCard instance={instance} calls={calls.data} />
 
-      {session ? <PhonePanel session={session} onHangup={() => void phone.hangup()} onToggleMute={phone.toggleMute} onDismiss={phone.dismiss} onCanvas={phone.attachCanvas} /> : null}
+      {session ? <PhonePanel session={session} onHangup={() => void phone.hangup()} onToggleMute={phone.toggleMute} onDismiss={phone.dismiss}
+          onCanvas={phone.attachCanvas}
+          onToggleCamera={() => void phone.toggleCamera()}
+          onAcceptVideo={() => void phone.acceptVideo()}
+        /> : null}
 
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <LiveCalls
@@ -33,7 +39,7 @@ export function TabCalls() {
           onJoin={(c) => void phone.join(c)}
           onHangup={(c) => hangup.mutate(c.callId)}
         />
-        <DialCard disabled={!engineOn || phoneBusy} busy={phoneBusy && !session?.callId} onDial={(n) => void phone.dial(n)} />
+        <DialCard disabled={!engineOn || phoneBusy} busy={phoneBusy && !session?.callId} canVideo={canDecodeVideo() && canEncodeVideo()} onDial={(n, v) => void phone.dial(n, v)} />
       </div>
 
       <HistoryCard instance={instance} />

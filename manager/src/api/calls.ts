@@ -71,6 +71,17 @@ export async function getStreamTicket(token: string, callId: string, options: St
   return api<StreamTicket>('/call/stream-ticket', { method: 'POST', apikey: token, body: { callId, ...options } });
 }
 
+export type VideoAction = 'start' | 'accept' | 'stop' | 'enable' | 'disable';
+
+/**
+ * Controls the video of a call that was answered: `start` asks the other side to turn an audio call
+ * into a video call, `accept` accepts its request, `disable`/`enable` mute and unmute our video
+ * (`enable` is refused with 409 on a call that never had video), `stop` stops sending it.
+ */
+export async function callVideo(token: string, callId: string, action: VideoAction): Promise<CallInfo> {
+  return api<CallInfo>('/call/video', { method: 'POST', apikey: token, body: { callId, action } });
+}
+
 /** Places a call (a video call when `video` is true). The audio is connected afterwards with a stream ticket. */
 export async function dialCall(token: string, number: string, video = false): Promise<CallInfo> {
   return api<CallInfo>('/call/dial', { method: 'POST', apikey: token, body: { number, video } });

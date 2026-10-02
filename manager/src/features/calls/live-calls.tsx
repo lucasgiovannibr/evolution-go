@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { Field, Input } from '@/components/ui/form';
+import { Switch } from '@/components/ui/switch';
 import { elapsedSeconds, formatClock, peerLabel, PHASE_LABEL, PHASE_TONE } from './format';
 
 /** Whether the call engine works on this instance, and what to do when it does not. */
@@ -54,8 +55,20 @@ function digitsOf(s: string) {
   return s.replace(/\D/g, '');
 }
 
-export function DialCard({ disabled, busy, onDial }: { disabled: boolean; busy: boolean; onDial: (number: string) => void }) {
+export function DialCard({
+  disabled,
+  busy,
+  canVideo,
+  onDial,
+}: {
+  disabled: boolean;
+  busy: boolean;
+  /** This browser can show and send video, so a video call can be placed from here. */
+  canVideo: boolean;
+  onDial: (number: string, video: boolean) => void;
+}) {
   const [number, setNumber] = useState('');
+  const [video, setVideo] = useState(false);
   const digits = digitsOf(number);
   const valid = digits.length >= 10 && digits.length <= 15;
 
@@ -67,7 +80,7 @@ export function DialCard({ disabled, busy, onDial }: { disabled: boolean; busy: 
           className="flex flex-wrap items-end gap-2"
           onSubmit={(e) => {
             e.preventDefault();
-            if (valid && !disabled) onDial(digits);
+            if (valid && !disabled) onDial(digits, video && canVideo);
           }}
         >
           <Field label="Número com DDI e DDD" className="min-w-56 flex-1" hint={digits && !valid ? 'Digite o número inteiro, por exemplo 5511999990000.' : undefined}>
@@ -85,9 +98,15 @@ export function DialCard({ disabled, busy, onDial }: { disabled: boolean; busy: 
             )}
           </Field>
           <Button type="submit" variant="primary" disabled={disabled || !valid} loading={busy}>
-            <PhoneCall className="size-4" />
-            Ligar
+            {video && canVideo ? <Video className="size-4" /> : <PhoneCall className="size-4" />}
+            {video && canVideo ? 'Ligar com vídeo' : 'Ligar'}
           </Button>
+          {canVideo ? (
+            <label className="flex w-full items-center gap-2 text-[13px] text-muted">
+              <Switch checked={video} onChange={setVideo} disabled={disabled} label="Videochamada" />
+              Videochamada (usa a sua câmera)
+            </label>
+          ) : null}
         </form>
       </CardBody>
     </Card>

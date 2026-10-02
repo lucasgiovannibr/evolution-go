@@ -2,6 +2,7 @@ import { Chunker, Downsampler, PCM_RATE, PlayoutClock, audioFrame, floatToPcm16,
 import captureWorkletUrl from './capture-worklet.ts?worker&url';
 import { micErrorMessage } from './format';
 import { canDecodeVideo, VideoReceiver, type VideoInfo } from './video';
+import { canEncodeVideo, VideoSender, videoFrame } from './video-send';
 
 export type PhoneState = 'idle' | 'ready' | 'connecting' | 'live' | 'ended' | 'error';
 
@@ -27,6 +28,10 @@ export interface PhoneEvents {
   onVideoInfo?(info: VideoInfo): void;
   /** The peer's camera or an upgrade request changed. */
   onPeerVideo?(state: PeerVideoState): void;
+  /** Our camera was turned on (with its picture for a preview) or off. */
+  onCamera?(on: boolean, preview: MediaStream | null): void;
+  /** Our camera could not be used, in words. */
+  onCameraError?(message: string): void;
 }
 
 /** 20 ms of audio per frame sent to the peer: small enough for low delay, large enough not to flood the socket. */
@@ -56,6 +61,10 @@ export class Softphone {
   private readonly clock = new PlayoutClock();
   /** Decodes the peer's video; null in a browser that cannot (the call then goes on with audio only). */
   private readonly receiver: VideoReceiver | null;
+  /** Sends our camera; null while it is off. */
+  private sender: VideoSender | null = null;
+  /** The call can carry our video (a video call, or an upgrade that went through). */
+  private videoReady = false;
   private muted = false;
   private micLevel = 0;
   private peerLevel = 0;
@@ -142,6 +151,44 @@ export class Softphone {
     });
   }
 
+  get cameraOn(): boolean {
+    return this.sender !== null;
+  }
+
+  /** Turns the camera on. Resolves false (after saying why through onCameraError) when it cannot. */
+  async startCamera(): Promise<boolean> {
+    if (this.sender) return true;
+    if (!canEncodeVideo()) {
+      this.events.onCameraError?.('Este navegador não codifica vídeo (WebCodecs): use um Chrome, Edge ou Safari recente para enviar a câmera.');
+      return false;
+    }
+    const sender = new VideoSender({
+      send: (au) => this.sendVideo(au),
+      onError: (message) => {
+        if (this.sender === sender) this.sender = null;
+        this.events.onCamera?.(false, null);
+        this.events.onCameraError?.(message);
+      },
+    });
+    this.sender = sender;
+    if (!(await sender.start())) return false;
+    sender.setReady(this.videoReady);
+    this.events.onCamera?.(true, sender.preview);
+    return true;
+  }
+
+  stopCamera() {
+    this.sender?.stop();
+    this.sender = null;
+    this.events.onCamera?.(false, null);
+  }
+
+  /** The call can (or can no longer) carry our video; the camera starts sending when it can. */
+  setVideoReady(ready: boolean) {
+    this.videoReady = ready;
+    this.sender?.setReady(ready);
+  }
+
   setMuted(muted: boolean) {
     this.muted = muted;
   }
@@ -176,6 +223,12 @@ export class Softphone {
     }
   }
 
+  private sendVideo(accessUnit: Uint8Array) {
+    const ws = this.ws;
+    if (this.state !== 'live' || !ws || ws.readyState !== WebSocket.OPEN || ws.bufferedAmount > MAX_BUFFERED * 2) return;
+    ws.send(videoFrame(accessUnit));
+  }
+
   private onMessage(data: string | ArrayBuffer) {
     if (typeof data !== 'string') {
       const frame = parseServerFrame(data);
@@ -203,13 +256,19 @@ export class Softphone {
       case 'start':
         if (this.state === 'connecting') {
           this.set('live');
+          if (msg.video) this.setVideoReady(true); // a video call carries our video from the start
           this.events.onCall?.(!!msg.video);
           this.opened?.(true);
           this.opened = undefined;
         }
         break;
       case 'video_state':
+        // the other side accepted our request, or turned its camera on: video goes both ways now
+        if (msg.state === 'upgrade_accepted' || msg.state === 'enabled') this.setVideoReady(true);
         this.events.onPeerVideo?.({ state: msg.state ?? 'unknown', active: !!msg.active, upgrade: !!msg.upgrade });
+        break;
+      case 'keyframe_request':
+        this.sender?.requestKeyframe(); // WhatsApp lost part of our video
         break;
       case 'speech_start':
         this.events.onPeerSpeaking(true);
@@ -263,6 +322,7 @@ export class Softphone {
       /* already closed */
     }
     this.receiver?.close();
+    this.stopCamera();
     this.node?.disconnect();
     this.mic?.getTracks().forEach((t) => t.stop());
     this.ctx?.close().catch(() => undefined);
