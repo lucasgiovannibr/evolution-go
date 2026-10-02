@@ -59,6 +59,17 @@ var (
 		Help: "Sends refused with 429 because the instance was over its send limit.",
 	})
 
+	// CallHistorySaved and CallHistoryFailed count the call records written to the
+	// database and the ones that could not be (the call itself is never affected).
+	CallHistorySaved = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "evolution_call_history_saved_total",
+		Help: "Call history records saved.",
+	})
+	CallHistoryFailed = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "evolution_call_history_failed_total",
+		Help: "Call history records that could not be saved.",
+	})
+
 	// MediaPending is the number of received messages with media waiting for a worker.
 	MediaPending = prometheus.NewGauge(prometheus.GaugeOpts{
 		Name: "evolution_media_pending",
@@ -78,6 +89,7 @@ func init() {
 		collectors.NewGoCollector(),
 		collectors.NewProcessCollector(collectors.ProcessCollectorOpts{}),
 		httpRequests, httpDuration, httpInFlight, Events, MessagesDropped, MessageBatchSize, SendThrottled, MediaPending,
+		CallHistorySaved, CallHistoryFailed,
 	)
 }
 

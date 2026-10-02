@@ -208,6 +208,8 @@ func (r *Routes) AssignRoutes(eng *gin.Engine) {
 		{
 			routes.POST("/reject", r.jidValidationMiddleware.ValidateNumberField(), r.callHandler.RejectCall)
 			routes.GET("/active", r.callHandler.ActiveCalls)
+			routes.GET("/history", r.callHandler.History)
+			routes.DELETE("/history", r.callHandler.DeleteHistory)
 			routes.GET("/:callId", r.callHandler.GetCall)
 			routes.POST("/answer", r.callHandler.AnswerCall)
 			routes.POST("/dial", r.jidValidationMiddleware.ValidateNumberField(), r.callHandler.DialCall)

@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/purpshell/meowcaller"
@@ -321,7 +322,8 @@ type Manager struct {
 	dials  map[string][]time.Time // instance id -> when it placed calls, last minute
 	now    func() time.Time
 
-	metrics *callMetrics
+	metrics    *callMetrics
+	onFinished atomic.Pointer[Finished]
 }
 
 func NewManager(opts Options) *Manager {
