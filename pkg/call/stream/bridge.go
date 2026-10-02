@@ -11,10 +11,17 @@ import (
 const (
 	frameSamples = call_engine.FrameSamples
 
-	// toClientFrames is how much of the peer's audio waits for a slow client: three
-	// seconds. Past that the oldest audio is dropped, because a listener that is behind
-	// wants the present, not a growing delay.
-	toClientFrames = 50
+	// toClientFrames is how much of the peer's audio waits for a slow client: 900 ms.
+	// Past that the oldest audio is dropped, because a listener that is behind wants the
+	// present, not a growing delay. Live, the peer's audio arrives in bursts of up to a
+	// dozen frames a second at most, so this leaves room for a client that stalls a
+	// moment and no more: it used to be three seconds, which let a lagging client talk
+	// to a conversation that was three seconds old.
+	toClientFrames = 15
+
+	// maxPendingMarks is how many marks a client may have waiting for its audio to be
+	// played. A mark is a few bytes, but they are kept until the audio before them goes.
+	maxPendingMarks = 64
 
 	// maxOutboundSamples is how much audio a client may have queued to be sent: thirty
 	// seconds. A text-to-speech engine produces a sentence much faster than real time
@@ -42,14 +49,29 @@ type bridge struct {
 	closed   bool
 	done     chan struct{}
 	now      func() time.Time
+
+	// Marks. pushed and taken count the samples of client audio accepted and handed to
+	// the library since the stream began; a mark waits for taken to reach the pushed
+	// count it was set at. Finished marks are collected in order and the socket writer is
+	// woken through markReady, so the library's goroutine never waits for the socket.
+	pushed, taken uint64
+	marks         []pendingMark
+	finishedMarks []string
+	markReady     chan struct{}
+}
+
+type pendingMark struct {
+	name string
+	at   uint64
 }
 
 func newBridge(stats *call_engine.StreamStats) *bridge {
 	return &bridge{
-		stats:    stats,
-		toClient: make(chan []float32, toClientFrames),
-		done:     make(chan struct{}),
-		now:      time.Now,
+		stats:     stats,
+		toClient:  make(chan []float32, toClientFrames),
+		done:      make(chan struct{}),
+		now:       time.Now,
+		markReady: make(chan struct{}, 1),
 	}
 }
 
@@ -93,8 +115,10 @@ func (b *bridge) ReadFrame() ([]float32, error) {
 	if n := len(b.pending); n > 0 && b.now().Sub(b.lastPush) >= tailFlushAfter {
 		frame := make([]float32, frameSamples)
 		copy(frame, b.pending)
+		b.taken += uint64(len(b.pending))
 		b.pending = b.pending[:0]
 		b.stats.FromClient.Add(1)
+		b.finishMarksLocked()
 		return frame, nil
 	}
 	return nil, nil
@@ -104,7 +128,9 @@ func (b *bridge) takeLocked(n int) []float32 {
 	frame := make([]float32, n)
 	copy(frame, b.pending)
 	b.pending = append(b.pending[:0], b.pending[n:]...)
+	b.taken += uint64(n)
 	b.stats.FromClient.Add(1)
+	b.finishMarksLocked()
 	return frame
 }
 
@@ -137,15 +163,74 @@ func (b *bridge) Push(pcm []byte) {
 	for i := 0; i < samples; i++ {
 		b.pending = append(b.pending, float32(int16(binary.LittleEndian.Uint16(pcm[2*i:])))/32768.0)
 	}
+	b.pushed += uint64(samples)
 	b.lastPush = b.now()
+}
+
+// Mark asks to be told when the audio queued so far has been handed to the call (the
+// library sends it to the peer within one frame, 60 ms). It is how a client that streams
+// speech learns how much of it was actually played, and so where an interruption cut it.
+// With nothing queued the mark is finished at once. It returns false when too many marks
+// are waiting; the mark is then not kept.
+func (b *bridge) Mark(name string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.closed {
+		return true
+	}
+	if b.taken >= b.pushed {
+		b.finishedMarks = append(b.finishedMarks, name)
+		b.wakeLocked()
+		return true
+	}
+	if len(b.marks) >= maxPendingMarks {
+		return false
+	}
+	b.marks = append(b.marks, pendingMark{name: name, at: b.pushed})
+	return true
+}
+
+// finishMarksLocked moves the marks whose audio has gone out to the finished list.
+func (b *bridge) finishMarksLocked() {
+	n := 0
+	for n < len(b.marks) && b.marks[n].at <= b.taken {
+		b.finishedMarks = append(b.finishedMarks, b.marks[n].name)
+		n++
+	}
+	if n > 0 {
+		b.marks = append(b.marks[:0], b.marks[n:]...)
+		b.wakeLocked()
+	}
+}
+
+func (b *bridge) wakeLocked() {
+	select {
+	case b.markReady <- struct{}{}:
+	default:
+	}
+}
+
+// FinishedMarks returns, in order, the marks whose audio has been played since the last
+// call.
+func (b *bridge) FinishedMarks() []string {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	out := b.finishedMarks
+	b.finishedMarks = nil
+	return out
 }
 
 // Clear drops the client audio that has not been sent yet (an assistant that is
 // interrupted mid-sentence must not finish it).
+//
+// Like Twilio's, it finishes every waiting mark at once: the audio before them is gone,
+// so there is nothing left to wait for, and the client learns the queue was emptied.
 func (b *bridge) Clear() {
 	b.mu.Lock()
+	b.taken = b.pushed
 	b.pending = b.pending[:0]
 	b.odd = nil
+	b.finishMarksLocked()
 	b.mu.Unlock()
 }
 
@@ -158,6 +243,7 @@ func (b *bridge) Close() error {
 		close(b.done)
 	}
 	b.pending = nil
+	b.marks = nil
 	b.mu.Unlock()
 	return nil
 }

@@ -207,3 +207,161 @@ func TestPCM16RoundTripAndClamping(t *testing.T) {
 		}
 	}
 }
+
+// --- marks
+
+func markNames(b *bridge) []string { return b.FinishedMarks() }
+
+func sameNames(got []string, want ...string) bool {
+	if len(got) != len(want) {
+		return false
+	}
+	for i := range got {
+		if got[i] != want[i] {
+			return false
+		}
+	}
+	return true
+}
+
+func TestAMarkWaitsForTheAudioBeforeIt(t *testing.T) {
+	b, _, _ := testBridge()
+	b.Push(pcmOf(frameSamples*2, 1000))
+	if !b.Mark("a") {
+		t.Fatal("the mark was refused")
+	}
+	if got := markNames(b); len(got) != 0 {
+		t.Fatalf("the mark came back with all its audio still queued: %v", got)
+	}
+
+	b.ReadFrame()
+	if got := markNames(b); len(got) != 0 {
+		t.Fatalf("the mark came back after one of two frames: %v", got)
+	}
+	b.ReadFrame()
+	if got := markNames(b); !sameNames(got, "a") {
+		t.Fatalf("marks after the audio went out = %v, want [a]", got)
+	}
+	select {
+	case <-b.markReady:
+	default:
+		t.Fatal("the writer was not woken")
+	}
+}
+
+func TestAMarkWithNothingQueuedComesBackAtOnce(t *testing.T) {
+	b, _, _ := testBridge()
+	b.Mark("now")
+	if got := markNames(b); !sameNames(got, "now") {
+		t.Fatalf("marks = %v, want [now]", got)
+	}
+}
+
+func TestMarksComeBackInOrderAsTheirAudioGoesOut(t *testing.T) {
+	b, _, _ := testBridge()
+	b.Push(pcmOf(frameSamples, 1000))
+	b.Mark("a")
+	b.Push(pcmOf(frameSamples, 1000))
+	b.Mark("b")
+
+	b.ReadFrame()
+	if got := markNames(b); !sameNames(got, "a") {
+		t.Fatalf("after the first frame = %v, want [a]", got)
+	}
+	b.ReadFrame()
+	if got := markNames(b); !sameNames(got, "b") {
+		t.Fatalf("after the second frame = %v, want [b]", got)
+	}
+}
+
+func TestTheShortTailOfAnUtteranceFinishesItsMarkWhenItIsFlushed(t *testing.T) {
+	b, _, now := testBridge()
+	b.Push(pcmOf(frameSamples/2, 1000))
+	b.Mark("end")
+
+	if frame, _ := b.ReadFrame(); frame != nil {
+		t.Fatal("the tail was sent before it had waited for more")
+	}
+	if got := markNames(b); len(got) != 0 {
+		t.Fatalf("mark before the tail went out: %v", got)
+	}
+	*now = now.Add(tailFlushAfter)
+	if frame, _ := b.ReadFrame(); frame == nil {
+		t.Fatal("the tail was never sent")
+	}
+	if got := markNames(b); !sameNames(got, "end") {
+		t.Fatalf("marks = %v, want [end]", got)
+	}
+}
+
+func TestClearGivesBackEveryWaitingMarkAndStartsOver(t *testing.T) {
+	b, _, _ := testBridge()
+	b.Push(pcmOf(frameSamples*3, 1000))
+	b.Mark("one")
+	b.Push(pcmOf(frameSamples, 1000))
+	b.Mark("two")
+
+	b.Clear()
+	if got := markNames(b); !sameNames(got, "one", "two") {
+		t.Fatalf("marks after clear = %v, want [one two]", got)
+	}
+
+	// what is pushed afterwards is counted from the cleared position, not from before
+	b.Push(pcmOf(frameSamples, 1000))
+	b.Mark("three")
+	if got := markNames(b); len(got) != 0 {
+		t.Fatalf("a mark on new audio came back before it was played: %v", got)
+	}
+	b.ReadFrame()
+	if got := markNames(b); !sameNames(got, "three") {
+		t.Fatalf("marks = %v, want [three]", got)
+	}
+}
+
+func TestMarksAreBoundedAndRefusedBeyondTheLimit(t *testing.T) {
+	b, _, _ := testBridge()
+	b.Push(pcmOf(frameSamples, 1000))
+	for i := 0; i < maxPendingMarks; i++ {
+		if !b.Mark("m") {
+			t.Fatalf("mark %d was refused", i)
+		}
+	}
+	if b.Mark("one too many") {
+		t.Fatal("a mark beyond the limit was accepted")
+	}
+	b.ReadFrame()
+	if got := markNames(b); len(got) != maxPendingMarks {
+		t.Fatalf("%d marks came back, want %d", len(got), maxPendingMarks)
+	}
+}
+
+// Audio refused because the client sent too much is not queued, so a mark after it must
+// not wait for audio that will never be played.
+func TestAudioThatWasDroppedDoesNotHoldBackAMark(t *testing.T) {
+	b, stats, _ := testBridge()
+	b.Push(pcmOf(maxOutboundSamples, 1000))
+	b.Push(pcmOf(frameSamples, 1000)) // over the limit: dropped
+	if stats.DroppedFromClient.Load() == 0 {
+		t.Fatal("the test did not overflow the queue")
+	}
+	b.Mark("end")
+	for i := 0; i < maxOutboundSamples/frameSamples; i++ {
+		b.ReadFrame()
+	}
+	if got := markNames(b); !sameNames(got, "end") {
+		t.Fatalf("marks = %v, want [end]", got)
+	}
+}
+
+func TestMarksStopWhenTheBridgeCloses(t *testing.T) {
+	b, _, _ := testBridge()
+	b.Push(pcmOf(frameSamples, 1000))
+	b.Mark("a")
+	b.Close()
+	if !b.Mark("late") {
+		t.Fatal("a mark on a closed bridge was refused")
+	}
+	if got := markNames(b); len(got) != 0 {
+		t.Fatalf("marks of a closed bridge came back: %v", got)
+	}
+}
