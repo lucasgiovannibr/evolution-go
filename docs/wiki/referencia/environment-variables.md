@@ -170,7 +170,7 @@ PROXY_PASSWORD=senha
 
 ## Chamadas
 
-Só têm efeito nas instâncias com `callsEnabled` ligado. Valores inválidos ou não positivos voltam ao padrão. Detalhes em [API de Chamadas](../guias-api/api-call.md).
+Só têm efeito nas instâncias com `callsEnabled` ligado. Valores inválidos ou não positivos voltam ao padrão (menos onde o `0` é a escolha: `CALL_MEDIA_STALL`, `CALL_MAX_DURATION`, `CALL_SILENCE_TIMEOUT` e `CALL_HISTORY_RETENTION_DAYS`). Detalhes em [API de Chamadas](../guias-api/api-call.md).
 
 | Variável | Padrão | Descrição |
 |----------|--------|-----------|
@@ -179,6 +179,12 @@ Só têm efeito nas instâncias com `callsEnabled` ligado. Valores inválidos ou
 | `CALL_STREAM_GRACE` | `10` | Segundos que uma chamada atendida espera o stream voltar antes de ser desligada |
 | `CALL_DIAL_LIMIT` | `6` | Chamadas discadas por minuto por instância |
 | `CALL_STREAM_ORIGINS` | - | Origens de navegador aceitas no WebSocket do stream, separadas por vírgula (`*` aceita todas) |
+| `CALL_MEDIA_STALL` | `15` | Segundos que uma chamada ativa com stream pode ficar sem áudio do outro lado antes do evento `CallMediaStalled`; `0` desliga |
+| `CALL_MEDIA_STALL_HANGUP` | `false` | Com `true`, uma chamada nessa situação também é desligada (`media_stalled`) |
+| `CALL_MAX_DURATION` | `0` | Segundos que uma chamada atendida pode durar, contados da mídia pronta; `0` é sem limite (`max_duration`) |
+| `CALL_SILENCE_TIMEOUT` | `0` | Segundos sem barulho de nenhum dos dois lados antes de desligar uma chamada com stream; `0` nunca (`silence_timeout`) |
+| `CALL_HISTORY` | `false` | Guarda o histórico de chamadas (só metadados) na tabela `call_records`, com `GET`/`DELETE /call/history` |
+| `CALL_HISTORY_RETENTION_DAYS` | `90` | Dias que o histórico é guardado; `0` guarda para sempre |
 
 ---
 

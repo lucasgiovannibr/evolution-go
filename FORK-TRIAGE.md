@@ -201,7 +201,18 @@ Todos os eventos que a lib entrega ao handler estão tratados (70 dos 75 tipos; 
   - `video_state` não distinguia "aceitou o upgrade" de "desligou a câmera"; ganhou `state` e `stateCode` (o iPhone manda um código 2 sem nome logo após atender, significado não confirmado).
   - `enable` sem vídeo prévio: o iPhone ignora; agora responde 409 e manda usar `start`.
   - Um teste dependia da ordem entre o fechamento do `Done` e a publicação do `CallEnded` e falhava de vez em quando.
-- **Não feito de propósito**: chamadas em grupo, duração máxima de chamada atendida e recuperação de um stream caído depois do prazo.
+- **Não feito de propósito**: chamadas em grupo e recuperação de um stream caído depois do prazo. (A duração máxima agora existe, desligada por padrão: ver abaixo.)
+
+### Melhorias das chamadas (PRs #75–#82, 02/10/2026)
+
+Análise do stream de chamadas contra a biblioteca, o Twilio Media Streams e a API Realtime da OpenAI (itens #51–#67 de `FEATURE-PROPOSALS.md` §6). Feito e **testado ao vivo** (número real e iPhone), um PR por item:
+
+- **Stream**: formato de áudio escolhido no bilhete (#77), quadros binários e `timestamp` (#78), `mark` e fila de entrada de 900 ms (#76), eventos de fala (#81). Correção achada no teste da `main` combinada (#82): o áudio enfileirado enquanto o telefone toca era descartado pela biblioteca; agora espera a chamada ficar ativa.
+- **Vigilância e limites**: `CallMediaStalled`/`CallMediaResumed` (#75) e `CALL_MAX_DURATION`/`CALL_SILENCE_TIMEOUT` (#79), todos opt-in ou só avisam. Uma parada real de áudio (a dos issues da biblioteca) **não foi reproduzida**: só testes unitários.
+- **Histórico** (#80): só metadados, desligado por padrão, com retenção de 90 dias. **Gravar chamadas ficou de fora, por decisão**: risco legal e de privacidade.
+- **Métricas** `evolution_call*` (#75, #80).
+- **Achados**: um aparelho mudo ou em silêncio continua mandando 2 a 3 quadros por segundo (por isso o áudio de entrada não é contínuo e quem grava precisa posicionar pelo `timestamp`); o WhatsApp informa `rejected` quando o outro lado recusa uma chamada discada.
+- **Ficou de fora**: página de chamadas no manager (#62), testes em outros aparelhos (#63: só um iPhone foi testado), gateway WebRTC, UDP por proxy, fork da biblioteca e chamadas em grupo (#64–#67, decisões suas).
 
 ### Validação ao vivo (instância real, 29/09/2026)
 

@@ -45,7 +45,7 @@ docker-compose logs evolution-go | grep ERROR
 
 - `GET /health`: prontidão (bancos com limite de 2 s, saturação do pool).
 - `GET /instance/{id}/runtime` e `GET /instance/runtimes`: o que o processo realmente roda por instância (cliente, supervisor, QR, proxy) comparado com o banco, com avisos codificados; inclui a fila de webhook.
-- `GET /metrics` (chave global): latência por rota, eventos recebidos, mensagens descartadas, envios limitados (`evolution_send_throttled_total`), fila de mídia (`evolution_media_pending`).
+- `GET /metrics` (chave global): latência por rota, eventos recebidos, mensagens descartadas, envios limitados (`evolution_send_throttled_total`), fila de mídia (`evolution_media_pending`), chamadas (`evolution_calls_active{phase}`, `evolution_calls_ended_total{direction,reason}`, `evolution_call_stream_dropped_total`, `evolution_call_media_stalls_total`, `evolution_call_history_failed_total`; lista em [API de Chamadas](../guias-api/api-call.md#limites-e-configuração)).
 - `X-Request-ID`: todo erro traz o cabeçalho; o mesmo valor aparece como `req=` na linha do log de acesso.
 - Os logs de cada instância são gravados por uma goroutine própria (fila limitada); se o disco não acompanha, o descarte é contado em vez de travar o processo.
 

@@ -197,6 +197,108 @@ const docTemplate = `{
                 }
             }
         },
+        "/call/history": {
+            "get": {
+                "description": "The calls the call engine followed for this instance, newest first: who, when, how long it rang and talked and how it ended (outcome: answered, missed, rejected, cancelled, unanswered, busy, failed). No audio or content is kept. Needs CALL_HISTORY=true on the server (409 otherwise); records expire after CALL_HISTORY_RETENTION_DAYS (default 90). Page with the \"next\" cursor of the answer.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Call"
+                ],
+                "summary": "Call history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "incoming or outgoing",
+                        "name": "direction",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "answered, missed, rejected, cancelled, unanswered, busy or failed",
+                        "name": "outcome",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "a JID or a phone number",
+                        "name": "peer",
+                        "in": "query"
+                    },
+                    {
+                        "type": "integer",
+                        "description": "page size, 1 to 200 (default 50)",
+                        "name": "limit",
+                        "in": "query"
+                    },
+                    {
+                        "type": "string",
+                        "description": "the next of the previous page",
+                        "name": "cursor",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_call_history.Page"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid filter or cursor",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
+                        }
+                    },
+                    "409": {
+                        "description": "The server keeps no call history",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "description": "Erases the call history of this instance: all of it, or only what started before \"before\" (RFC 3339). It cannot be undone. Needs CALL_HISTORY=true on the server.",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "Call"
+                ],
+                "summary": "Erase the call history",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "erase only calls that started before this time (RFC 3339)",
+                        "name": "before",
+                        "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "deleted: how many records were erased",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
+                        }
+                    },
+                    "400": {
+                        "description": "Invalid time",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
+                        }
+                    },
+                    "409": {
+                        "description": "The server keeps no call history",
+                        "schema": {
+                            "$ref": "#/definitions/gin.H"
+                        }
+                    }
+                }
+            }
+        },
         "/call/reject": {
             "post": {
                 "description": "Reject call",
@@ -239,7 +341,7 @@ const docTemplate = `{
         },
         "/call/stream-ticket": {
             "post": {
-                "description": "Returns a one-time ticket, valid for a few seconds, for one call. Open a WebSocket to \"path\" on this server with it: GET /call/stream/{callId}?ticket=... . Audio is 16 kHz mono 16-bit little-endian PCM in base64 JSON messages (see the \"start\" message). With \"video\": true the stream also carries the call's video as H.264 access units (Annex-B) in \"video\" messages, and asks for keyframes with \"keyframe_request\".",
+                "description": "Returns a one-time ticket, valid for a few seconds, for one call. Open a WebSocket to \"path\" on this server with it: GET /call/stream/{callId}?ticket=... . Audio is 16 kHz mono 16-bit little-endian PCM in base64 JSON messages by default (see the \"start\" message); \"encoding\" and \"sampleRate\" ask for 8, 16 or 24 kHz PCM, or 8 kHz G.711 mu-law or A-law, and the server converts. With \"binary\": true the audio and video travel as binary WebSocket frames instead of base64 in JSON (a third smaller); the control messages stay JSON. With \"speechEvents\": true the stream also says when the peer begins and stops talking (speech_start, speech_end). With \"video\": true the stream also carries the call's video as H.264 access units (Annex-B) in \"video\" messages, and asks for keyframes with \"keyframe_request\".",
                 "consumes": [
                     "application/json"
                 ],
@@ -5375,6 +5477,10 @@ const docTemplate = `{
                 "direction": {
                     "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_call_engine.Direction"
                 },
+                "mediaStalled": {
+                    "description": "MediaStalled: the call is active and has a stream but the peer's audio has stopped\narriving (see Options.MediaStall).",
+                    "type": "boolean"
+                },
                 "peer": {
                     "type": "string"
                 },
@@ -5526,6 +5632,69 @@ const docTemplate = `{
                 }
             }
         },
+        "github_com_evolution-foundation_evolution-go_pkg_call_history.Page": {
+            "type": "object",
+            "properties": {
+                "next": {
+                    "type": "string"
+                },
+                "records": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_call_history.Record"
+                    }
+                }
+            }
+        },
+        "github_com_evolution-foundation_evolution-go_pkg_call_history.Record": {
+            "type": "object",
+            "properties": {
+                "answeredAt": {
+                    "type": "string"
+                },
+                "callId": {
+                    "type": "string"
+                },
+                "direction": {
+                    "description": "incoming | outgoing",
+                    "type": "string"
+                },
+                "endedAt": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "outcome": {
+                    "description": "answered, missed, rejected, cancelled, unanswered, busy, failed",
+                    "type": "string"
+                },
+                "peer": {
+                    "description": "Peer is the other side as WhatsApp reports it, often a @lid; PeerPhone is its phone\nnumber (digits only) when the account could resolve it.",
+                    "type": "string"
+                },
+                "peerPhone": {
+                    "type": "string"
+                },
+                "reason": {
+                    "description": "the technical reason the call ended",
+                    "type": "string"
+                },
+                "ringSeconds": {
+                    "type": "integer"
+                },
+                "startedAt": {
+                    "type": "string"
+                },
+                "talkSeconds": {
+                    "description": "TalkSeconds is how long the conversation lasted, RingSeconds how long it rang.",
+                    "type": "integer"
+                },
+                "video": {
+                    "type": "boolean"
+                }
+            }
+        },
         "github_com_evolution-foundation_evolution-go_pkg_call_service.ActiveCallsResult": {
             "type": "object",
             "properties": {
@@ -5558,9 +5727,24 @@ const docTemplate = `{
         "github_com_evolution-foundation_evolution-go_pkg_call_service.DialCallStruct": {
             "type": "object",
             "properties": {
+                "binary": {
+                    "description": "Binary: see StreamTicketStruct.",
+                    "type": "boolean"
+                },
+                "encoding": {
+                    "description": "Encoding and SampleRate are the audio format of the stream (only read with Stream);\nsee StreamTicketStruct.",
+                    "type": "string"
+                },
                 "number": {
                     "description": "Number is a phone number or a user JID. The number-validation middleware turns a\nphone number into a JID before this is read.",
                     "type": "string"
+                },
+                "sampleRate": {
+                    "type": "integer"
+                },
+                "speechEvents": {
+                    "description": "SpeechEvents: see StreamTicketStruct.",
+                    "type": "boolean"
                 },
                 "stream": {
                     "description": "Stream also returns the ticket that opens the stream, so it can be connected\nbefore the callee picks up and says hello.",
@@ -5580,6 +5764,10 @@ const docTemplate = `{
                 },
                 "direction": {
                     "$ref": "#/definitions/github_com_evolution-foundation_evolution-go_pkg_call_engine.Direction"
+                },
+                "mediaStalled": {
+                    "description": "MediaStalled: the call is active and has a stream but the peer's audio has stopped\narriving (see Options.MediaStall).",
+                    "type": "boolean"
                 },
                 "peer": {
                     "type": "string"
@@ -5643,11 +5831,26 @@ const docTemplate = `{
         "github_com_evolution-foundation_evolution-go_pkg_call_service.StreamTicket": {
             "type": "object",
             "properties": {
+                "binary": {
+                    "description": "Binary says whether the stream will use binary frames for audio and video.",
+                    "type": "boolean"
+                },
+                "encoding": {
+                    "description": "Encoding and SampleRate are the audio format the stream will carry, as the \"start\"\nmessage will report it.",
+                    "type": "string"
+                },
                 "expiresInSeconds": {
                     "type": "integer"
                 },
                 "path": {
                     "type": "string"
+                },
+                "sampleRate": {
+                    "type": "integer"
+                },
+                "speechEvents": {
+                    "description": "SpeechEvents says whether the stream will report when the peer talks.",
+                    "type": "boolean"
                 },
                 "ticket": {
                     "type": "string"
@@ -5657,8 +5860,24 @@ const docTemplate = `{
         "github_com_evolution-foundation_evolution-go_pkg_call_service.StreamTicketStruct": {
             "type": "object",
             "properties": {
+                "binary": {
+                    "description": "Binary sends and accepts the audio and video as binary WebSocket frames instead of\nbase64 in JSON: a third smaller and no encoding on either side. The control messages\nstay JSON. The frame layout is described in the \"start\" message documentation.",
+                    "type": "boolean"
+                },
                 "callId": {
                     "type": "string"
+                },
+                "encoding": {
+                    "description": "Encoding is the audio encoding of the stream: \"audio/pcm-s16le\" (default),\n\"audio/x-mulaw\" or \"audio/x-alaw\" (also written pcm, mulaw, alaw, pcmu, pcma).",
+                    "type": "string"
+                },
+                "sampleRate": {
+                    "description": "SampleRate is the audio rate of the stream: 8000, 16000 (default) or 24000 for PCM,\n8000 for mu-law and A-law. The server converts; the call itself runs at 16 kHz.",
+                    "type": "integer"
+                },
+                "speechEvents": {
+                    "description": "SpeechEvents makes the stream say when the peer begins and stops talking\n(speech_start and speech_end messages), so a client that answers by voice does not\nneed a detector of its own.",
+                    "type": "boolean"
                 },
                 "video": {
                     "description": "Video makes the stream carry the call's video besides its audio.",

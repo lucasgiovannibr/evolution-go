@@ -362,6 +362,10 @@ Com `callsEnabled` ligado na instância (`PUT /instance/{id}/advanced-settings`,
 - Com o motor ligado, toda chamada recebida é **pré-aceita** automaticamente pela biblioteca.
 - Validado ao vivo com um número real e um iPhone: áudio e vídeo, recebidos e enviados, e o upgrade de áudio para vídeo nos dois sentidos. O vídeo recebido traz a rotação em `orientation` (giros horários para ficar em pé); o vídeo enviado deve ser **em pé** (360×640) para ocupar a tela do celular.
 - `enable` em `POST /call/video` só reativa vídeo que já existia: numa chamada que nunca teve vídeo devolve `409` (use `start`).
+- **Melhorias do stream** (02/10/2026; tudo em [API de Chamadas](./api-call.md)): formato de áudio escolhido no bilhete (`encoding`, `sampleRate`: PCM 8/16/24 kHz, μ-law e A-law 8 kHz); quadros binários (`binary`); `timestamp` em todo quadro de mídia; eventos `speech_start` e `speech_end` (`speechEvents`); `mark` para saber até onde o áudio enviado foi tocado; fila de entrada de 900 ms (era 3 s) com aviso `inbound_overflow`; o áudio enfileirado enquanto o telefone toca espera e toca quando o outro lado atende.
+- **Vigilância e limites**: evento `CallMediaStalled` / `CallMediaResumed` (`CALL_MEDIA_STALL`, `CALL_MEDIA_STALL_HANGUP`), duração máxima (`CALL_MAX_DURATION`) e timeout por silêncio (`CALL_SILENCE_TIMEOUT`), ambos desligados por padrão.
+- **Histórico de chamadas** (`CALL_HISTORY=true`, `CALL_HISTORY_RETENTION_DAYS`, padrão 90): `GET`/`DELETE /call/history`, só metadados, nunca áudio. **As chamadas não são gravadas.**
+- **Métricas** `evolution_call*` em `GET /metrics`.
 
 Guia completo, protocolo do WebSocket e exemplos em [API de Chamadas](./api-call.md).
 

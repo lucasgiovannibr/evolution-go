@@ -300,13 +300,66 @@ connection**). The media side uses the `purpshell/meowcaller` library, pinned to
   stays away for `CALL_STREAM_GRACE` is hung up; everything an operator can see is in
   `GET /instance/runtimes` (`runtime.calls` and warnings).
 - **Side effect**: with the engine on, every incoming call is pre-accepted by the library.
-- **Not done on purpose**: group calls, a maximum duration for an answered call, and
-  recovering a stream that dropped after the grace period.
+- **Not done on purpose**: group calls and recovering a stream that dropped after the
+  grace period. (A maximum duration now exists, off by default: see the next section.)
 - **Tested live** with a real number and an iPhone: incoming and outgoing audio,
   incoming and outgoing video, audio-to-video upgrade in both directions, the phone turned
   through several positions, and a portrait (360x640) picture filling the phone's screen
   (a landscape one is letterboxed). `docker/fork-test/call-stream-test.py` repeats it.
 - Guide, WebSocket protocol and examples: `docs/wiki/guias-api/api-call.md`.
+
+### Calls: a better stream, safeguards, history and metrics (October 2026, PRs #75–#82)
+Found by analysing the call stream against the library, Twilio Media Streams and the OpenAI
+Realtime API. The WebSocket is only the client's leg: WhatsApp's media is SRTP over UDP
+inside the call library. Everything below was tried on a real number and an iPhone except
+where noted. The guide is `docs/wiki/guias-api/api-call.md`.
+
+**The stream**
+- **Audio format** (#77): `encoding` and `sampleRate` on `POST /call/stream-ticket` and on
+  `POST /call/dial` with a stream: PCM 8/16/24 kHz, G.711 mu-law or A-law at 8 kHz. The call
+  keeps running at 16 kHz; the stream converts (a resampler that keeps its state between
+  chunks, no aliasing from 16 to 8 kHz). An unsupported format is a `400`, and on dial it is
+  refused before the phone rings.
+- **Binary frames and timestamps** (#78): `binary: true` moves audio and video out of base64
+  JSON into binary WebSocket frames (a third smaller); control messages stay JSON. Every
+  media frame carries `timestamp` (milliseconds from the opening of the stream to its
+  arrival at the server), because a silent or muted peer sends only 2-3 frames a second: a
+  recorder has to place frames by it and fill the gaps (a 68 s call gave a 29 s file).
+- **`mark`** (#76): the server echoes it once the audio sent before it has been handed to the
+  call (what an agent needs to know how much of its sentence was played when interrupted);
+  `clear` returns every waiting mark. The queue of the peer's audio is **900 ms** (was 3 s)
+  and a client that falls behind gets one `inbound_overflow`.
+- **Speech events** (#81): `speechEvents: true` adds `speech_start` / `speech_end` (an
+  energy detector that follows the room's noise: about 120 ms to start, 600 ms hangover;
+  the end is also found by the clock). Not a speech recogniser.
+- **Fix** (#82): the library asks the client's source for audio from the moment a call
+  exists, ringing included, so a greeting queued while the phone rang was thrown away and a
+  mark set after it came back as "played". The audio is now held until the call is active.
+  Found while testing everything together.
+
+**Safeguards**
+- **Media stall** (#75): `CallMediaStalled` / `CallMediaResumed` (and `mediaStalled` on
+  `GET /call/{callId}`) when an active call with a stream gets no audio for `CALL_MEDIA_STALL`
+  seconds (default 15, `0` off); `CALL_MEDIA_STALL_HANGUP=true` also hangs up
+  (`media_stalled`). A muted or silent iPhone keeps sending 2-3 frames a second, so it does
+  not trigger it. The real stall the library's issues describe was **not reproduced**: only
+  unit-tested.
+- **Limits** (#79), both off by default: `CALL_MAX_DURATION` (reason `max_duration`) and
+  `CALL_SILENCE_TIMEOUT` (reason `silence_timeout`, only for a call with a stream, neither
+  side making a sound; comfort noise does not count, a soft voice does).
+
+**History and metrics**
+- **Call history** (#80): `CALL_HISTORY=true` keeps one row per call in `call_records`
+  (peer and its phone number when the account can resolve the `@lid`, direction, video,
+  outcome `answered/missed/rejected/cancelled/unanswered/busy/failed`, reason, times, ring and
+  talk seconds). **Metadata only: calls are not recorded** (decided on purpose, legal and
+  privacy risk). `GET /call/history` (filters, cursor pagination) and `DELETE /call/history`;
+  records expire after `CALL_HISTORY_RETENTION_DAYS` (default 90, `0` = for ever). `unanswered`
+  and `failed` were not seen on a device.
+- **Metrics** (#75, #80): `evolution_calls_active`, `evolution_calls_started_total`,
+  `evolution_calls_ended_total`, `evolution_call_talk_seconds`, `evolution_call_dials_total`,
+  `evolution_call_engines`, stream frames and drops, keyframe requests, stalls and the history
+  counters, with bounded labels.
 
 ### Hardening and scale round (October 2026, PRs #38–#72)
 Result of a full analysis of the system (security, scalability, memory, send speed, error
