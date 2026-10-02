@@ -108,6 +108,14 @@ type Config struct {
 	// CallSilenceTimeout is how many seconds a call with a stream may go without a sound
 	// from either side before it is hung up (CALL_SILENCE_TIMEOUT); zero never does.
 	CallSilenceTimeout int
+
+	// CallHistory keeps a record of every call in the database (CALL_HISTORY=true); off by
+	// default, the peer's number is personal data.
+	CallHistory bool
+	// CallHistoryRetentionDays is how long those records are kept (CALL_HISTORY_RETENTION_DAYS,
+	// default 90); zero keeps them for ever.
+	CallHistoryRetentionDays int
+
 	// CallStreamOrigins are the browser origins allowed to open the audio stream
 	// besides the server's own; clients that send no Origin (servers, scripts) always may.
 	CallStreamOrigins []string
@@ -506,6 +514,10 @@ func Load() *Config {
 		CallMaxDuration:      max(callMaxDuration, 0),
 		CallSilenceTimeout:   max(callSilenceTimeout, 0),
 		CallMediaStall:       callMediaStall(),
+
+		CallHistory:              strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.CALL_HISTORY)), "true"),
+		CallHistoryRetentionDays: callHistoryRetentionDays(),
+
 		CallMediaStallHangup: strings.EqualFold(strings.TrimSpace(os.Getenv(config_env.CALL_MEDIA_STALL_HANGUP)), "true"),
 		CallStreamOrigins:    callStreamOrigins,
 		CheckUserExists:      checkUserExists != "false", // Default true, set to false to disable
@@ -642,6 +654,16 @@ func callMediaStall() int {
 		return 0
 	case n <= 0:
 		return -1
+	}
+	return n
+}
+
+// callHistoryRetentionDays reads CALL_HISTORY_RETENTION_DAYS: unset, negative or not a
+// number is the default of 90 days, and 0 keeps the history for ever.
+func callHistoryRetentionDays() int {
+	n, err := strconv.Atoi(strings.TrimSpace(os.Getenv(config_env.CALL_HISTORY_RETENTION_DAYS)))
+	if err != nil || n < 0 {
+		return 90
 	}
 	return n
 }

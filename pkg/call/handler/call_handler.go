@@ -4,10 +4,12 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"strconv"
 	"time"
 
 	"github.com/evolution-foundation/evolution-go/pkg/apierror"
 	call_engine "github.com/evolution-foundation/evolution-go/pkg/call/engine"
+	call_history "github.com/evolution-foundation/evolution-go/pkg/call/history"
 	call_service "github.com/evolution-foundation/evolution-go/pkg/call/service"
 	call_stream "github.com/evolution-foundation/evolution-go/pkg/call/stream"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
@@ -23,6 +25,8 @@ type CallHandler interface {
 	StreamTicket(ctx *gin.Context)
 	DialCall(ctx *gin.Context)
 	VideoCall(ctx *gin.Context)
+	History(ctx *gin.Context)
+	DeleteHistory(ctx *gin.Context)
 }
 
 type callHandler struct {
@@ -88,11 +92,11 @@ func callFailure(ctx *gin.Context, err error) {
 	switch {
 	case errors.Is(err, call_engine.ErrCallNotFound):
 		status = http.StatusNotFound
-	case errors.Is(err, call_engine.ErrWrongState), errors.Is(err, call_service.ErrCallsUnavailable):
+	case errors.Is(err, call_engine.ErrWrongState), errors.Is(err, call_service.ErrCallsUnavailable), errors.Is(err, call_service.ErrHistoryDisabled):
 		status = http.StatusConflict
 	case errors.Is(err, call_stream.ErrTooManyTickets), errors.Is(err, call_engine.ErrTooManyCalls), errors.Is(err, call_engine.ErrDialRateLimited):
 		status = http.StatusTooManyRequests
-	case errors.Is(err, call_service.ErrInvalidNumber), errors.Is(err, call_engine.ErrInvalidVideoRequest), errors.Is(err, call_stream.ErrInvalidAudioFormat):
+	case errors.Is(err, call_service.ErrInvalidNumber), errors.Is(err, call_engine.ErrInvalidVideoRequest), errors.Is(err, call_stream.ErrInvalidAudioFormat), errors.Is(err, call_history.ErrInvalidQuery):
 		status = http.StatusBadRequest
 	case errors.Is(err, call_engine.ErrDialFailed):
 		status = http.StatusBadGateway
@@ -297,4 +301,77 @@ func NewCallHandler(
 	return &callHandler{
 		callService: callService,
 	}
+}
+
+// Call history
+// @Summary Call history
+// @Description The calls the call engine followed for this instance, newest first: who, when, how long it rang and talked and how it ended (outcome: answered, missed, rejected, cancelled, unanswered, busy, failed). No audio or content is kept. Needs CALL_HISTORY=true on the server (409 otherwise); records expire after CALL_HISTORY_RETENTION_DAYS (default 90). Page with the "next" cursor of the answer.
+// @Tags Call
+// @Produce json
+// @Param direction query string false "incoming or outgoing"
+// @Param outcome query string false "answered, missed, rejected, cancelled, unanswered, busy or failed"
+// @Param peer query string false "a JID or a phone number"
+// @Param limit query int false "page size, 1 to 200 (default 50)"
+// @Param cursor query string false "the next of the previous page"
+// @Success 200 {object} call_history.Page
+// @Failure 400 {object} gin.H "Invalid filter or cursor"
+// @Failure 409 {object} gin.H "The server keeps no call history"
+// @Router /call/history [get]
+func (g *callHandler) History(ctx *gin.Context) {
+	instance, ok := instanceOf(ctx)
+	if !ok {
+		return
+	}
+	q := call_history.Query{
+		Direction: ctx.Query("direction"),
+		Outcome:   ctx.Query("outcome"),
+		Peer:      ctx.Query("peer"),
+		Cursor:    ctx.Query("cursor"),
+	}
+	if raw := ctx.Query("limit"); raw != "" {
+		n, err := strconv.Atoi(raw)
+		if err != nil || n < 1 {
+			apierror.Fail(ctx, http.StatusBadRequest, "limit must be a number between 1 and 200")
+			return
+		}
+		q.Limit = n
+	}
+	page, err := g.callService.History(instance, q)
+	if err != nil {
+		callFailure(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, page)
+}
+
+// Delete call history
+// @Summary Erase the call history
+// @Description Erases the call history of this instance: all of it, or only what started before "before" (RFC 3339). It cannot be undone. Needs CALL_HISTORY=true on the server.
+// @Tags Call
+// @Produce json
+// @Param before query string false "erase only calls that started before this time (RFC 3339)"
+// @Success 200 {object} gin.H "deleted: how many records were erased"
+// @Failure 400 {object} gin.H "Invalid time"
+// @Failure 409 {object} gin.H "The server keeps no call history"
+// @Router /call/history [delete]
+func (g *callHandler) DeleteHistory(ctx *gin.Context) {
+	instance, ok := instanceOf(ctx)
+	if !ok {
+		return
+	}
+	var before time.Time
+	if raw := ctx.Query("before"); raw != "" {
+		t, err := time.Parse(time.RFC3339, raw)
+		if err != nil {
+			apierror.Fail(ctx, http.StatusBadRequest, "before must be a time in RFC 3339, like 2026-10-01T00:00:00Z")
+			return
+		}
+		before = t
+	}
+	deleted, err := g.callService.DeleteHistory(instance, before)
+	if err != nil {
+		callFailure(ctx, err)
+		return
+	}
+	ctx.JSON(http.StatusOK, gin.H{"deleted": deleted})
 }

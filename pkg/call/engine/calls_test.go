@@ -493,3 +493,19 @@ func TestAPanickingSubscriberDoesNotBreakTheCallLifecycle(t *testing.T) {
 		t.Fatal("the call did not finish because the subscriber panicked")
 	}
 }
+
+func TestACallTurnedAwayForBeingOverTheLimitIsRecordedAsBusy(t *testing.T) {
+	m, _ := newTestManager(Options{MaxConcurrent: 1})
+	var got []Record
+	m.SetOnFinished(func(r Record) { got = append(got, r) })
+	m.Track("inst", newFake("C1"), Incoming)
+
+	m.onIncoming("inst", newFake("C2"))
+
+	if len(got) != 1 {
+		t.Fatalf("%d records, want 1", len(got))
+	}
+	if r := got[0]; r.CallID != "C2" || r.Direction != Incoming || r.Outcome != OutcomeBusy || r.Reason != "rejected_busy" || !r.AnsweredAt.IsZero() {
+		t.Fatalf("record = %+v", r)
+	}
+}

@@ -3,7 +3,10 @@ package call_service
 import (
 	"context"
 	"errors"
+	"time"
+
 	call_engine "github.com/evolution-foundation/evolution-go/pkg/call/engine"
+	call_history "github.com/evolution-foundation/evolution-go/pkg/call/history"
 	call_stream "github.com/evolution-foundation/evolution-go/pkg/call/stream"
 	"github.com/evolution-foundation/evolution-go/pkg/safemap"
 	"github.com/evolution-foundation/evolution-go/pkg/utils"
@@ -30,6 +33,11 @@ type CallService interface {
 	IssueStreamTicket(instance *instance_model.Instance, callID string, opts call_stream.StreamOptions) (StreamTicket, error)
 	// VideoCall does one video action (start, accept, stop, enable, disable, orientation).
 	VideoCall(instance *instance_model.Instance, data *VideoCallStruct) (call_engine.Info, error)
+	// History lists the calls of the instance the engine has followed, newest first.
+	History(instance *instance_model.Instance, q call_history.Query) (call_history.Page, error)
+	// DeleteHistory erases the history of the instance (all of it, or what started before the
+	// given time) and returns how many records went.
+	DeleteHistory(instance *instance_model.Instance, before time.Time) (int64, error)
 	// DialCall places an outgoing call.
 	DialCall(ctx context.Context, data *DialCallStruct, instance *instance_model.Instance) (DialResult, error)
 }
@@ -63,6 +71,9 @@ type DialResult struct {
 	call_engine.Info
 	StreamTicket *StreamTicket `json:"streamTicket,omitempty"`
 }
+
+// ErrHistoryDisabled: the server does not keep a call history.
+var ErrHistoryDisabled = errors.New("call history is off: set CALL_HISTORY=true on the server")
 
 // ErrCallsUnavailable: the running client of the instance has no working call engine.
 var ErrCallsUnavailable = errors.New("calls are not active for this instance: turn on callsEnabled and reconnect it (instances that use a proxy cannot make calls)")
@@ -137,6 +148,7 @@ type callService struct {
 	whatsmeowService whatsmeow_service.WhatsmeowService
 	tickets          *call_stream.Tickets
 	loggerWrapper    *logger_wrapper.LoggerManager
+	history          call_history.Repository // nil: the server keeps no call history
 }
 
 type RejectCallStruct struct {
@@ -331,16 +343,33 @@ func (c *callService) RejectCall(data *RejectCallStruct, instance *instance_mode
 	return nil
 }
 
+// NewCallService builds the service. history is nil when the server keeps no call history.
 func NewCallService(
 	clientPointer *safemap.Map[*whatsmeow.Client],
 	whatsmeowService whatsmeow_service.WhatsmeowService,
 	tickets *call_stream.Tickets,
 	loggerWrapper *logger_wrapper.LoggerManager,
+	history call_history.Repository,
 ) CallService {
 	return &callService{
+		history:          history,
 		clientPointer:    clientPointer,
 		whatsmeowService: whatsmeowService,
 		tickets:          tickets,
 		loggerWrapper:    loggerWrapper,
 	}
+}
+
+func (c *callService) History(instance *instance_model.Instance, q call_history.Query) (call_history.Page, error) {
+	if c.history == nil {
+		return call_history.Page{}, ErrHistoryDisabled
+	}
+	return c.history.List(instance.Id, q)
+}
+
+func (c *callService) DeleteHistory(instance *instance_model.Instance, before time.Time) (int64, error) {
+	if c.history == nil {
+		return 0, ErrHistoryDisabled
+	}
+	return c.history.Delete(instance.Id, before)
 }

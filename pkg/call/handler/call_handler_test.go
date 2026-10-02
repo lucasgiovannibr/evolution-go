@@ -13,6 +13,7 @@ import (
 
 	call_engine "github.com/evolution-foundation/evolution-go/pkg/call/engine"
 	"github.com/evolution-foundation/evolution-go/pkg/call/engine/enginetest"
+	call_history "github.com/evolution-foundation/evolution-go/pkg/call/history"
 	call_service "github.com/evolution-foundation/evolution-go/pkg/call/service"
 	call_stream "github.com/evolution-foundation/evolution-go/pkg/call/stream"
 	instance_model "github.com/evolution-foundation/evolution-go/pkg/instance/model"
@@ -53,6 +54,13 @@ func newEnv(t *testing.T) *env { return newEnvWith(t, call_engine.Options{}) }
 
 func newEnvWith(t *testing.T, opts call_engine.Options) *env {
 	t.Helper()
+	return newEnvWithHistory(t, opts, nil)
+}
+
+// newEnvWithHistory is newEnvWith for a server that keeps a call history in history (nil:
+// it keeps none).
+func newEnvWithHistory(t *testing.T, opts call_engine.Options, history call_history.Repository) *env {
+	t.Helper()
 	gin.SetMode(gin.TestMode)
 
 	e := &env{t: t}
@@ -62,7 +70,7 @@ func newEnvWith(t *testing.T, opts call_engine.Options) *env {
 		t.Fatalf("engine state = %s (%s)", st.State, st.Error)
 	}
 	tickets := call_stream.NewTickets()
-	svc := call_service.NewCallService(nil, fakeWhatsmeow{engine: engine}, tickets, nil)
+	svc := call_service.NewCallService(nil, fakeWhatsmeow{engine: engine}, tickets, nil, history)
 	h := NewCallHandler(svc)
 
 	r := gin.New()
@@ -71,6 +79,8 @@ func newEnvWith(t *testing.T, opts call_engine.Options) *env {
 	})
 	g := r.Group("/call")
 	g.GET("/active", h.ActiveCalls)
+	g.GET("/history", h.History)
+	g.DELETE("/history", h.DeleteHistory)
 	g.GET("/:callId", h.GetCall)
 	g.POST("/answer", h.AnswerCall)
 	g.POST("/hangup", h.HangupCall)

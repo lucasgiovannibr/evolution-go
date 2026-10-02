@@ -20,10 +20,12 @@ import (
 	"github.com/gomessguii/logger"
 	"github.com/joho/godotenv"
 	"go.mau.fi/whatsmeow"
+	"go.mau.fi/whatsmeow/types"
 	"gorm.io/gorm"
 	_ "modernc.org/sqlite"
 
 	call_handler "github.com/evolution-foundation/evolution-go/pkg/call/handler"
+	call_history "github.com/evolution-foundation/evolution-go/pkg/call/history"
 	call_service "github.com/evolution-foundation/evolution-go/pkg/call/service"
 	call_stream "github.com/evolution-foundation/evolution-go/pkg/call/stream"
 	chat_handler "github.com/evolution-foundation/evolution-go/pkg/chat/handler"
@@ -203,7 +205,17 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 	chatService := chat_service.NewChatService(clientPointer, whatsmeowService, loggerWrapper)
 	groupService := group_service.NewGroupService(clientPointer, whatsmeowService, loggerWrapper)
 	callTickets := call_stream.NewTickets()
-	callService := call_service.NewCallService(clientPointer, whatsmeowService, callTickets, loggerWrapper)
+	// The call history is opt-in: without it the service gets no repository and answers 409.
+	var callHistoryRepo call_history.Repository
+	stopCallHistory := make(chan struct{})
+	if config.CallHistory {
+		callHistoryRepo = call_history.NewRepository(db)
+		recorder := call_history.NewRecorder(callHistoryRepo, callPeerPhone(clientPointer), globalLog{})
+		whatsmeowService.CallEngine().SetOnFinished(recorder.Handle)
+		call_history.Retain(callHistoryRepo, time.Duration(config.CallHistoryRetentionDays)*24*time.Hour, 24*time.Hour, globalLog{}, stopCallHistory)
+		logger.LogInfo("[CALL HISTORY] Keeping a record of every call, for %d days (0 = for ever)", config.CallHistoryRetentionDays)
+	}
+	callService := call_service.NewCallService(clientPointer, whatsmeowService, callTickets, loggerWrapper, callHistoryRepo)
 	communityService := community_service.NewCommunityService(clientPointer, whatsmeowService, loggerWrapper)
 	labelService := label_service.NewLabelService(clientPointer, whatsmeowService, labelRepository, loggerWrapper)
 	newsletterService := newsletter_service.NewNewsletterService(clientPointer, whatsmeowService, loggerWrapper)
@@ -302,6 +314,7 @@ func setupRouter(db *gorm.DB, authDB *sql.DB, sqliteDB *sql.DB, config *config.C
 
 	// What to do, in this order, when the process is told to stop (see main).
 	stop := func(ctx context.Context) {
+		close(stopCallHistory)
 		// 1. No client reconnects or restarts from here on, and every one is disconnected.
 		whatsmeowService.Shutdown(ctx)
 		// 2. What those clients (and the last handlers) produced reaches the database...
@@ -342,11 +355,18 @@ func firstSQLDB(dbs ...*sql.DB) *sql.DB {
 	return nil
 }
 
-func migrate(db *gorm.DB) {
+func migrate(db *gorm.DB, callHistory bool) {
 	err := db.AutoMigrate(&instance_model.Instance{}, &message_model.Message{}, &label_model.Label{})
 
 	if err != nil {
 		log.Fatal(err)
+	}
+
+	// The table of the call history only exists on a server that keeps one.
+	if callHistory {
+		if err := db.AutoMigrate(&call_history.Record{}); err != nil {
+			log.Fatal(err)
+		}
 	}
 
 	// message_id used to be unique on its own, which made two instances that receive the
@@ -463,7 +483,7 @@ func main() {
 		defer sqliteDB.Close()
 	}
 
-	migrate(db)
+	migrate(db, cfg.CallHistory)
 
 	// Initialize core DB + license runtime
 	core.SetDB(db)
@@ -558,4 +578,34 @@ func main() {
 	logger_wrapper.CloseAll()
 
 	logger.LogInfo("[SHUTDOWN] Server exited")
+}
+
+// globalLog is the process logger as the Logger the call history wants.
+type globalLog struct{}
+
+func (globalLog) LogInfo(format string, args ...interface{})  { logger.LogInfo(format, args...) }
+func (globalLog) LogError(format string, args ...interface{}) { logger.LogError(format, args...) }
+
+// callPeerPhone resolves the peer of a call to a phone number with the account's own
+// LID mapping. A peer that is already a phone JID needs no lookup; one the account has
+// never seen as a phone number stays empty.
+func callPeerPhone(clients *safemap.Map[*whatsmeow.Client]) call_history.PhoneResolver {
+	return func(instanceID, peer string) string {
+		if phone := call_history.PhoneOf(peer); phone != "" {
+			return phone
+		}
+		jid, err := types.ParseJID(peer)
+		if err != nil || jid.Server != types.HiddenUserServer {
+			return ""
+		}
+		client := clients.Get(instanceID)
+		if client == nil || client.Store == nil || client.Store.LIDs == nil {
+			return ""
+		}
+		pn, err := client.Store.LIDs.GetPNForLID(context.Background(), jid.ToNonAD())
+		if err != nil {
+			return ""
+		}
+		return call_history.PhoneOf(pn.ToNonAD().String())
+	}
 }

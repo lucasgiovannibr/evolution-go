@@ -250,6 +250,7 @@ func (m *Manager) onIncoming(instanceID string, c Call) {
 		_ = c.Reject()
 		m.metrics.callStarted(Incoming, c.IsVideo())
 		m.metrics.callEnded(Incoming, "rejected_busy", 0, false)
+		m.finishedUntracked(instanceID, c, "rejected_busy")
 		data := map[string]interface{}{
 			"callId": c.ID(), "peer": c.Peer().String(), "direction": string(Incoming), "video": c.IsVideo(),
 			"reason": "rejected_busy", "durationSeconds": 0,
@@ -294,6 +295,7 @@ func (m *Manager) finish(instanceID string, t *Tracked, libReason string) {
 			talk = m.now().Sub(readyAt)
 		}
 		m.metrics.callEnded(t.direction, reason, talk, !readyAt.IsZero())
+		m.finished(instanceID, t, reason)
 
 		data := t.eventData()
 		data["reason"] = reason
