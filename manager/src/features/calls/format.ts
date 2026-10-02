@@ -103,6 +103,27 @@ export function streamWsUrl(apiUrl: string, path: string): string {
   return url.toString();
 }
 
+/** What the other side's camera is doing, from the `state` of its `video_state` (null: nothing worth saying). */
+export function peerVideoLabel(state: string | undefined): string | null {
+  switch (state) {
+    case 'enabled':
+      return 'Câmera do outro lado ligada';
+    case 'disabled':
+    case 'stopped':
+      return 'Câmera do outro lado desligada';
+    case 'upgrade_request':
+      return 'O outro lado pede para passar a vídeo';
+    case 'upgrade_accepted':
+      return 'O outro lado aceitou o vídeo';
+    case 'upgrade_rejected':
+      return 'O outro lado recusou o vídeo';
+    case 'upgrade_cancelled':
+      return 'O outro lado desistiu do pedido de vídeo';
+    default:
+      return null;
+  }
+}
+
 /** What to tell the person when the browser refuses the microphone. */
 export function micErrorMessage(err: unknown): string {
   if (typeof window !== 'undefined' && !window.isSecureContext) {

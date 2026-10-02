@@ -10,7 +10,7 @@ import {
   pcm16ToFloat,
   rms,
 } from './audio';
-import { elapsedSeconds, formatClock, levelPercent, peerLabel, reasonLabel, streamWsUrl } from './format';
+import { elapsedSeconds, formatClock, levelPercent, peerLabel, peerVideoLabel, reasonLabel, streamWsUrl } from './format';
 
 const tone = (freq: number, rate: number, seconds: number, peak = 0.5) =>
   Float32Array.from({ length: Math.round(rate * seconds) }, (_, i) => peak * Math.sin((2 * Math.PI * freq * i) / rate));
@@ -110,13 +110,23 @@ describe('binary frames', () => {
     expect(f).toEqual({ kind: 'audio', seq: 7, timestamp: 5311, pcm: Int16Array.from([100, -100, 32767]) });
   });
 
-  it('reads the header of a video frame without taking the picture as audio', () => {
-    const buf = new ArrayBuffer(12);
+  it('reads a video frame: the flags, the header and the picture after it', () => {
+    const buf = new ArrayBuffer(14);
     const v = new DataView(buf);
     v.setUint8(0, 0x02);
+    v.setUint8(1, 0b0000_0111); // keyframe, three quarter turns
     v.setUint32(2, 3);
     v.setUint32(6, 900);
-    expect(parseServerFrame(buf)).toEqual({ kind: 'video', seq: 3, timestamp: 900 });
+    new Uint8Array(buf, 10).set([0, 0, 0, 1]);
+    const f = parseServerFrame(buf);
+    expect(f).toMatchObject({ kind: 'video', seq: 3, timestamp: 900, keyframe: true, orientation: 3 });
+    expect(f?.kind === 'video' && [...f.data]).toEqual([0, 0, 0, 1]);
+  });
+
+  it('reads a frame that is not a keyframe and is upright', () => {
+    const buf = new ArrayBuffer(11);
+    new DataView(buf).setUint8(0, 0x02);
+    expect(parseServerFrame(buf)).toMatchObject({ kind: 'video', keyframe: false, orientation: 0 });
   });
 
   it('refuses what is not a frame', () => {
@@ -205,6 +215,14 @@ describe('display helpers', () => {
     expect(levelPercent(0.05)).toBeGreaterThan(levelPercent(0.01));
     expect(levelPercent(0.05)).toBeGreaterThan(40);
     expect(levelPercent(0.05)).toBeLessThan(90);
+  });
+
+  it('says what the other side\'s camera is doing', () => {
+    expect(peerVideoLabel('enabled')).toBe('Câmera do outro lado ligada');
+    expect(peerVideoLabel('disabled')).toBe(peerVideoLabel('stopped'));
+    expect(peerVideoLabel('upgrade_request')).toContain('pede');
+    expect(peerVideoLabel('unknown')).toBeNull();
+    expect(peerVideoLabel(undefined)).toBeNull();
   });
 
   it('says why a call ended in words', () => {

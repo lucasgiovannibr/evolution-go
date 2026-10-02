@@ -1,8 +1,18 @@
 import { Chunker, Downsampler, PCM_RATE, PlayoutClock, audioFrame, floatToPcm16, parseServerFrame, pcm16ToFloat, rms } from './audio';
 import captureWorkletUrl from './capture-worklet.ts?worker&url';
 import { micErrorMessage } from './format';
+import { canDecodeVideo, VideoReceiver, type VideoInfo } from './video';
 
 export type PhoneState = 'idle' | 'ready' | 'connecting' | 'live' | 'ended' | 'error';
+
+/** What the other side reported about its video (the stream's `video_state`). */
+export interface PeerVideoState {
+  /** enabled, disabled, stopped, upgrade_request, upgrade_accepted, upgrade_rejected, upgrade_cancelled or unknown. */
+  state: string;
+  active: boolean;
+  /** The other side asks to turn the call into a video call. */
+  upgrade: boolean;
+}
 
 export interface PhoneEvents {
   /** The phone changed state; `detail` says why when it ended or failed. */
@@ -11,6 +21,12 @@ export interface PhoneEvents {
   onLevels(mic: number, peer: number): void;
   /** The peer began or stopped talking (the stream's speech events). */
   onPeerSpeaking(speaking: boolean): void;
+  /** The stream started: whether the call has video. */
+  onCall?(hasVideo: boolean): void;
+  /** Pictures from the peer started or stopped arriving, or changed size. */
+  onVideoInfo?(info: VideoInfo): void;
+  /** The peer's camera or an upgrade request changed. */
+  onPeerVideo?(state: PeerVideoState): void;
 }
 
 /** 20 ms of audio per frame sent to the peer: small enough for low delay, large enough not to flood the socket. */
@@ -38,13 +54,22 @@ export class Softphone {
   private downsampler?: Downsampler;
   private readonly chunker = new Chunker(SEND_SAMPLES);
   private readonly clock = new PlayoutClock();
+  /** Decodes the peer's video; null in a browser that cannot (the call then goes on with audio only). */
+  private readonly receiver: VideoReceiver | null;
   private muted = false;
   private micLevel = 0;
   private peerLevel = 0;
   private levelTimer?: ReturnType<typeof setInterval>;
   private opened?: (ok: boolean) => void;
 
-  constructor(private readonly events: PhoneEvents) {}
+  constructor(private readonly events: PhoneEvents) {
+    this.receiver = canDecodeVideo() ? new VideoReceiver((info) => events.onVideoInfo?.(info)) : null;
+  }
+
+  /** The canvas the peer's video is drawn on; null when the page stops showing it. */
+  attachCanvas(canvas: HTMLCanvasElement | null) {
+    this.receiver?.attach(canvas);
+  }
 
   private set(state: PhoneState, detail?: string) {
     this.state = state;
@@ -155,9 +180,20 @@ export class Softphone {
     if (typeof data !== 'string') {
       const frame = parseServerFrame(data);
       if (frame?.kind === 'audio') this.play(frame.pcm, frame.timestamp);
+      else if (frame?.kind === 'video') this.receiver?.push(frame.data, frame.keyframe, frame.timestamp, frame.orientation);
       return;
     }
-    let msg: { event?: string; reason?: string; code?: string; message?: string; binary?: boolean };
+    let msg: {
+      event?: string;
+      reason?: string;
+      code?: string;
+      message?: string;
+      binary?: boolean;
+      video?: boolean;
+      state?: string;
+      active?: boolean;
+      upgrade?: boolean;
+    };
     try {
       msg = JSON.parse(data);
     } catch {
@@ -167,9 +203,13 @@ export class Softphone {
       case 'start':
         if (this.state === 'connecting') {
           this.set('live');
+          this.events.onCall?.(!!msg.video);
           this.opened?.(true);
           this.opened = undefined;
         }
+        break;
+      case 'video_state':
+        this.events.onPeerVideo?.({ state: msg.state ?? 'unknown', active: !!msg.active, upgrade: !!msg.upgrade });
         break;
       case 'speech_start':
         this.events.onPeerSpeaking(true);
@@ -222,6 +262,7 @@ export class Softphone {
     } catch {
       /* already closed */
     }
+    this.receiver?.close();
     this.node?.disconnect();
     this.mic?.getTracks().forEach((t) => t.stop());
     this.ctx?.close().catch(() => undefined);

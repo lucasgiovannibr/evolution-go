@@ -4,9 +4,23 @@ import { answerCall, dialCall, getStreamTicket, hangupCall, type CallInfo } from
 import type { Instance } from '@/api/types';
 import { errMsg } from '@/hooks/use-instances';
 import { useAuth } from '@/stores/auth';
-import { STREAM_OPTIONS } from './audio';
+import { streamOptions } from './audio';
 import { streamWsUrl } from './format';
-import { Softphone, type PhoneState } from './softphone';
+import { Softphone, type PeerVideoState, type PhoneState } from './softphone';
+import { canDecodeVideo } from './video';
+
+export interface PhoneVideo {
+  /** This browser can decode video (WebCodecs); without it the call goes on with audio only. */
+  supported: boolean;
+  /** The call has video (a video call, or one that became one). */
+  hasVideo: boolean;
+  /** Pictures from the other side are arriving. */
+  active: boolean;
+  width: number;
+  height: number;
+  /** The last thing the other side reported about its video. */
+  peer: PeerVideoState | null;
+}
 
 export interface PhoneSession {
   callId: string | null;
@@ -18,9 +32,11 @@ export interface PhoneSession {
   peerSpeaking: boolean;
   /** When the audio went live, for the timer. */
   liveAt: number | null;
+  video: PhoneVideo;
 }
 
-const idle: PhoneSession = { callId: null, state: 'idle', muted: false, mic: 0, peer: 0, peerSpeaking: false, liveAt: null };
+const noVideo = (): PhoneVideo => ({ supported: canDecodeVideo(), hasVideo: false, active: false, width: 0, height: 0, peer: null });
+const idle = (): PhoneSession => ({ callId: null, state: 'idle', muted: false, mic: 0, peer: 0, peerSpeaking: false, liveAt: null, video: noVideo() });
 
 /**
  * The browser phone of one instance: one call at a time, with the audio of the page. It is how
@@ -46,9 +62,15 @@ export function usePhone(instance: Instance, onChange: () => void) {
         },
         onLevels: (mic, peer) => setSession((s) => (s && phone.current === p ? { ...s, mic, peer } : s)),
         onPeerSpeaking: (peerSpeaking) => setSession((s) => (s && phone.current === p ? { ...s, peerSpeaking } : s)),
+        onCall: (hasVideo) => setSession((s) => (s && phone.current === p ? { ...s, video: { ...s.video, hasVideo: s.video.hasVideo || hasVideo } } : s)),
+        onVideoInfo: (info) =>
+          setSession((s) =>
+            s && phone.current === p ? { ...s, video: { ...s.video, hasVideo: s.video.hasVideo || info.active, active: info.active, width: info.width, height: info.height } } : s,
+          ),
+        onPeerVideo: (peerVideo) => setSession((s) => (s && phone.current === p ? { ...s, video: { ...s.video, peer: peerVideo } } : s)),
       });
       phone.current = p;
-      setSession({ ...idle, callId });
+      setSession({ ...idle(), callId });
       return p;
     },
     [onChange],
@@ -80,7 +102,7 @@ export function usePhone(instance: Instance, onChange: () => void) {
         const p = open(call.callId);
         if (!(await p.prepare())) return;
         try {
-          const ticket = await getStreamTicket(instance.token, call.callId, STREAM_OPTIONS);
+          const ticket = await getStreamTicket(instance.token, call.callId, streamOptions(canDecodeVideo()));
           // the stream is opened before answering: the audio of a call that is answered with none is lost
           if (!(await p.connect(streamWsUrl(apiUrl, ticket.path)))) return;
           if (call.direction === 'incoming' && call.phase === 'ringing') await answerCall(instance.token, call.callId);
@@ -100,11 +122,12 @@ export function usePhone(instance: Instance, onChange: () => void) {
         const p = open(null);
         if (!(await p.prepare())) return;
         try {
-          const result = await dialCall(instance.token, number, STREAM_OPTIONS);
-          patch({ callId: result.callId });
-          if (!result.streamTicket) throw new Error('O servidor não devolveu o bilhete do áudio.');
-          if (!(await p.connect(streamWsUrl(apiUrl, result.streamTicket.path)))) {
-            await hangupCall(instance.token, result.callId).catch(() => undefined);
+          const call = await dialCall(instance.token, number);
+          patch({ callId: call.callId });
+          // the audio is connected while the phone rings; what is queued meanwhile plays when it is answered
+          const ticket = await getStreamTicket(instance.token, call.callId, streamOptions(canDecodeVideo()));
+          if (!(await p.connect(streamWsUrl(apiUrl, ticket.path)))) {
+            await hangupCall(instance.token, call.callId).catch(() => undefined);
             return;
           }
           onChange();
@@ -131,11 +154,14 @@ export function usePhone(instance: Instance, onChange: () => void) {
     patch({ muted: p.isMuted });
   }, [patch]);
 
+  /** The canvas the other side's video is drawn on (null when it is no longer on the page). */
+  const attachCanvas = useCallback((canvas: HTMLCanvasElement | null) => phone.current?.attachCanvas(canvas), []);
+
   const dismiss = useCallback(() => {
     phone.current?.stop();
     phone.current = null;
     setSession(null);
   }, []);
 
-  return { session, join, dial, hangup, toggleMute, dismiss };
+  return { session, join, dial, hangup, toggleMute, dismiss, attachCanvas };
 }

@@ -22,7 +22,7 @@ export function TabCalls() {
     <div className="space-y-4">
       <EngineCard instance={instance} calls={calls.data} />
 
-      {session ? <PhonePanel session={session} onHangup={() => void phone.hangup()} onToggleMute={phone.toggleMute} onDismiss={phone.dismiss} /> : null}
+      {session ? <PhonePanel session={session} onHangup={() => void phone.hangup()} onToggleMute={phone.toggleMute} onDismiss={phone.dismiss} onCanvas={phone.attachCanvas} /> : null}
 
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
         <LiveCalls

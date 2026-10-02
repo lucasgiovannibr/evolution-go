@@ -13,6 +13,9 @@ export const FRAME_AUDIO = 0x01;
 /** What the panel asks the stream for: PCM 16 kHz, binary frames, and speech events. */
 export const STREAM_OPTIONS = { encoding: 'audio/pcm-s16le', sampleRate: PCM_RATE, binary: true, speechEvents: true } as const;
 
+/** The same, with or without the video of the call (only when this browser can decode it). */
+export const streamOptions = (video: boolean) => ({ ...STREAM_OPTIONS, video });
+
 export function floatToPcm16(input: Float32Array): Int16Array {
   const out = new Int16Array(input.length);
   for (let i = 0; i < input.length; i++) {
@@ -106,12 +109,13 @@ export function audioFrame(pcm: Int16Array): ArrayBuffer {
 
 export type ServerFrame =
   | { kind: 'audio'; seq: number; timestamp: number; pcm: Int16Array }
-  | { kind: 'video'; seq: number; timestamp: number };
+  | { kind: 'video'; seq: number; timestamp: number; keyframe: boolean; orientation: number; data: Uint8Array };
 
 /**
  * Reads a binary frame from the server (all integers big-endian):
- * audio is 0x01, seq u32, timestamp u32 and the PCM; video 0x02, flags u8, seq u32, timestamp u32 and the picture.
- * Anything else, or a frame too short to be one, is null.
+ * audio is 0x01, seq u32, timestamp u32 and the PCM; video 0x02, flags u8, seq u32, timestamp u32 and the
+ * H.264 access unit. The flags carry the keyframe (bit 0) and the quarter turns clockwise that make the
+ * picture upright (bits 1-2). Anything else, or a frame too short to be one, is null.
  */
 export function parseServerFrame(buf: ArrayBuffer): ServerFrame | null {
   const view = new DataView(buf);
@@ -124,7 +128,15 @@ export function parseServerFrame(buf: ArrayBuffer): ServerFrame | null {
     return { kind: 'audio', seq: view.getUint32(1), timestamp: view.getUint32(5), pcm };
   }
   if (type === 0x02 && view.byteLength >= 10) {
-    return { kind: 'video', seq: view.getUint32(2), timestamp: view.getUint32(6) };
+    const flags = view.getUint8(1);
+    return {
+      kind: 'video',
+      seq: view.getUint32(2),
+      timestamp: view.getUint32(6),
+      keyframe: (flags & 1) === 1,
+      orientation: (flags >> 1) & 3,
+      data: new Uint8Array(buf, 10),
+    };
   }
   return null;
 }

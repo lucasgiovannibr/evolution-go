@@ -53,6 +53,8 @@ export interface StreamOptions {
   sampleRate: number;
   binary: boolean;
   speechEvents: boolean;
+  /** The stream also carries the call's video (H.264 access units). */
+  video?: boolean;
 }
 
 export interface StreamTicket {
@@ -69,13 +71,9 @@ export async function getStreamTicket(token: string, callId: string, options: St
   return api<StreamTicket>('/call/stream-ticket', { method: 'POST', apikey: token, body: { callId, ...options } });
 }
 
-export interface DialResult extends CallInfo {
-  streamTicket?: StreamTicket;
-}
-
-/** Places a call. With the options of a stream the answer carries the ticket, so the audio can be connected before the phone is picked up. */
-export async function dialCall(token: string, number: string, options: StreamOptions): Promise<DialResult> {
-  return api<DialResult>('/call/dial', { method: 'POST', apikey: token, body: { number, stream: true, ...options } });
+/** Places a call (a video call when `video` is true). The audio is connected afterwards with a stream ticket. */
+export async function dialCall(token: string, number: string, video = false): Promise<CallInfo> {
+  return api<CallInfo>('/call/dial', { method: 'POST', apikey: token, body: { number, video } });
 }
 
 export type CallOutcome = 'answered' | 'missed' | 'rejected' | 'cancelled' | 'unanswered' | 'busy' | 'failed';
