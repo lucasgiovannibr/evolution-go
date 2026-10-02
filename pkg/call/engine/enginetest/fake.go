@@ -77,6 +77,17 @@ func (f *Fake) Answer() error {
 	return nil
 }
 
+// Ready makes the media come up, as the library announces with OnReady.
+func (f *Fake) Ready() {
+	f.mu.Lock()
+	f.phase = call_engine.PhaseActive
+	fn := f.onReady
+	f.mu.Unlock()
+	if fn != nil {
+		fn()
+	}
+}
+
 func (f *Fake) Reject() error { f.End("rejected"); return nil }
 func (f *Fake) Hangup() error { f.End("hangup"); return nil }
 

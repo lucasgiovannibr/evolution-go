@@ -295,6 +295,13 @@ type Options struct {
 	StreamGrace time.Duration
 	// DialsPerMinute is how many calls an instance may place per minute.
 	DialsPerMinute int
+	// MediaStall is how long an active call with a stream may receive no audio from the
+	// peer before it is reported (event CallMediaStalled). Zero takes DefaultMediaStall,
+	// a negative value turns the check off.
+	MediaStall time.Duration
+	// MediaStallHangup also hangs the call up (reason "media_stalled") when it stalls.
+	// Off by default: a muted peer may send nothing at all.
+	MediaStallHangup bool
 	// Dial replaces placing calls through the library (tests).
 	Dial   DialFunc
 	Notify Notifier
@@ -313,6 +320,8 @@ type Manager struct {
 	dialMu sync.Mutex
 	dials  map[string][]time.Time // instance id -> when it placed calls, last minute
 	now    func() time.Time
+
+	metrics *callMetrics
 }
 
 func NewManager(opts Options) *Manager {
@@ -328,12 +337,16 @@ func NewManager(opts Options) *Manager {
 	if opts.DialsPerMinute <= 0 {
 		opts.DialsPerMinute = DefaultDialsPerMinute
 	}
+	if opts.MediaStall == 0 {
+		opts.MediaStall = DefaultMediaStall
+	}
 	return &Manager{
 		opts:     opts,
 		runtimes: make(map[string]*runtime),
 		calls:    make(map[string]map[string]*Tracked),
 		dials:    make(map[string][]time.Time),
 		now:      time.Now,
+		metrics:  newCallMetrics(),
 	}
 }
 
