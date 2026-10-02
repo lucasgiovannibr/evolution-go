@@ -224,7 +224,7 @@ def is_keyframe(au):
 async def main(args):
     global STREAM_ENCODING, STREAM_RATE
     STREAM_ENCODING, STREAM_RATE = FORMATS[args.format]
-    audio = {"encoding": STREAM_ENCODING, "sampleRate": STREAM_RATE, "binary": args.binary}
+    audio = {"encoding": STREAM_ENCODING, "sampleRate": STREAM_RATE, "binary": args.binary, "speechEvents": args.speech}
     outgoing = bool(args.dial)
     want_video = args.video or bool(args.video_in)
     if outgoing:
@@ -342,6 +342,9 @@ async def main(args):
                         keyframes += 1
                         if keyframes == 1:
                             print(f"first video keyframe (orientation {msg.get('orientation')})")
+                elif event in ("speech_start", "speech_end"):
+                    extra = f" (lasted {msg.get('durationMs')} ms)" if event == "speech_end" else ""
+                    print(f"[{time.time()-t0:6.1f}s] {event} at stream time {msg.get('timestamp')} ms{extra}")
                 elif event == "mark":
                     waited = time.time() - marks_sent.get(msg.get("name"), time.time())
                     print(f"[{time.time()-t0:6.1f}s] mark {msg.get('name')!r} came back {waited:.1f}s after it was sent"
@@ -395,6 +398,7 @@ if __name__ == "__main__":
     p.add_argument("--record", help="WAV file for the caller's audio (default call-<id>.wav)")
     p.add_argument("--format", choices=sorted(FORMATS), default="pcm16", help="audio format of the stream: PCM at 16 (default), 8 or 24 kHz, or G.711 mu-law/A-law at 8 kHz; the WAV file keeps that rate")
     p.add_argument("--binary", action="store_true", help="carry audio and video as binary WebSocket frames instead of base64 JSON")
+    p.add_argument("--speech", action="store_true", help="ask the stream to report when the peer begins and stops talking (speech_start / speech_end)")
     p.add_argument("--echo", action="store_true", help="send the caller's audio back")
     p.add_argument("--tone", type=float, default=0, metavar="SECONDS", help="play a 440 Hz tone, then send a mark")
     p.add_argument("--tone-burst", action="store_true", help="queue the whole tone at once instead of in real time: the mark then comes back when the tone has been played (up to 30 s)")

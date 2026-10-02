@@ -61,6 +61,8 @@ type Config struct {
 //	                  "orientation" is the device's as the peer reports it and does not follow
 //	                  the camera in use
 //	{"event":"keyframe_request"}                                                        the next video you send must be an IDR
+//	{"event":"speech_start", "timestamp":ms}                                            the peer began to talk (streams that asked for speechEvents)
+//	{"event":"speech_end", "timestamp":ms, "durationMs":N}                              the peer stopped talking; "timestamp" is the last moment of speech
 //	{"event":"mark", "name"}                                                            the audio you sent before that mark has been handed to the call
 //	{"event":"error", "code", "message"}
 //	{"event":"stop",  "reason"}                                                         the call ended
@@ -87,6 +89,16 @@ type Config struct {
 // silent or muted sends only two or three frames a second, so a recording must place each
 // frame by its timestamp and fill the gaps with silence, not append them.
 //
+// Speech events. A ticket with "speechEvents": true makes the stream say when the peer
+// begins and stops talking, so a client that answers by voice can tell when to stop
+// (send "clear") and when to reply without running a detector of its own. It is an energy
+// detector that follows the noise of the peer's room: speech starts after about 120 ms
+// of voice, and ends 600 ms after the last of it ("timestamp" is that last moment, in the
+// same milliseconds as the media frames). It is told in the order of the audio, and a call
+// that ends while the peer talks gets its speech_end before the stop. It is not a speech
+// recogniser: a steady noise louder than the room was when the call began counts as speech
+// until it stops.
+//
 // Binary frames. A ticket with "binary": true moves the audio and the video, the two
 // things that flow all the time, out of base64 JSON and into binary WebSocket frames: a
 // third smaller and nothing to encode or decode. Everything else stays JSON text, and the
@@ -107,30 +119,32 @@ type Config struct {
 // a keyframe_request arrives. Video is only delivered on streams whose ticket asked for
 // it; on the others "video" messages are ignored with an error.
 type message struct {
-	Event       string  `json:"event"`
-	CallID      string  `json:"callId,omitempty"`
-	Track       string  `json:"track,omitempty"`
-	Seq         uint64  `json:"seq,omitempty"`
-	Payload     string  `json:"payload,omitempty"`
-	SampleRate  int     `json:"sampleRate,omitempty"`
-	Channels    int     `json:"channels,omitempty"`
-	Encoding    string  `json:"encoding,omitempty"`
-	FrameMs     int     `json:"frameMs,omitempty"`
-	Direction   string  `json:"direction,omitempty"`
-	Video       *bool   `json:"video,omitempty"`
-	VideoStream *bool   `json:"videoStream,omitempty"`
-	Keyframe    *bool   `json:"keyframe,omitempty"`
-	Active      *bool   `json:"active,omitempty"`
-	Upgrade     *bool   `json:"upgrade,omitempty"`
-	Orientation *int    `json:"orientation,omitempty"`
-	State       string  `json:"state,omitempty"`
-	StateCode   *int    `json:"stateCode,omitempty"`
-	Reason      string  `json:"reason,omitempty"`
-	Name        string  `json:"name,omitempty"`
-	Timestamp   *uint32 `json:"timestamp,omitempty"`
-	Binary      *bool   `json:"binary,omitempty"`
-	Code        string  `json:"code,omitempty"`
-	Message     string  `json:"message,omitempty"`
+	Event        string  `json:"event"`
+	CallID       string  `json:"callId,omitempty"`
+	Track        string  `json:"track,omitempty"`
+	Seq          uint64  `json:"seq,omitempty"`
+	Payload      string  `json:"payload,omitempty"`
+	SampleRate   int     `json:"sampleRate,omitempty"`
+	Channels     int     `json:"channels,omitempty"`
+	Encoding     string  `json:"encoding,omitempty"`
+	FrameMs      int     `json:"frameMs,omitempty"`
+	Direction    string  `json:"direction,omitempty"`
+	Video        *bool   `json:"video,omitempty"`
+	VideoStream  *bool   `json:"videoStream,omitempty"`
+	Keyframe     *bool   `json:"keyframe,omitempty"`
+	Active       *bool   `json:"active,omitempty"`
+	Upgrade      *bool   `json:"upgrade,omitempty"`
+	Orientation  *int    `json:"orientation,omitempty"`
+	State        string  `json:"state,omitempty"`
+	StateCode    *int    `json:"stateCode,omitempty"`
+	Reason       string  `json:"reason,omitempty"`
+	Name         string  `json:"name,omitempty"`
+	Timestamp    *uint32 `json:"timestamp,omitempty"`
+	DurationMs   *int    `json:"durationMs,omitempty"`
+	SpeechEvents *bool   `json:"speechEvents,omitempty"`
+	Binary       *bool   `json:"binary,omitempty"`
+	Code         string  `json:"code,omitempty"`
+	Message      string  `json:"message,omitempty"`
 }
 
 type handler struct {
@@ -189,7 +203,7 @@ func (h *handler) serve(c *gin.Context) {
 	if err != nil {
 		return // Upgrade already answered
 	}
-	(&session{engine: h.engine, conn: conn, instanceID: instanceID, callID: callID, video: opts.Video, format: opts.Format, binary: opts.Binary}).run()
+	(&session{engine: h.engine, conn: conn, instanceID: instanceID, callID: callID, video: opts.Video, format: opts.Format, binary: opts.Binary, speech: opts.Speech}).run()
 }
 
 // session is one open socket attached to one call.
@@ -201,6 +215,8 @@ type session struct {
 	video      bool // the ticket asked for video
 	format     AudioFormat
 	binary     bool       // audio and video travel as binary frames
+	speech     bool       // the ticket asked for speech events
+	vad        *vad       // nil unless speech
 	started    time.Time  // timestamps count from here
 	conv       *converter // nil for the default format: the call's audio goes through as it is
 
@@ -284,6 +300,9 @@ func (s *session) run() {
 	s.ctrl = make(chan message, controlQueue)
 	s.bridge = newBridge(&s.stats)
 	s.started = time.Now()
+	if s.speech {
+		s.vad = newVAD()
+	}
 	if !s.format.isDefault() {
 		s.conv = newConverter(s.format)
 	}
@@ -320,7 +339,7 @@ func (s *session) run() {
 		Event: "start", CallID: s.callID,
 		SampleRate: s.format.normalized().SampleRate, Channels: 1, Encoding: s.format.normalized().Encoding,
 		FrameMs:   call_engine.FrameSamples * 1000 / call_engine.SampleRate,
-		Direction: string(info.Direction), Video: &video, VideoStream: &videoStream, Binary: &s.binary,
+		Direction: string(info.Direction), Video: &video, VideoStream: &videoStream, Binary: &s.binary, SpeechEvents: &s.speech,
 	}); err != nil {
 		return
 	}
@@ -368,6 +387,19 @@ func (s *session) sendFrame(seq *uint64, af audioFrame) error {
 		s.stats.ToClient.Add(1)
 	}
 	return err
+}
+
+// sendSpeech tells the client that the peer began or stopped talking; nil is nothing.
+func (s *session) sendSpeech(ev *speechEvent) error {
+	if ev == nil {
+		return nil
+	}
+	ts := s.stamp(ev.at)
+	if ev.start {
+		return s.send(message{Event: "speech_start", Timestamp: &ts})
+	}
+	ms := int(ev.length.Milliseconds())
+	return s.send(message{Event: "speech_end", Timestamp: &ts, DurationMs: &ms})
 }
 
 // sendMarks tells the client which of its marks have been played.
@@ -421,6 +453,14 @@ func (s *session) writeLoop() {
 		video = s.vin.frames
 	}
 
+	// a nil channel never becomes ready: streams without speech events have no tick
+	var speechTicks <-chan time.Time
+	if s.vad != nil {
+		t := time.NewTicker(speechTick)
+		defer t.Stop()
+		speechTicks = t.C
+	}
+
 	var seq, videoSeq uint64
 	var warnedLag bool
 	for {
@@ -430,12 +470,24 @@ func (s *session) writeLoop() {
 				s.conn.Close()
 				return
 			}
+			if s.vad != nil {
+				if err := s.sendSpeech(s.vad.Frame(frame.at, frame.samples)); err != nil {
+					s.conn.Close()
+					return
+				}
+			}
 			// Said once, when the client is reading again: the writer is the only place
 			// that knows it was behind.
 			if !warnedLag && s.stats.DroppedToClient.Load() > 0 {
 				warnedLag = true
 				_ = s.send(message{Event: "error", Code: "inbound_overflow",
 					Message: "the peer's audio arrived faster than it was read; the oldest of it was dropped (the queue holds under a second)"})
+			}
+
+		case <-speechTicks:
+			if err := s.sendSpeech(s.vad.Tick(time.Now())); err != nil {
+				s.conn.Close()
+				return
 			}
 
 		case <-s.bridge.markReady:
@@ -478,6 +530,9 @@ func (s *session) writeLoop() {
 				}
 			}
 			_ = s.sendMarks()
+			if s.vad != nil {
+				_ = s.sendSpeech(s.vad.Close())
+			}
 			_ = s.send(message{Event: "stop", Reason: s.call.Reason()})
 			s.closeWith(websocket.CloseNormalClosure, "call ended")
 			s.conn.Close() // ends readLoop
