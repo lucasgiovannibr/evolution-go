@@ -59,7 +59,11 @@ function VideoStage({ video, onCanvas }: { video: PhoneVideo; onCanvas: (el: HTM
       </div>
       <p className="flex flex-wrap items-center gap-2 text-xs text-muted">
         {video.active ? <Badge tone="ok" dot>Recebendo vídeo · {video.width}×{video.height}</Badge> : null}
-        {video.camera ? <Badge tone="brand" icon={<Video />}>Sua câmera está no ar</Badge> : null}
+        {video.camera ? (
+          <Badge tone={video.sent > 0 ? 'brand' : 'warn'} icon={<Video />}>
+            {video.sent > 0 ? `Sua câmera está no ar · ${video.sent} quadros enviados` : 'Câmera ligada, ainda sem enviar (esperando a chamada aceitar vídeo)'}
+          </Badge>
+        ) : null}
         {peer ? <span>{peer}</span> : null}
       </p>
     </div>
@@ -136,7 +140,7 @@ export function PhonePanel({ session, onHangup, onToggleMute, onDismiss, onCanva
                 {session.video.canSend ? 'Ao aceitar, a sua câmera também é ligada.' : 'Este navegador só mostra o vídeo dele: não envia a sua câmera.'}
               </Alert>
             ) : null}
-            {session.video.cameraError ? <Alert tone="warn" title="A câmera não foi ligada">{session.video.cameraError}</Alert> : null}
+            {session.video.cameraError ? <Alert tone="warn" title="Problema com o vídeo">{session.video.cameraError}</Alert> : null}
             {session.video.supported && (session.video.hasVideo || session.video.camera) ? <VideoStage video={session.video} onCanvas={onCanvas} /> : null}
             <div className="space-y-2.5">
               <LevelBar label={session.muted ? 'Você (mudo)' : 'Você'} icon={session.muted ? <MicOff /> : <Mic />} level={session.muted ? 0 : session.mic} />

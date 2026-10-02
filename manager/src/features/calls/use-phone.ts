@@ -30,6 +30,8 @@ export interface PhoneVideo {
   preview: MediaStream | null;
   /** Why the camera could not be used, when it could not. */
   cameraError: string | null;
+  /** Pictures of our camera put on the wire so far. */
+  sent: number;
 }
 
 export interface PhoneSession {
@@ -56,6 +58,7 @@ const noVideo = (): PhoneVideo => ({
   camera: false,
   preview: null,
   cameraError: null,
+  sent: 0,
 });
 const idle = (): PhoneSession => ({ callId: null, state: 'idle', muted: false, mic: 0, peer: 0, peerSpeaking: false, liveAt: null, video: noVideo() });
 
@@ -99,6 +102,7 @@ export function usePhone(instance: Instance, onChange: () => void) {
         onCamera: (camera, preview) =>
           setSession((s) => (mine(s) ? { ...s, video: { ...s.video, camera, preview, cameraError: camera ? null : s.video.cameraError } } : s)),
         onCameraError: (cameraError) => setSession((s) => (mine(s) ? { ...s, video: { ...s.video, cameraError } } : s)),
+        onVideoSent: (sent) => setSession((s) => (mine(s) ? { ...s, video: { ...s.video, sent } } : s)),
       });
       phone.current = p;
       setSession({ ...idle(), callId });
@@ -133,8 +137,13 @@ export function usePhone(instance: Instance, onChange: () => void) {
         const p = open(call.callId);
         if (!(await p.prepare())) return;
         try {
-          // a video call is answered with the camera on; if it cannot be, the call goes on receiving
-          if (call.video && canEncodeVideo()) await p.startCamera();
+          // a video call is answered with the camera on; if it cannot be, the call goes on receiving.
+          // The list of calls already says it is a video call: do not wait for the stream to say so.
+          if (call.video) {
+            p.setVideoReady(true);
+            patchVideo({ hasVideo: true });
+            if (canEncodeVideo()) await p.startCamera();
+          }
           const ticket = await getStreamTicket(instance.token, call.callId, streamOptions(canDecodeVideo()));
           // the stream is opened before answering: the audio of a call that is answered with none is lost
           if (!(await p.connect(streamWsUrl(apiUrl, ticket.path)))) return;
@@ -145,7 +154,7 @@ export function usePhone(instance: Instance, onChange: () => void) {
           toast.error('Não foi possível entrar na chamada', { description: errMsg(e) });
         }
       }),
-    [apiUrl, guard, instance.token, onChange, open],
+    [apiUrl, guard, instance.token, onChange, open, patchVideo],
   );
 
   /** Places a call (with video if asked) and connects the audio while the phone rings. */
@@ -155,7 +164,11 @@ export function usePhone(instance: Instance, onChange: () => void) {
         const p = open(null);
         if (!(await p.prepare())) return;
         try {
-          if (video && canEncodeVideo()) await p.startCamera();
+          if (video) {
+            p.setVideoReady(true); // placed as a video call: it carries our video from the start
+            patchVideo({ hasVideo: true });
+            if (canEncodeVideo()) await p.startCamera();
+          }
           const call = await dialCall(instance.token, number, video);
           patch({ callId: call.callId });
           // what is queued while the phone rings plays when it is answered
@@ -170,7 +183,7 @@ export function usePhone(instance: Instance, onChange: () => void) {
           toast.error('Não foi possível ligar', { description: errMsg(e) });
         }
       }),
-    [apiUrl, guard, instance.token, onChange, open, patch],
+    [apiUrl, guard, instance.token, onChange, open, patch, patchVideo],
   );
 
   /** Hangs the call up (for both sides) and lets go of the audio and the camera. */

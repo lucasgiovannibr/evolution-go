@@ -32,6 +32,8 @@ export interface PhoneEvents {
   onCamera?(on: boolean, preview: MediaStream | null): void;
   /** Our camera could not be used, in words. */
   onCameraError?(message: string): void;
+  /** How many pictures of our camera have been put on the wire so far (a way to see that video is going out). */
+  onVideoSent?(frames: number): void;
 }
 
 /** 20 ms of audio per frame sent to the peer: small enough for low delay, large enough not to flood the socket. */
@@ -65,6 +67,8 @@ export class Softphone {
   private sender: VideoSender | null = null;
   /** The call can carry our video (a video call, or an upgrade that went through). */
   private videoReady = false;
+  private videoSent = 0;
+  private videoSentReported = 0;
   private muted = false;
   private micLevel = 0;
   private peerLevel = 0;
@@ -115,6 +119,10 @@ export class Softphone {
 
       this.levelTimer = setInterval(() => {
         this.events.onLevels(this.micLevel, this.peerLevel);
+        if (this.videoSent !== this.videoSentReported) {
+          this.videoSentReported = this.videoSent;
+          this.events.onVideoSent?.(this.videoSent);
+        }
         this.peerLevel *= 0.6; // the bar falls when the peer's audio stops arriving
       }, 100);
       this.set('ready');
@@ -227,6 +235,7 @@ export class Softphone {
     const ws = this.ws;
     if (this.state !== 'live' || !ws || ws.readyState !== WebSocket.OPEN || ws.bufferedAmount > MAX_BUFFERED * 2) return;
     ws.send(videoFrame(accessUnit));
+    this.videoSent++;
   }
 
   private onMessage(data: string | ArrayBuffer) {
@@ -257,6 +266,8 @@ export class Softphone {
         if (this.state === 'connecting') {
           this.set('live');
           if (msg.video) this.setVideoReady(true); // a video call carries our video from the start
+          // the camera may have been on before the stream was: its first keyframe went nowhere
+          this.sender?.requestKeyframe();
           this.events.onCall?.(!!msg.video);
           this.opened?.(true);
           this.opened = undefined;
@@ -282,6 +293,8 @@ export class Softphone {
       case 'error':
         // not fatal: the server tells about a problem once and goes on (a slow reader, a bad frame)
         if (this.state === 'connecting' && msg.code) this.fail(msg.message || msg.code);
+        // what it says about our video is what the person needs to see when the picture does not arrive
+        else if (msg.code && /video|binary/.test(msg.code)) this.events.onCameraError?.(`O servidor recusou o vídeo (${msg.code}): ${msg.message ?? ''}`);
         break;
     }
   }
