@@ -63,6 +63,7 @@ type Tracked struct {
 	attachedAt time.Time // when the current stream attached
 	readyAt    unixNano  // when the media became ready (OnReady)
 	lastAudio  unixNano  // when the peer's audio last reached the stream
+	lastVoice  unixNano  // when either side last made a sound (see voiceRMS)
 	stalled    atomic.Bool
 
 	// hadVideo: the call has had video at some point (it started with video, an upgrade
@@ -89,7 +90,8 @@ const ReasonPeerHangup = "peer_hangup"
 // Reason is why the call ended, empty while it is running. Besides what the library
 // reports (for example "rejected", "hangup" when we ended it, "server:<code>", or a
 // reason WhatsApp put in the terminate message), it is ReasonPeerHangup, "ring_timeout",
-// "stream_closed" or "rejected_busy" for the cases this package ends itself.
+// "stream_closed", "rejected_busy", "media_stalled", "max_duration" or "silence_timeout"
+// for the cases this package ends itself.
 func (t *Tracked) Reason() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -183,8 +185,8 @@ func (m *Manager) Track(instanceID string, c Call, dir Direction) (*Tracked, err
 	c.OnVideoState(func(v VideoState) { m.videoStateChanged(instanceID, t, v) })
 	c.OnVideoKeyframeRequest(t.keyframeRequested)
 	c.OnEnd(func(reason string) { m.finish(instanceID, t, reason) })
-	if m.opts.MediaStall > 0 {
-		go m.watchMedia(instanceID, t)
+	if m.watching() {
+		go m.watchCall(instanceID, t)
 	}
 	if c.Phase() == PhaseEnded {
 		m.finish(instanceID, t, "ended")

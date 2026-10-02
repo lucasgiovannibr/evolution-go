@@ -28,10 +28,26 @@ const (
 // ErrTooManyTickets: too many tickets are waiting to be redeemed.
 var ErrTooManyTickets = errors.New("too many pending stream tickets")
 
+// StreamOptions are what a ticket asks of the stream it opens. The zero value is the
+// plain stream: audio only, 16 kHz PCM, everything in JSON.
+type StreamOptions struct {
+	// Video makes the stream carry the call's video besides its audio.
+	Video bool
+	// Format is the audio the stream carries (see ParseAudioFormat).
+	Format AudioFormat
+	// Binary sends and accepts the audio and video as binary WebSocket frames instead of
+	// base64 in JSON (see the protocol description in handler.go). Control messages stay
+	// JSON.
+	Binary bool
+	// Speech adds the speech_start and speech_end events: the stream says when the peer
+	// begins and stops talking.
+	Speech bool
+}
+
 type ticket struct {
 	instanceID string
 	callID     string
-	video      bool
+	opts       StreamOptions
 	expires    time.Time
 }
 
@@ -52,13 +68,19 @@ func tokenKey(token string) string {
 }
 
 // Issue creates a ticket for a call of an instance. video says whether the stream it
-// opens carries the call's video besides its audio.
+// opens carries the call's video besides its audio. Everything else is the default.
 func (t *Tickets) Issue(instanceID, callID string, video bool) (token string, ttl time.Duration, err error) {
+	return t.IssueWith(instanceID, callID, StreamOptions{Video: video})
+}
+
+// IssueWith is Issue with every option of the stream.
+func (t *Tickets) IssueWith(instanceID, callID string, opts StreamOptions) (token string, ttl time.Duration, err error) {
 	raw := make([]byte, 24)
 	if _, err := rand.Read(raw); err != nil {
 		return "", 0, err
 	}
 	token = base64.RawURLEncoding.EncodeToString(raw)
+	opts.Format = opts.Format.normalized()
 
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -74,7 +96,7 @@ func (t *Tickets) Issue(instanceID, callID string, video bool) (token string, tt
 			return "", 0, ErrTooManyTickets
 		}
 	}
-	t.m[tokenKey(token)] = ticket{instanceID: instanceID, callID: callID, video: video, expires: now.Add(TicketTTL)}
+	t.m[tokenKey(token)] = ticket{instanceID: instanceID, callID: callID, opts: opts, expires: now.Add(TicketTTL)}
 	return token, TicketTTL, nil
 }
 
@@ -83,8 +105,14 @@ func (t *Tickets) Issue(instanceID, callID string, video bool) (token string, tt
 // been used and was issued for callID. A ticket is spent by any attempt to redeem it,
 // right or wrong.
 func (t *Tickets) Redeem(token, callID string) (instanceID string, video bool, ok bool) {
+	instanceID, opts, ok := t.RedeemWith(token, callID)
+	return instanceID, opts.Video, ok
+}
+
+// RedeemWith is Redeem that also returns the other options the ticket asked for.
+func (t *Tickets) RedeemWith(token, callID string) (instanceID string, opts StreamOptions, ok bool) {
 	if token == "" {
-		return "", false, false
+		return "", StreamOptions{}, false
 	}
 	key := tokenKey(token)
 
@@ -96,10 +124,10 @@ func (t *Tickets) Redeem(token, callID string) (instanceID string, video bool, o
 	t.mu.Unlock()
 
 	if !found || !t.now().Before(tk.expires) {
-		return "", false, false
+		return "", StreamOptions{}, false
 	}
 	if subtle.ConstantTimeCompare([]byte(tk.callID), []byte(callID)) != 1 {
-		return "", false, false
+		return "", StreamOptions{}, false
 	}
-	return tk.instanceID, tk.video, true
+	return tk.instanceID, tk.opts, true
 }

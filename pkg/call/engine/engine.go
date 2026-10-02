@@ -303,6 +303,12 @@ type Options struct {
 	// MediaStallHangup also hangs the call up (reason "media_stalled") when it stalls.
 	// Off by default: a muted peer may send nothing at all.
 	MediaStallHangup bool
+	// MaxDuration hangs a call up (reason "max_duration") once it has lasted this long
+	// from the media being ready. Zero means no limit.
+	MaxDuration time.Duration
+	// SilenceTimeout hangs a call that has a stream up (reason "silence_timeout") when
+	// neither the peer nor the client has made a sound for this long. Zero means never.
+	SilenceTimeout time.Duration
 	// Dial replaces placing calls through the library (tests).
 	Dial   DialFunc
 	Notify Notifier
