@@ -1,5 +1,5 @@
 /*
- * Evolution Passkey Helper - MAIN world bridge
+ * WhatyGo Passkey Helper - MAIN world bridge
  * --------------------------------------------
  * Runs in the PAGE's JavaScript world (manifest "world": "MAIN") and does one
  * thing only: navigator.credentials.get().

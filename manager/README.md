@@ -1,6 +1,6 @@
-# Evolution GO Manager
+# WhatyGo Manager
 
-Painel web da Evolution GO. React 19 + TypeScript + Vite + Tailwind CSS v4.
+Painel web do WhatyGo. React 19 + TypeScript + Vite + Tailwind CSS v4.
 
 O servidor Go entrega o resultado do build: `manager/dist/index.html` para `/manager/*` e os
 arquivos com hash em `manager/dist/assets` (ver `pkg/routes/routes.go`). O `Dockerfile` copia
@@ -30,7 +30,7 @@ src/
                 (calls: telefone no navegador, chamadas ao vivo, histórico; o áudio é puro em audio.ts, com testes)
   hooks/        React Query (instâncias, saúde), rascunho de formulário
   lib/          http, formatação, catálogo de eventos, cURL
-  stores/       zustand: sessão (persistida em "evolution-auth") e UI (tema, menu)
+  stores/       zustand: sessão (persistida em "whatygo-auth") e UI (tema, menu)
   styles.css    tokens de design (cores, sombras, animações) e tema claro/escuro
 ```
 
@@ -49,6 +49,6 @@ src/
 - **Estado de servidor** vive no React Query; formulários editam uma cópia (`useDraft`) que só é
   substituída por dados novos quando não há edição pendente.
 - O login preserva o fluxo de licença (`/license/status` → `/license/register` → `/manager/license/callback`
-  → `/license/activate`) e a chave `evolution-auth` do `localStorage`, para sessões já abertas continuarem válidas.
+  → `/license/activate`) (a sessão fica em `whatygo-auth`, no `sessionStorage`).
 
 As fontes (Inter e JetBrains Mono, licença OFL) ficam em `src/assets/fonts`.

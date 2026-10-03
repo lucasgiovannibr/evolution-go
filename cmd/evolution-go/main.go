@@ -433,9 +433,9 @@ func initPostgresAuthDB(config *config.Config) (*sql.DB, error) {
 	return db, nil
 }
 
-// @title Evolution GO
+// @title WhatyGo
 // @version 1.0
-// @description Evolution GO - whatsmeow
+// @description WhatyGo (fork do Evolution Go) - whatsmeow
 func main() {
 	flag.Parse()
 	if *devMode {
@@ -456,7 +456,7 @@ func main() {
 		logger.LogWarn("[CONFIG] Events carry the instance token (\"instanceToken\"): every webhook, queue and websocket consumer can use it as the instance API key. Leave WEBHOOK_INCLUDE_TOKEN unset (false) unless an integration needs it")
 	}
 
-	logger.LogInfo("Starting Evolution GO version %s", version)
+	logger.LogInfo("Starting WhatyGo version %s", version)
 
 	startTime := time.Now()
 

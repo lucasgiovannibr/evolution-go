@@ -10,15 +10,14 @@ body:
       label: Bem-vindo!
       description: |
         O rastreador de problemas é apenas para relatar bugs e solicitações de recursos.
-        Para perguntas de suporte, acesse:
-          - [Comunidade](https://evolutionfoundation.com.br/community)
-          - [WhatsApp Suporte](https://wa.me/553196219989)
+        Para perguntas de suporte, consulte:
+          - o [Guia do WhatyGo](https://github.com/lucasgiovannibr/evolution-go/blob/main/docs/guia/README.md) e os [Problemas comuns](https://github.com/lucasgiovannibr/evolution-go/blob/main/docs/guia/09-problemas-comuns.md)
           <br/>
 
         **NÃO ABRA UM PROBLEMA PARA PERGUNTAS GERAIS DE SUPORTE.**
 
       options:
-        - label: Sim, pesquisei problemas semelhantes no [GitHub](https://github.com/evolution-foundation/evolution-go/issues) e não encontrei nenhum.
+        - label: Sim, pesquisei problemas semelhantes no [GitHub](https://github.com/lucasgiovannibr/evolution-go/issues) e não encontrei nenhum.
           required: true
 
   - type: textarea

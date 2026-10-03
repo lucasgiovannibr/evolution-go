@@ -1,6 +1,6 @@
 # Banco de Dados
 
-Sistema de armazenamento de dados do Evolution GO usando bancos separados para diferentes finalidades.
+Sistema de armazenamento de dados do WhatyGo usando bancos separados para diferentes finalidades.
 
 ## 📋 Índice
 
@@ -16,7 +16,7 @@ Sistema de armazenamento de dados do Evolution GO usando bancos separados para d
 
 ## Visão Geral
 
-O Evolution GO usa **dois bancos de dados separados**. Pense nisso como ter dois armários diferentes:
+O WhatyGo usa **dois bancos de dados separados**. Pense nisso como ter dois armários diferentes:
 
 1. **Banco Auth** (`evogo_auth`): Guarda os dados técnicos do WhatsApp
 2. **Banco Users** (`evogo_users`): Guarda os dados da sua aplicação
@@ -226,7 +226,7 @@ POSTGRES_USERS_DB=postgresql://user:pass@localhost:5432/evogo_users
 
 ### Criação Automática de Tabelas
 
-Quando você inicia o Evolution GO pela primeira vez:
+Quando você inicia o WhatyGo pela primeira vez:
 
 1. Sistema verifica se as tabelas existem
 2. Se não existir, cria automaticamente
@@ -314,7 +314,7 @@ AND updated_at < NOW() - INTERVAL '30 days';
 
 **Soluções**:
 1. Verifique quantas conexões o PostgreSQL permite
-2. Reduza o número de conexões máximas no Evolution GO
+2. Reduza o número de conexões máximas no WhatyGo
 3. Aumente o limite no PostgreSQL
 
 ```bash
@@ -378,7 +378,7 @@ ORDER BY pg_total_relation_size(tablename::text) DESC;
          ▲                                   ▲
          │                                   │
          └───────── Gerenciado por ──────────┘
-                   Evolution GO
+                   WhatyGo
 ```
 
 ### Fluxo de Dados
@@ -422,4 +422,4 @@ ORDER BY pg_total_relation_size(tablename::text) DESC;
 
 ---
 
-**Documentação Evolution GO v1.0**
+**Documentação WhatyGo v1.0**

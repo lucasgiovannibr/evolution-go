@@ -97,10 +97,10 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: docker build -t evolution-go:ci .
+      - run: docker build -t whatygo:ci .
       - uses: aquasecurity/trivy-action@v0.36.0
         with:
-          image-ref: evolution-go:ci
+          image-ref: whatygo:ci
           severity: HIGH,CRITICAL
           ignore-unfixed: true
           exit-code: "1"

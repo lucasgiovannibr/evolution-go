@@ -2,8 +2,8 @@ import { create } from 'zustand';
 
 export type Theme = 'light' | 'dark';
 
-const THEME_KEY = 'evolution-theme';
-const SIDEBAR_KEY = 'evolution-sidebar-collapsed';
+const THEME_KEY = 'whatygo-theme';
+const SIDEBAR_KEY = 'whatygo-sidebar-collapsed';
 
 function readTheme(): Theme {
   try {

@@ -10,15 +10,14 @@ body:
       label: Welcome!
       description: |
         The issue tracker is only for reporting bugs and feature requests.
-        For support questions, please visit:
-          - [Community](https://evolutionfoundation.com.br/community)
-          - [WhatsApp Support](https://wa.me/553196219989)
+        For support questions, please see:
+          - the [WhatyGo guide](https://github.com/lucasgiovannibr/evolution-go/blob/main/docs/guia/README.md) and its [Common problems](https://github.com/lucasgiovannibr/evolution-go/blob/main/docs/guia/09-problemas-comuns.md)
           <br/>
 
         **DO NOT OPEN AN ISSUE FOR GENERAL SUPPORT QUESTIONS.**
 
       options:
-        - label: Yes, I have searched for similar issues on [GitHub](https://github.com/evolution-foundation/evolution-go/issues) and found none.
+        - label: Yes, I have searched for similar issues on [GitHub](https://github.com/lucasgiovannibr/evolution-go/issues) and found none.
           required: true
 
   - type: textarea

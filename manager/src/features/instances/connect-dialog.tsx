@@ -50,7 +50,7 @@ function PasskeyPanel({ qr }: { qr: QrInfo }) {
       ) : null}
       <Steps
         items={[
-          'Instale a extensão Evolution Passkey Helper no Chrome/Edge (só na primeira vez)',
+          'Instale a extensão WhatyGo Passkey Helper no Chrome/Edge (só na primeira vez)',
           'Clique em “Abrir WhatsApp Web” abaixo',
           'Na aba aberta, use “Autenticar com chave de acesso” e confirme com biometria/PIN',
           'Volte aqui e aguarde a conexão concluir',
@@ -67,7 +67,7 @@ function PasskeyPanel({ qr }: { qr: QrInfo }) {
           Abrir WhatsApp Web
         </Button>
         <a
-          href="https://github.com/evolution-foundation/evolution-go/tree/main/passkey-helper"
+          href="https://github.com/lucasgiovannibr/evolution-go/tree/main/passkey-helper"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex h-8 items-center px-2 text-[13px] font-medium text-brand-text hover:underline"

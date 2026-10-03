@@ -37,7 +37,7 @@ export interface RawResponse {
 }
 
 const LOGIN_PATH = '/manager/login';
-export const EXPIRED_FLAG = 'evolution-session-expired';
+export const EXPIRED_FLAG = 'whatygo-session-expired';
 let redirecting = false;
 
 function expireSession(licenseLost: boolean) {

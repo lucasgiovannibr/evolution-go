@@ -1,6 +1,6 @@
 # Guia de Desenvolvimento
 
-Guia completo para desenvolver e contribuir com o Evolution GO.
+Guia completo para desenvolver e contribuir com o WhatyGo.
 
 ## Índice
 
@@ -19,7 +19,7 @@ Guia completo para desenvolver e contribuir com o Evolution GO.
 
 ## Visão Geral
 
-O Evolution GO é um **gateway de API WhatsApp** escrito em Go, utilizando:
+O WhatyGo é um **gateway de API WhatsApp** escrito em Go, utilizando:
 
 - **Linguagem**: Go 1.24+
 - **Framework Web**: Gin
@@ -61,7 +61,7 @@ O Evolution GO é um **gateway de API WhatsApp** escrito em Go, utilizando:
 
 ```bash
 # Via HTTPS
-git clone https://git.evoai.app/Evolution/evolution-go.git
+git clone https://github.com/lucasgiovannibr/evolution-go.git
 cd evolution-go
 
 # Ou via SSH (se configurado)
@@ -473,7 +473,7 @@ Salvar em `.vscode/tasks.json`.
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Launch Evolution GO",
+      "name": "Launch WhatyGo",
       "type": "go",
       "request": "launch",
       "mode": "debug",
@@ -497,7 +497,7 @@ Salvar em `.vscode/launch.json`.
 1. **Run → Edit Configurations**
 2. **Add New Configuration → Go Build**
 3. Configurar:
-   - **Name**: Evolution GO Dev
+   - **Name**: WhatyGo Dev
    - **Run kind**: Directory
    - **Directory**: `cmd/evolution-go`
    - **Program arguments**: `-dev`
@@ -739,7 +739,7 @@ git commit -m "feat: adiciona endpoint de listagem de instâncias
 # Push para origin
 git push origin feature/nome-da-feature
 
-# Criar PR no GitLab/GitHub
+# Criar PR no GitHub
 # Preencher descrição detalhada
 # Aguardar code review
 ```
@@ -769,5 +769,5 @@ Após setup completo:
 
 **Dica**: Use `make help` para ver todos os comandos disponíveis!
 
-**Mantido por**: Equipe EvoAI Services  
+**Mantido por**: mantenedores do fork WhatyGo (baseado no Evolution Go)  
 **Versão**: 1.0.0

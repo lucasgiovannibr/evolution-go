@@ -1,6 +1,6 @@
 # Referência da API
 
-Referência rápida de endpoints disponíveis na API Evolution GO.
+Referência rápida de endpoints disponíveis na API WhatyGo.
 
 ## Autenticação
 
@@ -191,4 +191,4 @@ As rotas de atender, discar e vídeo exigem `callsEnabled` na instância (experi
 
 **Total de endpoints disponíveis: 79**
 
-**Documentação Evolution GO v1.0**
+**Documentação WhatyGo v1.0**

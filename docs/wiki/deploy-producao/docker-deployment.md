@@ -1,6 +1,6 @@
 # Deploy com Docker
 
-Guia de deploy do Evolution GO usando Docker, Docker Compose, Swarm e Kubernetes.
+Guia de deploy do WhatyGo usando Docker, Docker Compose, Swarm e Kubernetes.
 
 ## Índice
 
@@ -31,7 +31,7 @@ Guia de deploy do Evolution GO usando Docker, Docker Compose, Swarm e Kubernetes
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                 │
 │  ┌──────────────┐      ┌──────────────┐      ┌──────────────┐ │
-│  │ Evolution GO │◄────►│  PostgreSQL  │      │  RabbitMQ    │ │
+│  │ WhatyGo │◄────►│  PostgreSQL  │      │  RabbitMQ    │ │
 │  │   (API)      │      │   (Auth DB)  │      │  (Events)    │ │
 │  │  Port: 4000  │      │   (Users DB) │      │  Port: 5672  │ │
 │  └──────┬───────┘      └──────────────┘      └──────────────┘ │
@@ -47,7 +47,7 @@ Guia de deploy do Evolution GO usando Docker, Docker Compose, Swarm e Kubernetes
 
 ### Imagem Docker
 
-- **Registry**: `evoapicloud/evolution-go`
+- **Registry**: `ghcr.io/lucasgiovannibr/whatygo`
 - **Tags**: `latest`, `v1.x.x`
 - **Base**: Alpine Linux 3.24
 - **Usuário**: `evolution` (uid 10001), sem root; o entrypoint ajusta o dono dos volumes
@@ -69,7 +69,7 @@ Guia de deploy do Evolution GO usando Docker, Docker Compose, Swarm e Kubernetes
 
 ### Setup Básico
 
-Configuração mínima com Evolution GO + PostgreSQL.
+Configuração mínima com WhatyGo + PostgreSQL.
 
 #### docker-compose.yml
 
@@ -78,7 +78,7 @@ version: '3.8'
 
 services:
   evolution-go:
-    image: evoapicloud/evolution-go:latest
+    image: ghcr.io/lucasgiovannibr/whatygo:latest
     container_name: evolution-go
     restart: unless-stopped
     ports:
@@ -164,7 +164,7 @@ version: '3.8'
 
 services:
   evolution-go:
-    image: evoapicloud/evolution-go:latest
+    image: ghcr.io/lucasgiovannibr/whatygo:latest
     restart: unless-stopped
     ports:
       - "4000:4000"
@@ -248,7 +248,7 @@ volumes:
 ```
 
 **Acessos:**
-- Evolution GO: http://localhost:4000
+- WhatyGo: http://localhost:4000
 - Swagger: http://localhost:4000/swagger/index.html
 - RabbitMQ: http://localhost:15672 (admin/admin)
 - MinIO: http://localhost:9001 (minioadmin/minioadmin)
@@ -272,7 +272,7 @@ POSTGRES_PASSWORD=senha_forte
 RABBITMQ_USER=admin
 RABBITMQ_PASS=senha_forte
 
-# Evolution GO
+# WhatyGo
 GLOBAL_API_KEY=df16caad-d0d2-41b2-bec5-75b90048a0db
 CLIENT_NAME=evolution-prod
 ```
@@ -281,7 +281,7 @@ Referência no compose:
 ```yaml
 services:
   evolution-go:
-    image: evoapicloud/evolution-go:${EVOLUTION_VERSION:-latest}
+    image: ghcr.io/lucasgiovannibr/whatygo:${EVOLUTION_VERSION:-latest}
     ports:
       - "${EVOLUTION_PORT:-4000}:4000"
     environment:
@@ -375,7 +375,7 @@ version: '3.8'
 
 services:
   evolution_go:
-    image: evoapicloud/evolution-go:latest
+    image: ghcr.io/lucasgiovannibr/whatygo:latest
     networks:
       - network_public
     environment:
@@ -442,7 +442,7 @@ docker service logs evolution_evolution_go -f
 docker service scale evolution_evolution_go=5
 
 # Atualizar (rolling update)
-docker service update --image evoapicloud/evolution-go:v1.2.0 evolution_evolution_go
+docker service update --image ghcr.io/lucasgiovannibr/whatygo:v1.2.0 evolution_evolution_go
 
 # Remover
 docker stack rm evolution
@@ -513,7 +513,7 @@ spec:
     spec:
       containers:
       - name: evolution-go
-        image: evoapicloud/evolution-go:latest
+        image: ghcr.io/lucasgiovannibr/whatygo:latest
         ports:
         - containerPort: 4000
         env:
@@ -663,7 +663,7 @@ kubectl scale deployment evolution-go --replicas=5 -n evolution-go
 
 # Atualizar
 kubectl set image deployment/evolution-go \
-  evolution-go=evoapicloud/evolution-go:v1.2.0 \
+  evolution-go=ghcr.io/lucasgiovannibr/whatygo:v1.2.0 \
   -n evolution-go
 
 # Rollback
@@ -821,4 +821,4 @@ kubectl delete -f file.yaml             # Deletar
 
 ---
 
-**Documentação Evolution GO v1.0**
+**Documentação WhatyGo v1.0**

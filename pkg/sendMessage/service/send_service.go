@@ -283,7 +283,7 @@ type ButtonStruct struct {
 	// Body description text (required).
 	Description string `json:"description" example:"Confira as condicoes abaixo"`
 	// Footer text (required).
-	Footer string `json:"footer" example:"Evolution GO"`
+	Footer string `json:"footer" example:"WhatyGo"`
 	// Buttons array. See combination rules on the parent type description.
 	Buttons []Button `json:"buttons"`
 	// Typing delay (milliseconds) applied before sending the message.
@@ -333,7 +333,7 @@ type ListStruct struct {
 	// Label of the button that opens the list. Defaults to "Ver Menu" when empty.
 	ButtonText string `json:"buttonText" example:"Abrir cardapio"`
 	// Footer text (required).
-	FooterText string `json:"footerText" example:"Evolution GO"`
+	FooterText string `json:"footerText" example:"WhatyGo"`
 	// Sections with rows. At least one section with one row is required.
 	Sections []Section `json:"sections"`
 	// Typing delay (milliseconds) applied before sending the message.
@@ -424,7 +424,7 @@ type CarouselStruct struct {
 	// Optional message body shown above the cards.
 	Body string `json:"body,omitempty" example:"Confira nossas novidades!"`
 	// Optional message footer shown below the cards.
-	Footer string `json:"footer,omitempty" example:"Evolution GO"`
+	Footer string `json:"footer,omitempty" example:"WhatyGo"`
 	// Typing delay (milliseconds) applied before sending the message.
 	Delay int32 `json:"delay,omitempty" example:"1200"`
 	// If false, skips automatic formatting/validation of `number` into a JID.

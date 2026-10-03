@@ -17,7 +17,7 @@ type Filter = 'all' | 'online' | 'offline';
 type Sort = 'recent' | 'name' | 'status';
 type View = 'grid' | 'list';
 
-const VIEW_KEY = 'evolution-instances-view';
+const VIEW_KEY = 'whatygo-instances-view';
 const readView = (): View => {
   try {
     return localStorage.getItem(VIEW_KEY) === 'list' ? 'list' : 'grid';

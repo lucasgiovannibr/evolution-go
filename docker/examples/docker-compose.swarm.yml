@@ -2,7 +2,7 @@ version: '3.8'
 
 services:
   evolution_go:
-    image: evoapicloud/evolution-go:latest
+    image: ghcr.io/lucasgiovannibr/whatygo:latest
     networks:
       - network_public
     environment:
