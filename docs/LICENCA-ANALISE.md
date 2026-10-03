@@ -1,5 +1,9 @@
 # Análise do mecanismo de licença herdado do upstream
 
+> **Estado (2026-10-03):** a Opção A (seção 9) foi escolhida e implementada; o resultado e a
+> verificação estão na seção 10. As seções 2 a 7 descrevem o código **como era** (`pkg/core` foi
+> removido; para ler o original: `git show fd6d77d^:pkg/core/c0.go`).
+
 Data da análise: 2026-10-03. Escopo: somente leitura do código desta branch (`pkg/core/c0.go`,
 `pkg/core/license_swagger.go`, `cmd/evolution-go/main.go`, `manager/src/...`). Nada foi executado
 contra o serviço de licença do upstream (é um serviço de terceiros: não foi chamado, nem para testar).
@@ -186,8 +190,10 @@ Dependências, no sentido "o que precisa do quê":
   marca e atribuição nos arquivos-fonte que forem mantidos; e **arquivos modificados devem ter aviso
   visível de que foram alterados** (§4(b)). Os arquivos `.go` do upstream **não têm cabeçalho de
   copyright nem SPDX** (busca em todo o repositório): não há cabeçalho próprio diferente da Apache 2.0
-  a preservar nem a violar. Na implementação, os arquivos novos e reescritos levarão uma linha de
-  cabeçalho dizendo que derivam do Evolution Go e foram modificados, e o `CHANGELOG` registrará a troca.
+  a preservar nem a violar. O fork cumpre o §4(b) como já fazia: o `CHANGELOG.md`, o `FORK-TRIAGE.md`
+  e o histórico do git registram as mudanças (nenhum arquivo do upstream recebeu cabeçalho). Se quiser
+  uma declaração mais explícita, o §4(d) permite acrescentar linhas de atribuição próprias ao `NOTICE`;
+  isso não foi feito sem sua decisão.
 - `TRADEMARKS.md`: protege "Evolution Foundation", "Evolution", "Evolution Go", o logotipo, a paleta e a
   linha "© 2026 Evolution Foundation". Por isso a nova ativação **não** pode usar essas marcas no nome do
   fluxo, em e-mails, textos ou URLs, nem sugerir endosso. Referência nominativa ("baseado no Evolution Go")
@@ -269,3 +275,34 @@ servidor verifica a assinatura localmente. Nada de heartbeat.
 | Código novo | quase nenhum | pequeno | médio |
 | Risco para instalações existentes | mínimo | baixo | médio |
 | Recomendação | **sim** | só se quiser aviso/aceite obrigatório | só se houver plano comercial |
+
+## 10. Implementação (Opção A) e verificação
+
+Escolha do dono: **A, removendo também as rotas `/license/*`** (respondem 404).
+
+O que mudou:
+
+- Removidos `pkg/core/` inteiro e todas as ligações em `cmd/evolution-go/main.go` (gate, rotas,
+  inicialização, heartbeat, desligamento). `setupRouter` perdeu o parâmetro `runtimeCtx`.
+- `runtime_configs` não é mais criada nem lida. Uma tabela existente **não é tocada**: a imagem
+  anterior ainda funciona sobre ela. Ela guarda a chave de licença do upstream em claro; apagar é
+  decisão do operador (`DROP TABLE runtime_configs;`, documentado no guia e no CHANGELOG).
+- `EVOLUTION_OPERATOR_EMAIL` saiu do `.env.example` e é ignorada.
+- Painel: sem verificação de licença no login, sem a página `/manager/license/callback` (cai no
+  redirecionamento padrão para `/manager`), sem `licenseState` no estado da sessão, sem tratamento
+  de `LICENSE_*` em `lib/http.ts`.
+- Swagger regenerado (swag v1.16.3): só desapareceram as 3 rotas de licença.
+- CI/lint: `gofmt` e `golangci-lint` deixaram de excluir `pkg/core`.
+- Teste-guarda `cmd/evolution-go/licensing_removed_test.go`: falha se voltar código-fonte Go que cite o
+  host de licença do upstream, `LICENSE_REQUIRED`, `/v1/heartbeat`, `/v1/activate`, `/license/` ou
+  `runtime_configs`, ou se `pkg/core` reaparecer.
+
+Verificado (Docker, rede interna **sem saída**, para nada alcançar o serviço do upstream):
+
+| Cenário | Imagem anterior | Imagem nova |
+|---|---|---|
+| Instalação nova, sem rede | 503 (`License Registration Required`), tentativa de contatar o host de licença | 200 em `/instance/all`, sobe em ~20 s, sem nenhuma linha de log de licença, `runtime_configs` não criada |
+| Banco com `runtime_configs` preenchida (chave fabricada de teste) e uma instância com token fixo | ativa localmente; tenta chamar o host de licença (falha, sem rede) | `GET /instance/all` **idêntico byte a byte**; o token da instância continua autenticando; `runtime_configs` e `instances` **sem nenhuma alteração** (mesmos hashes e `updated_at`); `/license/*` → 404; painel servido; chave errada → 401 |
+
+`go vet ./...` e `go test -race ./...` passam (Go 1.26 no Docker); `npm run build` (inclui `tsc`) e
+`npm test` passam.

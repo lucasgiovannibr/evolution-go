@@ -46,7 +46,7 @@ Evolution Go is one of the messaging engines maintained by Evolution Foundation.
 - **Media support** — images, videos, audio, documents with MinIO/S3 storage
 - **Message storage** — optional PostgreSQL persistence
 - **QR code pairing** — built-in QR code generation for device linking
-- **License management** — built-in licensing with registration, activation, and heartbeat
+- **No license activation** — the server works as soon as it starts, with no registration and no calls to a licensing service
 - **Docker ready** — production-ready Docker configuration
 
 ---
@@ -119,17 +119,13 @@ LOGTYPE=console
 
 ---
 
-## License Activation
+## No license activation
 
-Evolution Go requires a license to operate. On first run:
-
-1. Start the server — API endpoints return `503` until activated
-2. Open the **Manager** at `http://localhost:8080/manager/login`
-3. Enter your API URL and `GLOBAL_API_KEY`
-4. Complete the license registration flow
-5. Once activated, the API is fully operational
-
-The license status persists in the database (`runtime_configs` table). Heartbeats are sent periodically to maintain activation.
+This fork does not ask for a license key. Start the server, open the **Manager** at
+`http://localhost:8080/manager/login` and sign in with your `GLOBAL_API_KEY`; the API is
+operational right away. Nothing is sent to a licensing service. (The source code remains under the
+Apache License 2.0 with the additional conditions in [`LICENSE`](LICENSE).) Why and how the
+inherited mechanism was removed: [`docs/LICENCA-ANALISE.md`](docs/LICENCA-ANALISE.md).
 
 ---
 
