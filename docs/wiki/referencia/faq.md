@@ -1,16 +1,16 @@
 # FAQ - Perguntas Frequentes
 
-Respostas para questões comuns sobre o Evolution GO.
+Respostas para questões comuns sobre o WhatyGo.
 
 ## Visão Geral
 
-### O que é Evolution GO?
+### O que é WhatyGo?
 
 Gateway de API WhatsApp construído em Go que fornece interface RESTful para comunicação com o protocolo WhatsApp Web. Permite automação de mensagens, gerenciamento multi-instância e integração via APIs padronizadas.
 
-### Diferença entre Evolution GO e Evolution API (Node.js)?
+### Diferença entre WhatyGo e Evolution API (Node.js)?
 
-- **Evolution GO**: Implementação em Go, foco em performance e baixo consumo de recursos
+- **WhatyGo**: Implementação em Go, foco em performance e baixo consumo de recursos
 - **Evolution API V2**: Implementação em Node.js/TypeScript, maior maturidade e conjunto de features
 
 Ambos utilizam a biblioteca whatsmeow para conexão com WhatsApp.
@@ -246,8 +246,8 @@ Consulte [Guia de Contribuição](../desenvolvimento/contributing.md) para proce
 
 ### Reporte de Bugs
 
-Utilize [Issues no GitLab](https://git.evoai.app/Evolution/evolution-go/issues) incluindo:
-- Versão do Evolution GO
+Utilize [Issues no GitHub](https://github.com/lucasgiovannibr/evolution-go/issues) incluindo:
+- Versão do WhatyGo
 - Ambiente (Docker/local, SO)
 - Steps to reproduce
 - Logs relevantes
@@ -264,11 +264,11 @@ Utilize [Issues no GitLab](https://git.evoai.app/Evolution/evolution-go/issues) 
 - [Swagger UI](http://localhost:4000/swagger/index.html)
 
 ### Suporte
-- [Issues GitLab](https://git.evoai.app/Evolution/evolution-go/issues)
-- [Documentação Completa](https://git.evoai.app/Evolution/evolution-go/-/wikis)
+- [Issues no GitHub](https://github.com/lucasgiovannibr/evolution-go/issues)
+- [Documentação Completa](https://github.com/lucasgiovannibr/evolution-go/tree/main/docs)
 
 ---
 
-**Não encontrou resposta?** Abra uma [issue](https://git.evoai.app/Evolution/evolution-go/issues) com sua questão.
+**Não encontrou resposta?** Abra uma [issue](https://github.com/lucasgiovannibr/evolution-go/issues) com sua questão.
 
-**Documentação Evolution GO v1.0**
+**Documentação WhatyGo v1.0**

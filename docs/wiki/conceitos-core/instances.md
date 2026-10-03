@@ -1,6 +1,6 @@
 # Instâncias WhatsApp
 
-Como funcionam as conexões do WhatsApp no Evolution GO - explicado de forma simples.
+Como funcionam as conexões do WhatsApp no WhatyGo - explicado de forma simples.
 
 ## 📋 Índice
 
@@ -411,7 +411,7 @@ false = Normal (recebe tudo)
 
 ### O que São Eventos
 
-Notificações que o Evolution GO envia quando algo acontece.
+Notificações que o WhatyGo envia quando algo acontece.
 
 **Analogia**: Como notificações do celular
 - "Nova mensagem recebida!"
@@ -636,7 +636,7 @@ Libera recursos e organiza o sistema.
 
 **Dispositivos**:
 - Máximo 4 dispositivos por número
-- Evolution GO conta como 1 dispositivo
+- WhatyGo conta como 1 dispositivo
 
 **QR Code**:
 - Expira em ~40 segundos
@@ -646,7 +646,7 @@ Libera recursos e organiza o sistema.
 - Não reconecte mais de 1x por minuto
 - Pode ser bloqueado temporariamente
 
-### Limites do Evolution GO
+### Limites do WhatyGo
 
 **Por Servidor**:
 - Depende da RAM disponível
@@ -787,4 +787,4 @@ Headers: apikey: token-vendas-123
 
 ---
 
-**Documentação Evolution GO v1.0**
+**Documentação WhatyGo v1.0**

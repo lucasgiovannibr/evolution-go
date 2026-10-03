@@ -1,6 +1,6 @@
 # Armazenamento de Mídia
 
-Sistema de armazenamento de arquivos de mídia do Evolution GO. Suporta MinIO, Amazon S3 e outros serviços compatíveis com S3.
+Sistema de armazenamento de arquivos de mídia do WhatyGo. Suporta MinIO, Amazon S3 e outros serviços compatíveis com S3.
 
 ## 📋 Índice
 
@@ -16,7 +16,7 @@ Sistema de armazenamento de arquivos de mídia do Evolution GO. Suporta MinIO, A
 
 ## Visão Geral
 
-O Evolution GO armazena arquivos de mídia (imagens, vídeos, áudios, documentos) em **object storage** compatível com S3. Isso inclui serviços como MinIO, Amazon S3, Backblaze B2, DigitalOcean Spaces e outros.
+O WhatyGo armazena arquivos de mídia (imagens, vídeos, áudios, documentos) em **object storage** compatível com S3. Isso inclui serviços como MinIO, Amazon S3, Backblaze B2, DigitalOcean Spaces e outros.
 
 ### Por que Object Storage?
 
@@ -42,7 +42,7 @@ O Evolution GO armazena arquivos de mídia (imagens, vídeos, áudios, documento
        │
        ▼
 ┌──────────────┐
-│ Evolution GO │ Recebe arquivo
+│ WhatyGo │ Recebe arquivo
 └──────┬───────┘
        │
        ▼
@@ -100,7 +100,7 @@ MINIO_USE_SSL=true
 # MINIO_PUBLIC_BUCKET=true
 ```
 
-O bucket é criado se não existir. A política do bucket **não é alterada** (antes ela era substituída por uma política pública a cada partida, o que expunha tudo o que estivesse no bucket, inclusive a mídia de outros clientes); só com `MINIO_PUBLIC_BUCKET=true` o Evolution GO aplica a política pública, e ela **substitui** a que o bucket já tinha. Em provedores sem suporte a política (Backblaze B2) as URLs presignadas continuam funcionando.
+O bucket é criado se não existir. A política do bucket **não é alterada** (antes ela era substituída por uma política pública a cada partida, o que expunha tudo o que estivesse no bucket, inclusive a mídia de outros clientes); só com `MINIO_PUBLIC_BUCKET=true` o WhatyGo aplica a política pública, e ela **substitui** a que o bucket já tinha. Em provedores sem suporte a política (Backblaze B2) as URLs presignadas continuam funcionando.
 
 ### Exemplo: MinIO Local (Docker)
 
@@ -202,7 +202,7 @@ Ao apagar uma instância (`DELETE /instance/delete/...`) todos os arquivos da pa
 
 ### Como Funcionam
 
-Quando você armazena ou solicita acesso a um arquivo, o Evolution GO gera automaticamente uma URL presignada com a validade configurada (`MINIO_URL_TTL_HOURS`, padrão 7 dias).
+Quando você armazena ou solicita acesso a um arquivo, o WhatyGo gera automaticamente uma URL presignada com a validade configurada (`MINIO_URL_TTL_HOURS`, padrão 7 dias).
 
 **Exemplo de URL presignada**:
 ```
@@ -322,7 +322,7 @@ MINIO_USE_SSL=true
 ### 1. Upload de Mídia
 
 Quando o WhatsApp recebe uma imagem, vídeo ou documento:
-1. O Evolution GO baixa o arquivo
+1. O WhatyGo baixa o arquivo
 2. Armazena automaticamente no object storage configurado
 3. Gera uma URL presignada de acesso
 4. A URL é incluída na resposta da API ou evento
@@ -357,7 +357,7 @@ Gere nomes únicos para cada arquivo para evitar sobrescrever arquivos existente
 
 ### 2. Configure Content-Type Correto
 
-O Evolution GO configura automaticamente o Content-Type baseado na extensão do arquivo:
+O WhatyGo configura automaticamente o Content-Type baseado na extensão do arquivo:
 - `.jpg`, `.jpeg` → `image/jpeg`
 - `.png` → `image/png`
 - `.mp4` → `video/mp4`
@@ -482,4 +482,4 @@ aws s3 mb s3://evolution-go-media
 
 ---
 
-**Documentação gerada para Evolution GO v1.0**
+**Documentação gerada para WhatyGo v1.0**

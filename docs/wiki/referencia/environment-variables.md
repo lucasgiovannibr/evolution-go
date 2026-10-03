@@ -1,6 +1,6 @@
 # Variáveis de Ambiente
 
-Referência rápida de variáveis de ambiente do Evolution GO.
+Referência rápida de variáveis de ambiente do WhatyGo.
 
 Para documentação detalhada, consulte: [Configuração](../fundamentos/configuration.md)
 
@@ -300,8 +300,8 @@ MINIO_USE_SSL=false
 ## Recursos
 
 - **[Configuração Detalhada](../fundamentos/configuration.md)** - Documentação completa de cada variável
-- **[.env.example](https://git.evoai.app/Evolution/evolution-go/blob/main/docker/examples/.env.example)** - Arquivo de exemplo com todas as variáveis
+- **[.env.example](https://github.com/lucasgiovannibr/evolution-go/blob/main/docker/examples/.env.example)** - Arquivo de exemplo com todas as variáveis
 
 ---
 
-**Documentação Evolution GO v1.0**
+**Documentação WhatyGo v1.0**

@@ -1,4 +1,4 @@
-# Evolution GO - Changelog
+# WhatyGo - Changelog
 
 ## Unreleased (fork lucasgiovannibr/evolution-go)
 
@@ -6,6 +6,20 @@ Fixes and hardening on top of upstream v0.7.2. Full triage of the upstream issue
 and pull requests in `FORK-TRIAGE.md`.
 
 ### Upgrade notes
+- **The product is now called WhatyGo** (a fork of Evolution Go; the original's name, logo and
+  colours are no longer used as this project's identity, see `TRADEMARKS.md` and
+  `docs/guia/11-avisos-legais-e-creditos.md`). What changes for you:
+  - **Docker image**: `ghcr.io/<owner>/whatygo` (it was `ghcr.io/<owner>/evolution-go`, which gets
+    no more updates). The `docker/examples/*.yml` files point to the new image.
+  - **Manager**: new name, logo and colours; the credit line "Baseado no Evolution Go © 2026
+    Evolution Foundation" stays (menu and sign-in page). Browser storage keys are now
+    `whatygo-*`, so the theme and the menu state are reset once; the Swagger title and the
+    startup log say WhatyGo.
+  - **Passkey Helper** extension renamed to "WhatyGo Passkey Helper".
+  - Unchanged on purpose: the Go module path, the `cmd/evolution-go` folder, the `evolution_*`
+    metric names and the `evolution` container user.
+- **New files**: `CONTRIBUTING.md`, `SECURITY.md`, `docs/guia/` (a beginner's guide) and
+  `docker/instalacao-simples/` (a ready Docker Compose).
 - **whatsmeow updated** (30/06 → 29/09/2026, 72 commits) and **Go 1.26** is now
   required (Dockerfile updated). The whatsmeow schema moves from **v14 to v16**;
   the migrations are forward-only, so **back up `evogo_auth` before deploying** —

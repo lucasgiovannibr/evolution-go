@@ -1,6 +1,6 @@
 # Debugging e Troubleshooting
 
-Guia para resolver problemas comuns no Evolution GO.
+Guia para resolver problemas comuns no WhatyGo.
 
 ## Índice
 
@@ -205,7 +205,7 @@ docker-compose logs -f evolution-go
 ### VSCode
 
 1. Abrir `Run and Debug` (Ctrl+Shift+D)
-2. Selecionar "Launch Evolution GO"
+2. Selecionar "Launch WhatyGo"
 3. Adicionar breakpoints (F9)
 4. Iniciar debug (F5)
 
@@ -216,7 +216,7 @@ docker-compose logs -f evolution-go
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "Debug Evolution GO",
+      "name": "Debug WhatyGo",
       "type": "go",
       "request": "launch",
       "mode": "debug",
@@ -230,7 +230,7 @@ docker-compose logs -f evolution-go
 
 ### GoLand
 
-1. **Run → Debug 'Evolution GO'**
+1. **Run → Debug 'WhatyGo'**
 2. Adicionar breakpoints (Ctrl+F8)
 3. Debug com F5
 
@@ -415,4 +415,4 @@ Quando algo não funciona:
 
 ---
 
-**Mantido por**: Equipe EvoAI Services
+**Mantido por**: mantenedores do fork WhatyGo (baseado no Evolution Go)

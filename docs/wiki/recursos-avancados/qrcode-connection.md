@@ -1,6 +1,6 @@
 # Conexão QR Code
 
-Como funciona o processo de autenticação via QR Code no Evolution GO.
+Como funciona o processo de autenticação via QR Code no WhatyGo.
 
 ## 📋 Índice
 
@@ -18,13 +18,13 @@ Como funciona o processo de autenticação via QR Code no Evolution GO.
 
 ## Visão Geral
 
-O Evolution GO utiliza o protocolo Multi-Device do WhatsApp para autenticar instâncias. O processo é baseado em QR Code, similar ao WhatsApp Web.
+O WhatyGo utiliza o protocolo Multi-Device do WhatsApp para autenticar instâncias. O processo é baseado em QR Code, similar ao WhatsApp Web.
 
 ### Como Funciona
 
-1. **Gerar QR Code**: O Evolution GO cria um código único
+1. **Gerar QR Code**: O WhatyGo cria um código único
 2. **Escanear**: Você escaneia o código com o WhatsApp no celular
-3. **Pareamento**: WhatsApp e Evolution GO trocam chaves de criptografia
+3. **Pareamento**: WhatsApp e WhatyGo trocam chaves de criptografia
 4. **Sessão Ativa**: Conexão estabelecida e salva no banco de dados
 
 ### Por que QR Code?
@@ -45,7 +45,7 @@ O Evolution GO utiliza o protocolo Multi-Device do WhatsApp para autenticar inst
 
 ```
 ┌──────────────┐                                        ┌──────────────┐
-│ Evolution GO │                                        │  WhatsApp    │
+│ WhatyGo │                                        │  WhatsApp    │
 │   Client     │                                        │   Servers    │
 └──────┬───────┘                                        └──────┬───────┘
        │                                                       │
@@ -95,7 +95,7 @@ O Evolution GO utiliza o protocolo Multi-Device do WhatsApp para autenticar inst
        │<──────────────────────────────────────────────────────│
        │                                                       │
 ┌──────▼───────┐                                              │
-│ Evolution GO │                                              │
+│ WhatyGo │                                              │
 └──────┬───────┘                                              │
        │                                                       │
        │ 12. Receive Pairing Success Event                    │
@@ -146,7 +146,7 @@ POST /instance/connect
 
 #### 2. Solicitação de QR Code
 
-O Evolution GO solicita ao WhatsApp um código QR único, que contém:
+O WhatyGo solicita ao WhatsApp um código QR único, que contém:
 - **Ref**: Referência única que identifica esta tentativa de conexão
 - **Public Key**: Chave pública para iniciar o pareamento criptografado
 
@@ -206,7 +206,7 @@ GET /instance/qr?instanceName=vendas
 
 Após o usuário escanear o QR Code:
 
-1. **Evolution GO recebe confirmação** do WhatsApp
+1. **WhatyGo recebe confirmação** do WhatsApp
 2. **Sessão é salva** no banco de dados com:
    - Chaves de identidade
    - Chaves pré-geradas
@@ -381,7 +381,7 @@ POST /instance/pair
 
 ### Como Funciona
 
-O Evolution GO gera um código de 8 dígitos único e o retorna na API. Esse código é válido por tempo limitado e pode ser usado uma única vez.
+O WhatyGo gera um código de 8 dígitos único e o retorna na API. Esse código é válido por tempo limitado e pode ser usado uma única vez.
 
 ---
 
@@ -479,11 +479,11 @@ Depois do primeiro pareamento bem-sucedido via QR Code:
 2. **Próxima inicialização**: Sessão é carregada automaticamente
 3. **Conecta diretamente** sem necessidade de novo QR Code
 
-O Evolution GO mantém várias tabelas para armazenar as informações de sessão e chaves criptográficas necessárias para reconexão.
+O WhatyGo mantém várias tabelas para armazenar as informações de sessão e chaves criptográficas necessárias para reconexão.
 
 ### Tentativas de Reconexão
 
-Se uma conexão cair, o Evolution GO tenta reconectar automaticamente usando estratégia de intervalo crescente:
+Se uma conexão cair, o WhatyGo tenta reconectar automaticamente usando estratégia de intervalo crescente:
 
 - Tentativa 1: 2 segundos
 - Tentativa 2: 4 segundos
@@ -676,4 +676,4 @@ GET /instance/status?instanceName=vendas
 
 ---
 
-**Documentação gerada para Evolution GO v1.0**
+**Documentação gerada para WhatyGo v1.0**

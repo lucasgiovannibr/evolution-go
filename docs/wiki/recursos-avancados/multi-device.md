@@ -1,6 +1,6 @@
 # WhatsApp Multi-Device
 
-Entenda como funciona o protocolo Multi-Device do WhatsApp e como o Evolution GO o utiliza.
+Entenda como funciona o protocolo Multi-Device do WhatsApp e como o WhatyGo o utiliza.
 
 ## 📋 Índice
 
@@ -67,7 +67,7 @@ Todos funcionam INDEPENDENTEMENTE!
    - Pode funcionar offline após sincronização inicial
 
 2. **Dispositivos Companion (Companion Devices)**
-   - WhatsApp Web, Desktop, Business API, Evolution GO
+   - WhatsApp Web, Desktop, Business API, WhatyGo
    - Até 4 dispositivos simultâneos
    - Funcionam independentemente após pareamento
 
@@ -103,7 +103,7 @@ Todos funcionam INDEPENDENTEMENTE!
 ### Funcionamento
 
 **Enviar Mensagem**:
-1. Device 1 (Evolution GO) envia mensagem criptografada para WhatsApp servers
+1. Device 1 (WhatyGo) envia mensagem criptografada para WhatsApp servers
 2. Servers encaminham para destinatário
 3. Servers **também** sincronizam com outros devices do remetente
 4. Primary device e outros companion devices recebem cópia
@@ -289,7 +289,7 @@ Todas as mensagens são criptografadas no dispositivo do remetente e só podem s
 - ✅ Celular (Primary)
 - ✅ WhatsApp Web (Device 1)
 - ✅ WhatsApp Desktop (Device 2)
-- ✅ Evolution GO (Device 3)
+- ✅ WhatyGo (Device 3)
 - ✅ WhatsApp Business API (Device 4)
 - ❌ Outro device → Erro: "Máximo de devices atingido"
 
@@ -306,7 +306,7 @@ Todas as mensagens são criptografadas no dispositivo do remetente e só podem s
 
 ### Chamadas
 
-**Limitação atual**: Evolution GO **não suporta atender** chamadas de voz/vídeo.
+**Limitação atual**: WhatyGo **não suporta atender** chamadas de voz/vídeo.
 
 **Suportado**:
 - ✅ Receber notificação de chamada (evento `CALL`)
@@ -328,7 +328,7 @@ Todas as mensagens são criptografadas no dispositivo do remetente e só podem s
 
 ### 1. Independência do Celular
 
-**Evolution GO funciona mesmo com celular offline** (após sincronização inicial).
+**WhatyGo funciona mesmo com celular offline** (após sincronização inicial).
 
 **Casos de uso**:
 - Celular sem bateria
@@ -340,14 +340,14 @@ Todas as mensagens são criptografadas no dispositivo do remetente e só podem s
 **Todas as mensagens** aparecem em todos os devices simultaneamente.
 
 **Exemplo**:
-- Enviar mensagem no Evolution GO
+- Enviar mensagem no WhatyGo
 - Aparece instantaneamente no WhatsApp Web
 - Aparece no celular
 - Aparece no Desktop
 
 ### 3. Múltiplas Contas Simultâneas
 
-**Com containers Docker**, você pode ter **N instâncias** do Evolution GO, cada uma conectada a um número WhatsApp diferente:
+**Com containers Docker**, você pode ter **N instâncias** do WhatyGo, cada uma conectada a um número WhatsApp diferente:
 
 ```bash
 docker run -d --name evo-vendas evolution-go
@@ -361,7 +361,7 @@ Cada container = 1 número WhatsApp separado.
 
 **Redundância**: Se um device falha, outros continuam funcionando.
 
-**Load Balancing**: Distribua carga entre múltiplos Evolution GO instances.
+**Load Balancing**: Distribua carga entre múltiplos WhatyGo instances.
 
 ---
 
@@ -392,4 +392,4 @@ Cada container = 1 número WhatsApp separado.
 
 ---
 
-**Documentação gerada para Evolution GO v1.0**
+**Documentação gerada para WhatyGo v1.0**

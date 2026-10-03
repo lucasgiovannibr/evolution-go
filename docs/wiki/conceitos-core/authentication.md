@@ -1,6 +1,6 @@
 # Autenticação
 
-Sistema de autenticação do Evolution GO usando chaves de acesso (API Keys).
+Sistema de autenticação do WhatyGo usando chaves de acesso (API Keys).
 
 ## 📋 Índice
 
@@ -16,7 +16,7 @@ Sistema de autenticação do Evolution GO usando chaves de acesso (API Keys).
 
 ## Visão Geral
 
-O Evolution GO usa **chaves de acesso** (API Keys) para proteger sua API. Pense nisso como senhas especiais que você precisa enviar em cada requisição.
+O WhatyGo usa **chaves de acesso** (API Keys) para proteger sua API. Pense nisso como senhas especiais que você precisa enviar em cada requisição.
 
 ### Como Funciona
 
@@ -24,7 +24,7 @@ Imagine um prédio com dois tipos de chave:
 - **Chave Master (Admin)**: Abre todas as portas, permite criar/deletar salas
 - **Chave Individual (Instância)**: Abre apenas uma sala específica
 
-É assim que funciona a autenticação no Evolution GO!
+É assim que funciona a autenticação no WhatyGo!
 
 **Importante**: Não usamos login/senha tradicional, JWT ou cookies. Apenas chaves simples!
 
@@ -449,4 +449,4 @@ curl -H "apikey: sua-chave-global" http://localhost:4000/instance/all
 
 ---
 
-**Documentação Evolution GO v1.0**
+**Documentação WhatyGo v1.0**
