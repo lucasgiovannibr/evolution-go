@@ -10,6 +10,7 @@ import { streamWsUrl } from './format';
 import { Softphone, type PeerVideoState, type PhoneState } from './softphone';
 import { canDecodeVideo } from './video';
 import { canEncodeVideo } from './video-send';
+import { readAutoAccept, saveAutoAccept, shouldAutoAccept } from './video-upgrade';
 
 export interface PhoneVideo {
   /** This browser can decode video (WebCodecs); without it the call goes on with audio only. */
@@ -76,6 +77,8 @@ export function usePhone(instance: Instance, onChange: () => void) {
   const phone = useRef<Softphone | null>(null);
   const busy = useRef(false);
   const apiUrl = useAuth((s) => s.apiUrl);
+  const [autoAccept, setAutoAcceptState] = useState(readAutoAccept);
+  const handledRequest = useRef<PeerVideoState | null>(null);
 
   const patch = useCallback((p: Partial<PhoneSession>) => setSession((s) => (s ? { ...s, ...p } : s)), []);
   const patchVideo = useCallback((p: Partial<PhoneVideo>) => setSession((s) => (s ? { ...s, video: { ...s.video, ...p } } : s)), []);
@@ -250,6 +253,20 @@ export function usePhone(instance: Instance, onChange: () => void) {
     if (canEncodeVideo() && !p.cameraOn) await p.startCamera(); // a refusal is shown by the panel; the call goes on receiving
   }, [instance.token, patchVideo, session?.callId]);
 
+  // The other side withdraws a request for video after a few seconds, faster than a person can read
+  // the notice and click: so by default it is accepted the moment it arrives.
+  useEffect(() => {
+    const peer = session?.video.peer ?? null;
+    if (!shouldAutoAccept(peer, handledRequest.current, session?.state === 'live', autoAccept)) return;
+    handledRequest.current = peer;
+    void acceptVideo();
+  }, [acceptVideo, autoAccept, session?.state, session?.video.peer]);
+
+  const setAutoAccept = useCallback((on: boolean) => {
+    saveAutoAccept(on);
+    setAutoAcceptState(on);
+  }, []);
+
   /** The canvas the other side's video is drawn on (null when it is no longer on the page). */
   const attachCanvas = useCallback((canvas: HTMLCanvasElement | null) => phone.current?.attachCanvas(canvas), []);
 
@@ -259,5 +276,5 @@ export function usePhone(instance: Instance, onChange: () => void) {
     setSession(null);
   }, []);
 
-  return { session, join, dial, hangup, toggleMute, toggleCamera, acceptVideo, dismiss, attachCanvas };
+  return { session, join, dial, hangup, toggleMute, toggleCamera, acceptVideo, autoAccept, setAutoAccept, dismiss, attachCanvas };
 }

@@ -4,6 +4,7 @@ import { cn } from '@/lib/cn';
 import { Alert, Spinner } from '@/components/ui/feedback';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Switch } from '@/components/ui/switch';
 import { Card, CardBody, CardHeader } from '@/components/ui/card';
 import { formatClock, levelPercent, peerVideoLabel } from './format';
 import type { PhoneSession, PhoneVideo } from './use-phone';
@@ -78,10 +79,13 @@ interface PhonePanelProps {
   onCanvas: (el: HTMLCanvasElement | null) => void;
   onToggleCamera: () => void;
   onAcceptVideo: () => void;
+  /** Requests for video are accepted the moment they arrive. */
+  autoAccept: boolean;
+  onAutoAccept: (on: boolean) => void;
 }
 
 /** The call that is going on through the audio of this page: timer, levels, mute and hang up. */
-export function PhonePanel({ session, onHangup, onToggleMute, onDismiss, onCanvas, onToggleCamera, onAcceptVideo }: PhonePanelProps) {
+export function PhonePanel({ session, onHangup, onToggleMute, onDismiss, onCanvas, onToggleCamera, onAcceptVideo, autoAccept, onAutoAccept }: PhonePanelProps) {
   const now = useNow();
   const over = session.state === 'ended' || session.state === 'error';
   const live = session.state === 'live';
@@ -137,7 +141,8 @@ export function PhonePanel({ session, onHangup, onToggleMute, onDismiss, onCanva
                   </Button>
                 }
               >
-                {session.video.canSend ? 'Ao aceitar, a sua câmera também é ligada.' : 'Este navegador só mostra o vídeo dele: não envia a sua câmera.'}
+                Aceite logo: o outro lado desiste do pedido em poucos segundos.{' '}
+                {session.video.canSend ? 'Ao aceitar, a sua câmera também é ligada, se houver uma.' : 'Este navegador só mostra o vídeo dele: não envia a sua câmera.'}
               </Alert>
             ) : null}
             {session.video.cameraError ? <Alert tone="warn" title="Problema com o vídeo">{session.video.cameraError}</Alert> : null}
@@ -163,6 +168,13 @@ export function PhonePanel({ session, onHangup, onToggleMute, onDismiss, onCanva
                 Desligar
               </Button>
             </div>
+            {session.video.supported ? (
+              <label className="flex items-center gap-2 text-[13px] text-muted">
+                <Switch checked={autoAccept} onChange={onAutoAccept} label="Aceitar pedidos de vídeo na hora" />
+                Aceitar pedidos de vídeo na hora
+                <span className="text-xs text-subtle">(o outro lado desiste em poucos segundos; sem câmera aqui, você só vê o vídeo dele)</span>
+              </label>
+            ) : null}
             <p className="text-xs text-muted">
               Use fones de ouvido: sem eles, o alto-falante volta para o microfone e a outra pessoa se ouve de volta. Se você sair desta página, o
               áudio acaba e a chamada cai em alguns segundos.

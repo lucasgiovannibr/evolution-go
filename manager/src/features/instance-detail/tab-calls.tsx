@@ -28,6 +28,8 @@ export function TabCalls() {
           onCanvas={phone.attachCanvas}
           onToggleCamera={() => void phone.toggleCamera()}
           onAcceptVideo={() => void phone.acceptVideo()}
+          autoAccept={phone.autoAccept}
+          onAutoAccept={phone.setAutoAccept}
         /> : null}
 
       <div className="grid gap-4 lg:grid-cols-[2fr_1fr]">
