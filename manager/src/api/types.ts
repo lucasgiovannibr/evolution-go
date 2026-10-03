@@ -22,6 +22,7 @@ export interface RawInstance {
   alwaysOnline?: boolean;
   rejectCall?: boolean;
   msgRejectCall?: string;
+  callsEnabled?: boolean;
   readMessages?: boolean;
   ignoreGroups?: boolean;
   ignoreStatus?: boolean;
@@ -40,6 +41,8 @@ export interface BehaviorSettings {
   alwaysOnline: boolean;
   rejectCall: boolean;
   msgRejectCall: string;
+  /** Turns on the call engine (answer, dial, stream); takes effect on the next connection. */
+  callsEnabled: boolean;
   readMessages: boolean;
   ignoreGroups: boolean;
   ignoreStatus: boolean;
@@ -99,6 +102,7 @@ export function toInstance(r: RawInstance): Instance {
       alwaysOnline: !!r.alwaysOnline,
       rejectCall: !!r.rejectCall,
       msgRejectCall: r.msgRejectCall ?? '',
+      callsEnabled: !!r.callsEnabled,
       readMessages: !!r.readMessages,
       ignoreGroups: !!r.ignoreGroups,
       ignoreStatus: !!r.ignoreStatus,

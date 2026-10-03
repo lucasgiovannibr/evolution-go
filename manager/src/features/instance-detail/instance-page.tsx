@@ -1,5 +1,5 @@
 import { Link, Outlet, useOutletContext, useParams } from 'react-router-dom';
-import { Bell, FlaskConical, Info, PlugZap, SearchX, SlidersHorizontal, Unplug } from 'lucide-react';
+import { Bell, FlaskConical, Info, Phone, PlugZap, SearchX, SlidersHorizontal, Unplug } from 'lucide-react';
 import type { Instance } from '@/api/types';
 import { useInstance } from '@/hooks/use-instances';
 import { useDocumentTitle } from '@/hooks/use-document-title';
@@ -91,6 +91,7 @@ export function InstancePage() {
               { to: base, label: 'Geral', icon: <Info />, end: true },
               { to: `${base}/webhook`, label: 'Webhook e eventos', icon: <Bell /> },
               { to: `${base}/behavior`, label: 'Comportamento', icon: <SlidersHorizontal /> },
+              { to: `${base}/calls`, label: 'Chamadas', icon: <Phone /> },
               { to: `${base}/test`, label: 'Testar envio', icon: <FlaskConical /> },
             ]}
           />

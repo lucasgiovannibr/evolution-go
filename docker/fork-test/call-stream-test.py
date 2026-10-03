@@ -354,6 +354,10 @@ async def main(args):
                 elif event == "video_state":
                     print(f"[{time.time()-t0:6.1f}s] peer video state:", {k: msg.get(k) for k in ("state", "stateCode", "active", "upgrade", "orientation")})
                     if msg.get("upgrade"):
+                        if args.accept_delay:
+                            # a person needs a few seconds to read the request and click: see if the phone waits
+                            print(f"[{time.time()-t0:6.1f}s] upgrade requested; accepting in {args.accept_delay:g} s")
+                            await asyncio.sleep(args.accept_delay)
                         control("accept")
                 elif event == "stop":
                     print("call ended:", msg.get("reason"))
@@ -399,6 +403,7 @@ if __name__ == "__main__":
     p.add_argument("--format", choices=sorted(FORMATS), default="pcm16", help="audio format of the stream: PCM at 16 (default), 8 or 24 kHz, or G.711 mu-law/A-law at 8 kHz; the WAV file keeps that rate")
     p.add_argument("--binary", action="store_true", help="carry audio and video as binary WebSocket frames instead of base64 JSON")
     p.add_argument("--speech", action="store_true", help="ask the stream to report when the peer begins and stops talking (speech_start / speech_end)")
+    p.add_argument("--accept-delay", type=float, default=0, metavar="SECONDS", help="wait this long before accepting the peer's request to turn the call into video (what a person clicking in the manager takes)")
     p.add_argument("--echo", action="store_true", help="send the caller's audio back")
     p.add_argument("--tone", type=float, default=0, metavar="SECONDS", help="play a 440 Hz tone, then send a mark")
     p.add_argument("--tone-burst", action="store_true", help="queue the whole tone at once instead of in real time: the mark then comes back when the tone has been played (up to 30 s)")

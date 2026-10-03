@@ -361,6 +361,29 @@ where noted. The guide is `docs/wiki/guias-api/api-call.md`.
   `evolution_call_engines`, stream frames and drops, keyframe requests, stalls and the history
   counters, with bounded labels.
 
+**Manager**
+- **Calls tab** on the instance: the calls the engine follows right now (answer, reject, hang
+  up, timer, stream counters, "no audio" warning), a dial box and the call history (filters,
+  paging, erase). A **browser phone** puts the page's microphone and speakers on a call
+  through the stream (binary PCM 16 kHz, speech events, playout by timestamp); the stream is
+  opened before answering, and a refused microphone does not answer the call. The microphone
+  is read by an AudioWorklet emitted as its own file because the panel's CSP does not allow a
+  Blob worklet. The Behavior tab gets the `callsEnabled` switch. Tried live in a desktop browser: answer
+  from the page, mute, hang up, and dial from the page.
+- **Video in the browser phone**: the other side's video is decoded with WebCodecs and drawn on
+  the page (turned upright by the quarter turns the server reports); the camera is cropped to
+  portrait 360x640, encoded to H.264 baseline and sent (the encoder's access unit delimiters are
+  stripped). A "Videochamada" switch on the dial card, a camera button (on an audio call it asks
+  the other side to upgrade), and the other side's request for video is **accepted at once** by
+  default (a switch turns it off, leaving an Accept button): a phone withdraws its request after
+  a few seconds, and measured with the live script, accepted at 0.5 s the video came, at 6 s the
+  phone had already gone back to voice. Without a camera it keeps receiving. Receiving was tried with an
+  iPhone; sending was tried with the browser's **fake camera** (the test computer has none): the
+  iPhone showed the test pattern upright and filling the screen, 258 pictures in 16 s, none
+  dropped; the iPhone's request for video was accepted at once on a computer without a camera
+  and its video stayed (107 pictures). Not tried: a real camera, "Start video" on a voice call,
+  the manual Accept button, and browsers other than Edge.
+
 ### Hardening and scale round (October 2026, PRs #38–#72)
 Result of a full analysis of the system (security, scalability, memory, send speed, error
 returns); every change below has tests, and the structural gains were measured.
