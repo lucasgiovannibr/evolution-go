@@ -170,8 +170,8 @@ export const PRESETS: Preset[] = [
     description: '4 cards (Site, Docs, GitHub, Comunidade). No carrossel o link vai no campo id.',
     build: carousel('Teste - Carrossel com botão URL', [
       { header: img('urlA'), body: { text: 'Card A - Site oficial' }, footer: 'Abre o site principal', buttons: [{ type: 'URL', displayText: 'Abrir site', id: 'https://example.com' }] },
-      { header: img('urlB'), body: { text: 'Card B - Documentação' }, footer: 'Abre os docs da API', buttons: [{ type: 'URL', displayText: 'Ver documentação', id: 'https://github.com/lucasgiovannibr/evolution-go/tree/main/docs/guia' }] },
-      { header: img('urlC'), body: { text: 'Card C - GitHub' }, footer: 'Abre o repositório', buttons: [{ type: 'URL', displayText: 'Abrir GitHub', id: 'https://github.com/lucasgiovannibr/evolution-go' }] },
+      { header: img('urlB'), body: { text: 'Card B - Documentação' }, footer: 'Abre os docs da API', buttons: [{ type: 'URL', displayText: 'Ver documentação', id: 'https://github.com/lucasgiovannibr/whatygo/tree/main/docs/guia' }] },
+      { header: img('urlC'), body: { text: 'Card C - GitHub' }, footer: 'Abre o repositório', buttons: [{ type: 'URL', displayText: 'Abrir GitHub', id: 'https://github.com/lucasgiovannibr/whatygo' }] },
       { header: img('urlD'), body: { text: 'Card D - Comunidade' }, footer: 'Participe da comunidade', buttons: [{ type: 'URL', displayText: 'Entrar na comunidade', id: 'https://example.com/comunidade' }] },
     ]),
   },

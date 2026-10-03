@@ -6,9 +6,9 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/lucasgiovannibr/evolution-go/actions/workflows/ci.yml"><img src="https://github.com/lucasgiovannibr/evolution-go/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
+  <a href="https://github.com/lucasgiovannibr/whatygo/actions/workflows/ci.yml"><img src="https://github.com/lucasgiovannibr/whatygo/actions/workflows/ci.yml/badge.svg" alt="CI" /></a>
   <a href="https://opensource.org/licenses/Apache-2.0"><img src="https://img.shields.io/badge/Licen%C3%A7a-Apache%202.0-blue.svg" alt="Licença: Apache 2.0" /></a>
-  <a href="https://github.com/lucasgiovannibr/evolution-go/pkgs/container/whatygo"><img src="https://img.shields.io/badge/Docker-ghcr.io-blue" alt="Imagem Docker" /></a>
+  <a href="https://github.com/lucasgiovannibr/whatygo/pkgs/container/whatygo"><img src="https://img.shields.io/badge/Docker-ghcr.io-blue" alt="Imagem Docker" /></a>
 </p>
 
 <p align="center">
@@ -36,8 +36,8 @@ O WhatyGo é um servidor que **conecta números de WhatsApp a outros sistemas**.
 Precisa do [Docker](https://www.docker.com/products/docker-desktop/) instalado.
 
 ```bash
-git clone https://github.com/lucasgiovannibr/evolution-go.git
-cd evolution-go/docker/instalacao-simples
+git clone https://github.com/lucasgiovannibr/whatygo.git
+cd whatygo/docker/instalacao-simples
 cp .env.example .env     # preencha POSTGRES_PASSWORD e GLOBAL_API_KEY (veja o guia)
 docker compose up -d
 ```

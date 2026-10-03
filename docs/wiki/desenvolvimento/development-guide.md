@@ -61,12 +61,12 @@ O WhatyGo é um **gateway de API WhatsApp** escrito em Go, utilizando:
 
 ```bash
 # Via HTTPS
-git clone https://github.com/lucasgiovannibr/evolution-go.git
-cd evolution-go
+git clone https://github.com/lucasgiovannibr/whatygo.git
+cd whatygo
 
 # Ou via SSH (se configurado)
 git clone git@git.evochat.com:Evolution/evolution-go.git
-cd evolution-go
+cd whatygo
 ```
 
 ### 2. Instalar Dependências Go

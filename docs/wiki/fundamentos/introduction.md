@@ -185,8 +185,8 @@ O sistema coleta métricas anônimas para melhorias:
 
 ```bash
 # Clonar repositório
-git clone https://github.com/lucasgiovannibr/evolution-go.git
-cd evolution-go
+git clone https://github.com/lucasgiovannibr/whatygo.git
+cd whatygo
 
 # Configurar ambiente
 cp .env.example .env
@@ -222,7 +222,7 @@ O servidor estará disponível em `http://localhost:4000` com documentação Swa
 
 ## Suporte
 
-- **GitHub Issues**: [github.com/lucasgiovannibr/evolution-go](https://github.com/lucasgiovannibr/evolution-go/issues)
+- **GitHub Issues**: [github.com/lucasgiovannibr/whatygo](https://github.com/lucasgiovannibr/whatygo/issues)
 - **Guia para iniciantes**: [docs/guia](../../guia/README.md)
 
 ## Licença

@@ -140,10 +140,10 @@ Consulta rápida para desenvolvedores.
 - **Problemas técnicos?** Veja o guia de [Debugging](./desenvolvimento/debugging.md)
 
 ### 🔗 Links Importantes
-- 🌐 [Repositório](https://github.com/lucasgiovannibr/evolution-go)
+- 🌐 [Repositório](https://github.com/lucasgiovannibr/whatygo)
 - 📚 [Biblioteca Whatsmeow](https://github.com/tulir/whatsmeow)
 - 🔧 [API Swagger](http://localhost:4000/swagger/index.html) (quando servidor estiver rodando)
-- 🐛 [Reportar Issues](https://github.com/lucasgiovannibr/evolution-go/issues)
+- 🐛 [Reportar Issues](https://github.com/lucasgiovannibr/whatygo/issues)
 
 ### 💬 Suporte
 - **Issues técnicos**: Abra uma issue no repositório

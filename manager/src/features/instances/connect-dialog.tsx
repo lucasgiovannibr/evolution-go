@@ -67,7 +67,7 @@ function PasskeyPanel({ qr }: { qr: QrInfo }) {
           Abrir WhatsApp Web
         </Button>
         <a
-          href="https://github.com/lucasgiovannibr/evolution-go/tree/main/passkey-helper"
+          href="https://github.com/lucasgiovannibr/whatygo/tree/main/passkey-helper"
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex h-8 items-center px-2 text-[13px] font-medium text-brand-text hover:underline"

@@ -49,8 +49,8 @@ Método mais simples e adequado para produção.
 **Opção A: Clonar repositório**
 
 ```bash
-git clone https://github.com/lucasgiovannibr/evolution-go.git
-cd evolution-go
+git clone https://github.com/lucasgiovannibr/whatygo.git
+cd whatygo
 ```
 
 **Opção B: Download direto**
@@ -163,8 +163,8 @@ go version
 ### 4. Clonar Repositório
 
 ```bash
-git clone https://github.com/lucasgiovannibr/evolution-go.git
-cd evolution-go
+git clone https://github.com/lucasgiovannibr/whatygo.git
+cd whatygo
 ```
 
 ### 5. Instalar Dependências
