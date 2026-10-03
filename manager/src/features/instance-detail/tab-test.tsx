@@ -51,7 +51,7 @@ const ICONS: Record<SendKind, React.ReactNode> = {
   'status/media': <Radio />,
 };
 
-const NUMBER_KEY = 'evolution-test-number';
+const NUMBER_KEY = 'whatygo-test-number';
 const HISTORY_LIMIT = 8;
 const FALLBACK_NUMBER = '5511999990000';
 

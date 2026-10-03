@@ -1,9 +1,13 @@
 name: Build and Publish Docker Image
 
-# Fork version: publishes to this repository's GitHub Container Registry
-# (ghcr.io/<owner>/<repo>) using the built-in GITHUB_TOKEN. The upstream
-# workflow pushed to Docker Hub (evoapicloud/evolution-go) with secrets that do
+# Fork version: publishes to the owner's GitHub Container Registry as
+# ghcr.io/<owner>/whatygo using the built-in GITHUB_TOKEN. The image name is fixed
+# here (it does not follow the repository name) so it can differ from the upstream
+# project's name. The upstream workflow pushed to Docker Hub with secrets that do
 # not exist in a fork.
+#
+# The first publish creates the package as private: make it public once in
+# GitHub > Packages > whatygo > Package settings.
 #
 # Run it manually (Actions > Run workflow) on any branch to get a test image:
 # non-main branches are tagged with the branch name and short sha, and never
@@ -37,7 +41,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ${{ env.REGISTRY }}/${{ github.repository }}
+          images: ${{ env.REGISTRY }}/${{ github.repository_owner }}/whatygo
           tags: |
             type=raw,value=${{ steps.version.outputs.version }},enable=${{ github.ref == 'refs/heads/main' }}
             type=sha

@@ -1,9 +1,9 @@
 {
   "manifest_version": 3,
-  "name": "Evolution Passkey Helper",
+  "name": "WhatyGo Passkey Helper",
   "version": "1.1.0",
   "minimum_chrome_version": "111",
-  "description": "Conclui o pareamento por chave de acesso (passkey) do WhatsApp Web para o Evolution GO. Roda apenas em web.whatsapp.com e nao coleta dados.",
+  "description": "Conclui o pareamento por chave de acesso (passkey) do WhatsApp Web para o WhatyGo. Roda apenas em web.whatsapp.com e nao coleta dados.",
   "content_scripts": [
     {
       "matches": ["https://web.whatsapp.com/*"],

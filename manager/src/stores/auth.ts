@@ -21,6 +21,7 @@ const defaultUrl = () => (typeof window !== 'undefined' ? window.location.origin
  * old versions left behind is removed.
  */
 try {
+  localStorage.removeItem('whatygo-auth');
   localStorage.removeItem('evolution-auth');
 } catch {
   /* storage blocked: nothing to clean */
@@ -37,7 +38,7 @@ export const useAuth = create<AuthState>()(
       clear: () => set({ apiUrl: defaultUrl(), apiKey: '', isAuthenticated: false, licenseState: 'unchecked' }),
     }),
     {
-      name: 'evolution-auth',
+      name: 'whatygo-auth',
       storage: createJSONStorage(() => sessionStorage),
       partialize: (s) => ({
         apiUrl: s.apiUrl,

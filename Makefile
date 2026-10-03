@@ -18,18 +18,18 @@ NC=\033[0m # No Color
 ##@ Ajuda
 
 help: ## Exibe esta mensagem de ajuda
-	@echo "$(GREEN)Evolution GO - Makefile$(NC)"
+	@echo "$(GREEN)WhatyGo - Makefile$(NC)"
 	@echo ""
 	@awk 'BEGIN {FS = ":.*##"; printf "\nUso:\n  make $(YELLOW)<target>$(NC)\n"} /^[a-zA-Z_-]+:.*?##/ { printf "  $(GREEN)%-15s$(NC) %s\n", $$1, $$2 } /^##@/ { printf "\n$(YELLOW)%s$(NC)\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
 
 ##@ Desenvolvimento
 
 dev: ## Roda a aplicação em modo desenvolvimento
-	@echo "$(GREEN)🚀 Rodando Evolution GO em modo desenvolvimento...$(NC)"
+	@echo "$(GREEN)🚀 Rodando WhatyGo em modo desenvolvimento...$(NC)"
 	$(GO) run $(LDFLAGS) $(MAIN_PATH) -dev
 
 run: ## Roda a aplicação em modo produção
-	@echo "$(GREEN)🚀 Rodando Evolution GO...$(NC)"
+	@echo "$(GREEN)🚀 Rodando WhatyGo...$(NC)"
 	$(GO) run $(MAIN_PATH)
 
 watch: ## Roda a aplicação com hot reload (requer air)
@@ -160,12 +160,12 @@ migrate-down: ## Reverte migrations do banco de dados
 
 docker-build: ## Build da imagem Docker
 	@echo "$(GREEN)🐳 Construindo imagem Docker...$(NC)"
-	docker build --build-arg VERSION=$(VERSION) -t $(APP_NAME):latest .
+	docker build --build-arg VERSION=$(VERSION) -t whatygo:latest .
 	@echo "$(GREEN)✅ Imagem Docker construída$(NC)"
 
 docker-run: ## Roda container Docker
 	@echo "$(GREEN)🐳 Iniciando container...$(NC)"
-	docker run -p 4000:4000 --env-file .env $(APP_NAME):latest
+	docker run -p 4000:4000 --env-file .env whatygo:latest
 
 docker-compose-up: ## Sobe todos os serviços com docker-compose
 	@echo "$(GREEN)🐳 Iniciando serviços com docker-compose...$(NC)"

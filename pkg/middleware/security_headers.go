@@ -3,7 +3,7 @@ package auth_middleware
 import "github.com/gin-gonic/gin"
 
 // managerCSP is the Content-Security-Policy of the manager panel (a single-page app that
-// talks to this API, or to another Evolution GO the operator types in).
+// talks to this API, or to another WhatyGo the operator types in).
 //
 //   - script-src 'self': no inline scripts and no eval; the theme bootstrap is a file of its own;
 //   - style-src allows inline styles (the UI sets style attributes), nothing else is inline;

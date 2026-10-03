@@ -60,7 +60,7 @@ export interface KindDef {
 }
 
 export const SAMPLE = {
-  image: 'https://picsum.photos/seed/evolution/800/600.jpg',
+  image: 'https://picsum.photos/seed/whatygo/800/600.jpg',
   video: 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4',
   audio: 'https://interactive-examples.mdn.mozilla.net/media/cc0-audio/t-rex-roar.mp3',
   document: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf',
@@ -173,13 +173,13 @@ export const KINDS: KindDef[] = [
     description: 'Texto com pré-visualização de um link (título, descrição e imagem).',
     recipient: true,
     fields: [
-      { key: 'url', label: 'Link', control: 'input', inputMode: 'url', placeholder: 'https://evolutionapi.com' },
+      { key: 'url', label: 'Link', control: 'input', inputMode: 'url', placeholder: 'https://example.com' },
       { key: 'text', label: 'Texto', control: 'textarea', rows: 2, hint: 'Vai acima do cartão do link.' },
       { key: 'title', label: 'Título do cartão', control: 'input', optional: true },
       { key: 'description', label: 'Descrição do cartão', control: 'input', optional: true },
       { key: 'imgUrl', label: 'Imagem do cartão (URL)', control: 'input', inputMode: 'url', optional: true },
     ],
-    defaults: { url: 'https://evolutionapi.com', text: 'Dê uma olhada neste link', title: 'Evolution API', description: 'Teste de envio de link', imgUrl: SAMPLE.image },
+    defaults: { url: 'https://example.com', text: 'Dê uma olhada neste link', title: 'WhatyGo', description: 'Teste de envio de link', imgUrl: SAMPLE.image },
     build: (number, v) => withText({ number, url: trimmed(v.url), text: v.text }, { title: v.title, description: v.description, imgUrl: v.imgUrl }),
     validate: (v) => urlError(v.url ?? '', 'O link') ?? required(v, [['text', 'o texto']]) ?? (trimmed(v.imgUrl) ? urlError(v.imgUrl ?? '', 'A imagem') : null),
   },
@@ -214,7 +214,7 @@ export const KINDS: KindDef[] = [
       { key: 'organization', label: 'Empresa', control: 'input', optional: true },
       { key: 'phone', label: 'Telefone', control: 'input', inputMode: 'tel', hint: 'Com DDI, só dígitos.' },
     ],
-    defaults: { fullName: 'Contato de Teste', organization: 'Evolution GO', phone: '5511999990000' },
+    defaults: { fullName: 'Contato de Teste', organization: 'WhatyGo', phone: '5511999990000' },
     build: (number, v) => ({
       number,
       vcard: { fullName: trimmed(v.fullName), organization: trimmed(v.organization), phone: (v.phone ?? '').replace(/\D/g, '') },
