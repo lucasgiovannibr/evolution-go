@@ -22,8 +22,8 @@ O caminho mais fácil: **Docker Compose**. Em cerca de 10 minutos você tem o se
 Com o Git instalado:
 
 ```bash
-git clone https://github.com/lucasgiovannibr/evolution-go.git
-cd evolution-go/docker/instalacao-simples
+git clone https://github.com/lucasgiovannibr/whatygo.git
+cd whatygo/docker/instalacao-simples
 ```
 
 Sem o Git: na página do repositório, clique em **Code → Download ZIP**, extraia e abra a pasta `docker/instalacao-simples`.
@@ -102,7 +102,7 @@ O projeto original exige que cada servidor seja **registrado** antes de funciona
 ## Atualizar para uma versão nova
 
 ```bash
-cd evolution-go/docker/instalacao-simples
+cd whatygo/docker/instalacao-simples
 git pull
 docker compose pull
 docker compose up -d

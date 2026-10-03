@@ -1,6 +1,6 @@
 # WhatyGo - Changelog
 
-## Unreleased (fork lucasgiovannibr/evolution-go)
+## Unreleased (fork lucasgiovannibr/whatygo)
 
 Fixes and hardening on top of upstream v0.7.2. Full triage of the upstream issues
 and pull requests in `FORK-TRIAGE.md`.

@@ -130,8 +130,8 @@ make clean-all
 
 ```bash
 # 1. Clone o repositório
-git clone https://github.com/lucasgiovannibr/evolution-go.git
-cd evolution-go
+git clone https://github.com/lucasgiovannibr/whatygo.git
+cd whatygo
 
 # 2. Setup completo do ambiente
 make setup

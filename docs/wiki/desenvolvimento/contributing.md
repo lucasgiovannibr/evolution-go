@@ -39,7 +39,7 @@ Contribuições são bem-vindas! Você pode contribuir:
 
 ### Antes de Reportar
 
-1. Verifique se o bug já foi reportado nas [Issues](https://github.com/lucasgiovannibr/evolution-go/issues)
+1. Verifique se o bug já foi reportado nas [Issues](https://github.com/lucasgiovannibr/whatygo/issues)
 2. Teste na versão mais recente
 3. Colete informações: logs, versão do Go, sistema operacional
 
@@ -284,9 +284,9 @@ func (h *InstanceHandler) GetInstance(c *gin.Context) {
 
 ## Recursos Úteis
 
-- **Issues**: https://github.com/lucasgiovannibr/evolution-go/issues
-- **Pull Requests**: https://github.com/lucasgiovannibr/evolution-go/pulls
-- **Documentação**: https://github.com/lucasgiovannibr/evolution-go/tree/main/docs
+- **Issues**: https://github.com/lucasgiovannibr/whatygo/issues
+- **Pull Requests**: https://github.com/lucasgiovannibr/whatygo/pulls
+- **Documentação**: https://github.com/lucasgiovannibr/whatygo/tree/main/docs
 - **Go Style Guide**: https://google.github.io/styleguide/go/
 - **Effective Go**: https://go.dev/doc/effective_go
 

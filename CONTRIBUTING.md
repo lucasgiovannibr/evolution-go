@@ -26,8 +26,8 @@ Se você só quer **usar** o WhatyGo, veja o [Guia do WhatyGo](./docs/guia/READM
 Você precisa de Git, Docker e, para o painel, Node.js 22 ou mais novo. **Go não precisa estar instalado**: o código Go é compilado e testado dentro do Docker.
 
 ```bash
-git clone https://github.com/lucasgiovannibr/evolution-go.git
-cd evolution-go
+git clone https://github.com/lucasgiovannibr/whatygo.git
+cd whatygo
 git checkout -b minha-correcao
 ```
 

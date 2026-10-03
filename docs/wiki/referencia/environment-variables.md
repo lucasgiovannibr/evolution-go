@@ -300,7 +300,7 @@ MINIO_USE_SSL=false
 ## Recursos
 
 - **[Configuração Detalhada](../fundamentos/configuration.md)** - Documentação completa de cada variável
-- **[.env.example](https://github.com/lucasgiovannibr/evolution-go/blob/main/docker/examples/.env.example)** - Arquivo de exemplo com todas as variáveis
+- **[.env.example](https://github.com/lucasgiovannibr/whatygo/blob/main/docker/examples/.env.example)** - Arquivo de exemplo com todas as variáveis
 
 ---
 

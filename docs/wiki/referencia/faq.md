@@ -246,7 +246,7 @@ Consulte [Guia de Contribuição](../desenvolvimento/contributing.md) para proce
 
 ### Reporte de Bugs
 
-Utilize [Issues no GitHub](https://github.com/lucasgiovannibr/evolution-go/issues) incluindo:
+Utilize [Issues no GitHub](https://github.com/lucasgiovannibr/whatygo/issues) incluindo:
 - Versão do WhatyGo
 - Ambiente (Docker/local, SO)
 - Steps to reproduce
@@ -264,11 +264,11 @@ Utilize [Issues no GitHub](https://github.com/lucasgiovannibr/evolution-go/issue
 - [Swagger UI](http://localhost:4000/swagger/index.html)
 
 ### Suporte
-- [Issues no GitHub](https://github.com/lucasgiovannibr/evolution-go/issues)
-- [Documentação Completa](https://github.com/lucasgiovannibr/evolution-go/tree/main/docs)
+- [Issues no GitHub](https://github.com/lucasgiovannibr/whatygo/issues)
+- [Documentação Completa](https://github.com/lucasgiovannibr/whatygo/tree/main/docs)
 
 ---
 
-**Não encontrou resposta?** Abra uma [issue](https://github.com/lucasgiovannibr/evolution-go/issues) com sua questão.
+**Não encontrou resposta?** Abra uma [issue](https://github.com/lucasgiovannibr/whatygo/issues) com sua questão.
 
 **Documentação WhatyGo v1.0**
