@@ -374,11 +374,15 @@ where noted. The guide is `docs/wiki/guias-api/api-call.md`.
   the page (turned upright by the quarter turns the server reports); the camera is cropped to
   portrait 360x640, encoded to H.264 baseline and sent (the encoder's access unit delimiters are
   stripped). A "Videochamada" switch on the dial card, a camera button (on an audio call it asks
-  the other side to upgrade), and Accept when the other side asks. Receiving was tried with an
+  the other side to upgrade), and the other side's request for video is **accepted at once** by
+  default (a switch turns it off, leaving an Accept button): a phone withdraws its request after
+  a few seconds, and measured with the live script, accepted at 0.5 s the video came, at 6 s the
+  phone had already gone back to voice. Without a camera it keeps receiving. Receiving was tried with an
   iPhone; sending was tried with the browser's **fake camera** (the test computer has none): the
   iPhone showed the test pattern upright and filling the screen, 258 pictures in 16 s, none
-  dropped. Not tried: a real camera, "Start video" on a voice call, accepting the iPhone's
-  request, and browsers other than Edge.
+  dropped; the iPhone's request for video was accepted at once on a computer without a camera
+  and its video stayed (107 pictures). Not tried: a real camera, "Start video" on a voice call,
+  the manual Accept button, and browsers other than Edge.
 
 ### Hardening and scale round (October 2026, PRs #38–#72)
 Result of a full analysis of the system (security, scalability, memory, send speed, error
