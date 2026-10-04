@@ -1,6 +1,6 @@
 # Configuração
 
-Referência completa de variáveis de ambiente do Evolution GO.
+Referência completa de variáveis de ambiente do WhatyGo.
 
 Para exemplos práticos, consulte: `docker/examples/.env.example`
 
@@ -555,4 +555,4 @@ EVENT_IGNORE_STATUS=true
 
 ---
 
-**Documentação Evolution GO v1.0**
+**Documentação WhatyGo v1.0**

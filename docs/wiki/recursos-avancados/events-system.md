@@ -1,6 +1,6 @@
 # Sistema de Eventos
 
-Sistema completo de notificações em tempo real do Evolution GO. Receba eventos do WhatsApp através de múltiplos canais: Webhooks, RabbitMQ, NATS e WebSocket.
+Sistema completo de notificações em tempo real do WhatyGo. Receba eventos do WhatsApp através de múltiplos canais: Webhooks, RabbitMQ, NATS e WebSocket.
 
 ## 📋 Índice
 
@@ -20,7 +20,7 @@ Sistema completo de notificações em tempo real do Evolution GO. Receba eventos
 
 ## Visão Geral
 
-O Evolution GO envia notificações de eventos do WhatsApp em tempo real através de diferentes canais de comunicação:
+O WhatyGo envia notificações de eventos do WhatsApp em tempo real através de diferentes canais de comunicação:
 
 - **Webhook (HTTP POST)**: Ideal para integração simples com APIs externas
 - **RabbitMQ (AMQP)**: Message broker para arquiteturas empresariais e filas confiáveis
@@ -83,7 +83,7 @@ Você pode ativar múltiplos canais simultaneamente - os eventos serão enviados
 
 ### Visão Geral
 
-Envia eventos via HTTP POST para uma URL que você configurar. É o método mais simples para integrar o Evolution GO com suas aplicações.
+Envia eventos via HTTP POST para uma URL que você configurar. É o método mais simples para integrar o WhatyGo com suas aplicações.
 
 ### Características
 
@@ -279,13 +279,13 @@ AMQP_GLOBAL_EVENTS=MESSAGE,CALL,CONNECTION
 
 ### Propriedades das Filas
 
-As filas RabbitMQ criadas pelo Evolution GO são configuradas com:
+As filas RabbitMQ criadas pelo WhatyGo são configuradas com:
 
 - **Quorum queues**: Replicação automática para alta disponibilidade
 - **Durabilidade**: Mensagens persistem após restart do servidor
 - **Persistência**: Todas as mensagens são marcadas como persistentes
 
-> Os argumentos das filas não mudam entre versões de propósito: uma fila que já existe com outros argumentos rejeita a declaração. Fila sem consumidor cresce até o broker reagir; configure TTL ou limite por *policy* do RabbitMQ, não pelo Evolution GO.
+> Os argumentos das filas não mudam entre versões de propósito: uma fila que já existe com outros argumentos rejeita a declaração. Fila sem consumidor cresce até o broker reagir; configure TTL ou limite por *policy* do RabbitMQ, não pelo WhatyGo.
 
 ### Consumindo Mensagens
 
@@ -470,7 +470,7 @@ ws://localhost:4000/ws?token=GLOBAL_API_KEY
 
 ### Gerenciamento de Conexões
 
-O Evolution GO gerencia automaticamente as conexões WebSocket:
+O WhatyGo gerencia automaticamente as conexões WebSocket:
 
 - **Conexões específicas**: Cada instância pode ter sua própria conexão
 - **Conexões broadcast**: Recebem eventos de todas as instâncias
@@ -593,7 +593,7 @@ curl -X POST http://localhost:4000/instance/connect \
 
 ### Categorias vs Eventos Individuais
 
-O Evolution GO usa dois níveis de classificação de eventos:
+O WhatyGo usa dois níveis de classificação de eventos:
 
 **Categorias de Eventos** (usadas no `subscribe`):
 - São escritas em **MAIÚSCULAS**: `MESSAGE`, `GROUP`, `CALL`, etc.
@@ -874,7 +874,7 @@ python rabbitmq-consumer.py
 <!DOCTYPE html>
 <html>
 <head>
-    <title>Evolution GO Dashboard</title>
+    <title>WhatyGo Dashboard</title>
 </head>
 <body>
     <h1>Mensagens em Tempo Real</h1>
@@ -1054,4 +1054,4 @@ location /ws {
 
 ---
 
-**Documentação gerada para Evolution GO v1.0**
+**Documentação gerada para WhatyGo v1.0**

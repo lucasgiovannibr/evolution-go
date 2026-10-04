@@ -1,6 +1,6 @@
 # Visão Geral da API
 
-Guia completo para usar a API REST do Evolution GO.
+Guia completo para usar a API REST do WhatyGo.
 
 ## Base URL
 
@@ -218,7 +218,7 @@ Número do WhatsApp (DDI + DDD + Número)
 }
 ```
 
-O Evolution GO formata automaticamente números quando necessário.
+O WhatyGo formata automaticamente números quando necessário.
 
 ## Paginação
 

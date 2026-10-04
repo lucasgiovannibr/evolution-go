@@ -25,7 +25,7 @@ describe('send catalog', () => {
     expect(kindOf('location').build(NUMBER, d.location)).toMatchObject({ number: NUMBER, latitude: -19.9319, longitude: -43.9378, name: 'Praça da Liberdade' });
     expect(kindOf('contact').build(NUMBER, { ...d.contact, phone: '+55 (11) 99999-0000' })).toEqual({
       number: NUMBER,
-      vcard: { fullName: 'Contato de Teste', organization: 'Evolution GO', phone: '5511999990000' },
+      vcard: { fullName: 'Contato de Teste', organization: 'WhatyGo', phone: '5511999990000' },
     });
     expect(kindOf('status/text').build(NUMBER, { text: 'oi' })).toEqual({ text: 'oi' });
   });

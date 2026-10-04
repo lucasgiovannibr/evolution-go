@@ -37,7 +37,7 @@ export interface RawResponse {
 }
 
 const LOGIN_PATH = '/manager/login';
-export const EXPIRED_FLAG = 'evolution-session-expired';
+export const EXPIRED_FLAG = 'whatygo-session-expired';
 let redirecting = false;
 
 function expireSession() {
@@ -121,7 +121,7 @@ function errorMessage(data: unknown, fallback: string): string {
   return fallback;
 }
 
-/** Typed JSON call that throws ApiError and handles session/license expiry globally. */
+/** Typed JSON call that throws ApiError and handles session expiry globally. */
 export async function api<T = unknown>(path: string, opts: RequestOptions = {}): Promise<T> {
   let res: RawResponse;
   try {

@@ -508,7 +508,7 @@ curl -X POST http://localhost:4000/send/contact \
   "number": "5511999999999",
   "title": "Escolha uma opção",
   "description": "Selecione o que deseja fazer",
-  "footer": "Powered by Evolution GO",
+  "footer": "Powered by WhatyGo",
   "buttons": [
     {
       "type": "reply",
@@ -1262,4 +1262,4 @@ API_AUDIO_CONVERTER_KEY=sua-chave
 
 ---
 
-**Documentação gerada para Evolution GO v1.0**
+**Documentação gerada para WhatyGo v1.0**

@@ -8,7 +8,7 @@ export interface Preset {
   build: (number: string) => Record<string, unknown>;
 }
 
-const FOOTER = 'Evolution GO';
+const FOOTER = 'WhatyGo';
 const plus = (n: string) => `+${n.replace(/\D/g, '')}`;
 const img = (seed: string) => ({ imageUrl: `https://picsum.photos/seed/${seed}/600/400` });
 
@@ -61,7 +61,7 @@ export const PRESETS: Preset[] = [
     group: 'button',
     label: 'CTA URL',
     description: 'Botão que abre um link no navegador.',
-    build: button('Teste - CTA URL', 'Botão que abre um link.', [{ type: 'url', displayText: 'Abrir site', url: 'https://evolutionapi.com' }]),
+    build: button('Teste - CTA URL', 'Botão que abre um link.', [{ type: 'url', displayText: 'Abrir site', url: 'https://example.com' }]),
   },
   {
     id: 'btn_call',
@@ -85,7 +85,7 @@ export const PRESETS: Preset[] = [
     build: (n) =>
       button('Teste - CTAs agrupados', 'copy + url + call (celular e WhatsApp Web).', [
         { type: 'copy', displayText: 'Copiar cupom', copyCode: 'CTA2026' },
-        { type: 'url', displayText: 'Abrir site', url: 'https://evolutionapi.com' },
+        { type: 'url', displayText: 'Abrir site', url: 'https://example.com' },
         { type: 'call', displayText: 'Ligar agora', phoneNumber: plus(n) },
       ])(n),
   },
@@ -96,7 +96,7 @@ export const PRESETS: Preset[] = [
     description: 'Um reply e um botão de link na mesma mensagem. Aparece no celular, mas não no WhatsApp Web.',
     build: button('Teste - Reply + URL', 'Reply misturado com CTA.', [
       { type: 'reply', displayText: 'Confirmar', id: 'test_mix_reply' },
-      { type: 'url', displayText: 'Abrir site', url: 'https://evolutionapi.com' },
+      { type: 'url', displayText: 'Abrir site', url: 'https://example.com' },
     ]),
   },
   {
@@ -169,10 +169,10 @@ export const PRESETS: Preset[] = [
     label: 'Carrossel com URL',
     description: '4 cards (Site, Docs, GitHub, Comunidade). No carrossel o link vai no campo id.',
     build: carousel('Teste - Carrossel com botão URL', [
-      { header: img('urlA'), body: { text: 'Card A - Site oficial' }, footer: 'Abre o site principal', buttons: [{ type: 'URL', displayText: 'Abrir site', id: 'https://evolutionapi.com' }] },
-      { header: img('urlB'), body: { text: 'Card B - Documentação' }, footer: 'Abre os docs da API', buttons: [{ type: 'URL', displayText: 'Ver documentação', id: 'https://doc.evolutionapi.com' }] },
-      { header: img('urlC'), body: { text: 'Card C - GitHub' }, footer: 'Abre o repositório', buttons: [{ type: 'URL', displayText: 'Abrir GitHub', id: 'https://github.com/evolution-foundation' }] },
-      { header: img('urlD'), body: { text: 'Card D - Comunidade' }, footer: 'Participe da comunidade', buttons: [{ type: 'URL', displayText: 'Entrar na comunidade', id: 'https://evolutionapi.com/community' }] },
+      { header: img('urlA'), body: { text: 'Card A - Site oficial' }, footer: 'Abre o site principal', buttons: [{ type: 'URL', displayText: 'Abrir site', id: 'https://example.com' }] },
+      { header: img('urlB'), body: { text: 'Card B - Documentação' }, footer: 'Abre os docs da API', buttons: [{ type: 'URL', displayText: 'Ver documentação', id: 'https://github.com/lucasgiovannibr/whatygo/tree/main/docs/guia' }] },
+      { header: img('urlC'), body: { text: 'Card C - GitHub' }, footer: 'Abre o repositório', buttons: [{ type: 'URL', displayText: 'Abrir GitHub', id: 'https://github.com/lucasgiovannibr/whatygo' }] },
+      { header: img('urlD'), body: { text: 'Card D - Comunidade' }, footer: 'Participe da comunidade', buttons: [{ type: 'URL', displayText: 'Entrar na comunidade', id: 'https://example.com/comunidade' }] },
     ]),
   },
   {

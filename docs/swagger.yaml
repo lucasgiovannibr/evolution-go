@@ -1038,7 +1038,7 @@ definitions:
         type: string
       footer:
         description: Footer text (required).
-        example: Evolution GO
+        example: WhatyGo
         type: string
       formatJid:
         description: If false, skips automatic formatting/validation of `number` into
@@ -1175,7 +1175,7 @@ definitions:
         type: integer
       footer:
         description: Optional message footer shown below the cards.
-        example: Evolution GO
+        example: WhatyGo
         type: string
       formatJid:
         description: If false, skips automatic formatting/validation of `number` into
@@ -1262,7 +1262,7 @@ definitions:
         type: boolean
       footerText:
         description: Footer text (required).
-        example: Evolution GO
+        example: WhatyGo
         type: string
       formatJid:
         description: If false, skips automatic formatting/validation of `number` into
@@ -8212,8 +8212,8 @@ definitions:
     - ParticipantChangeDemote
 info:
   contact: {}
-  description: Evolution GO - whatsmeow
-  title: Evolution GO
+  description: WhatyGo (fork do Evolution Go) - whatsmeow
+  title: WhatyGo
   version: "1.0"
 paths:
   /call/{callId}:

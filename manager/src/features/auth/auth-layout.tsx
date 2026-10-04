@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { Activity, KeyRound, Layers, Moon, Sun } from 'lucide-react';
 import { Logo } from '@/components/ui/logo';
 import { Button } from '@/components/ui/button';
+import { LegalNotice } from '@/components/ui/legal-notice';
 import { useUi } from '@/stores/ui';
 
 const FEATURES = [
@@ -34,7 +35,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
         <div className="relative max-w-md space-y-8">
           <div>
             <h2 className="text-2xl leading-tight font-semibold tracking-tight text-balance">Gerencie suas instâncias WhatsApp com clareza.</h2>
-            <p className="mt-2 text-[13px] text-muted">Interface enxuta para conectar, configurar e testar a Evolution GO.</p>
+            <p className="mt-2 text-[13px] text-muted">Interface enxuta para conectar, configurar e testar o WhatyGo.</p>
           </div>
           <ul className="space-y-5">
             {FEATURES.map((f) => (
@@ -48,7 +49,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
             ))}
           </ul>
         </div>
-        <p className="relative text-xs text-subtle">Evolution GO Manager</p>
+        <p className="relative text-xs text-subtle">WhatyGo Manager</p>
       </aside>
 
       <main className="relative flex flex-col items-center justify-center px-4 py-10 sm:px-8">
@@ -58,6 +59,7 @@ export function AuthLayout({ children }: { children: ReactNode }) {
         <div className="w-full max-w-sm">
           <Logo className="mb-8 lg:hidden" />
           {children}
+          <LegalNotice className="mt-8 text-center" />
         </div>
       </main>
     </div>

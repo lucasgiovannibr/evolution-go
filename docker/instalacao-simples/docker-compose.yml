@@ -1,0 +1,51 @@
+# Instalação simples: servidor + banco de dados, prontos para usar.
+# Passo a passo em docs/guia/02-instalacao.md
+#
+#   1. copie .env.example para .env e preencha as duas senhas
+#   2. docker compose up -d
+#   3. abra http://localhost:4000/manager
+name: evolution-go-fork
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?preencha POSTGRES_PASSWORD no arquivo .env}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  evolution-go:
+    image: ghcr.io/lucasgiovannibr/whatygo:${IMAGE_TAG:-latest}
+    restart: unless-stopped
+    stop_grace_period: 30s
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports:
+      - "${HTTP_PORT:-4000}:4000"
+    environment:
+      SERVER_PORT: "4000"
+      GLOBAL_API_KEY: ${GLOBAL_API_KEY:?preencha GLOBAL_API_KEY no arquivo .env}
+      POSTGRES_AUTH_DB: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evogo_auth?sslmode=disable
+      POSTGRES_USERS_DB: postgresql://postgres:${POSTGRES_PASSWORD}@postgres:5432/evogo_users?sslmode=disable
+      # Reconecta os números sozinho depois de reiniciar o servidor
+      CONNECT_ON_STARTUP: "true"
+      # Guardar o texto das mensagens no banco (desligado por padrão: use webhook para receber)
+      DATABASE_SAVE_MESSAGES: "false"
+      WADEBUG: INFO
+      LOGTYPE: console
+    volumes:
+      - data:/app/dbdata
+      - logs:/app/logs
+
+volumes:
+  pgdata:
+  data:
+  logs:

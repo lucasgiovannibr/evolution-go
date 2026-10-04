@@ -1,8 +1,8 @@
 /*
- * Evolution Passkey Helper
+ * WhatyGo Passkey Helper
  * ------------------------
  * Executa a cerimonia WebAuthn (passkey) do WhatsApp Web no dominio correto
- * (web.whatsapp.com) para concluir um pareamento iniciado pelo Evolution GO.
+ * (web.whatsapp.com) para concluir um pareamento iniciado pelo WhatyGo.
  *
  * Fluxo:
  * 1. O manager/CRM abre https://web.whatsapp.com/#wapk=<payload>, onde payload
@@ -83,7 +83,7 @@
   }
 
   // ---------------------------------------------------------------------------
-  // API calls (Evolution GO passkey ceremony endpoints)
+  // API calls (WhatyGo passkey ceremony endpoints)
   // ---------------------------------------------------------------------------
   function apiBase(cer) {
     return String(cer.b || "").replace(/\/+$/, "");
@@ -453,12 +453,12 @@
           hideButton();
           showCode("");
           setDesc("Pareamento concluido com sucesso!");
-          setStatus("Pode voltar ao Evolution. Esta aba ja pode ser fechada.", "success");
+          setStatus("Pode voltar ao WhatyGo. Esta aba ja pode ser fechada.", "success");
           clearCeremony();
           stopPolling();
         } else {
           setDesc("Aguardando o desafio de chave de acesso do WhatsApp...");
-          setStatus("Escaneie o QR no Evolution para iniciar.");
+          setStatus("Escaneie o QR no WhatyGo para iniciar.");
           schedulePoll(cer);
         }
         break;

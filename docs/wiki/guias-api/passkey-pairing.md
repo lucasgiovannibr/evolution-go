@@ -1,6 +1,6 @@
  # Pareamento por Chave de Acesso (Passkey / WebAuthn)
 
-Guia completo de como conectar uma instância WhatsApp no Evolution GO quando a
+Guia completo de como conectar uma instância WhatsApp no WhatyGo quando a
 conta exige uma **chave de acesso (passkey)** — a nova etapa de segurança que a
 Meta passou a exigir em algumas contas ao vincular um novo dispositivo.
 
@@ -23,7 +23,7 @@ nesse fluxo.
 pareamento com `retry-with-method: shortcake-with-passkeys` e frequentemente
 **omite o `qr-code`** — ou seja, **pode não existir QR para escanear**. O prólogo
 de passkey também pode vir logo após um **código de pareamento**. Por isso o
-Evolution GO trata o pedido de passkey de forma independente do QR.
+WhatyGo trata o pedido de passkey de forma independente do QR.
 
 O ponto difícil: a chamada `navigator.credentials.get()` (que dispara a
 biometria/PIN) **só funciona numa página cujo domínio bata com o `rpId` da
@@ -38,10 +38,10 @@ da conta (Touch ID / Windows Hello / passkey sincronizada).
 > servidor com `463 account_reachout_restricted`. A cerimônia Shortcake só roda
 > num companion web.
 
-**Solução do Evolution GO:** uma pequena extensão de navegador
+**Solução do WhatyGo:** uma pequena extensão de navegador
 (`tools/passkey-helper`) roda **apenas** em `web.whatsapp.com`, executa a
 cerimônia WebAuthn ali (onde o `rpId` é aceito), e devolve a assinatura para a
-API do Evolution GO, que a repassa ao WhatsApp via whatsmeow.
+API do WhatyGo, que a repassa ao WhatsApp via whatsmeow.
 
 > A extensão é o único componente que roda no domínio `web.whatsapp.com`. Ela
 > não interage com o login do WhatsApp Web e não coleta dados — serve só como
@@ -52,7 +52,7 @@ API do Evolution GO, que a repassa ao WhatsApp via whatsmeow.
 ## 2. Arquitetura
 
 ```
-┌──────────────────────────── Evolution GO (backend) ────────────────────────────┐
+┌──────────────────────────── WhatyGo (backend) ────────────────────────────┐
 │                                                                                 │
 │  whatsmeow client ──emite──> events.PairPasskeyRequest / Confirmation / Error   │
 │         │                            │                                          │
@@ -82,7 +82,7 @@ API do Evolution GO, que a repassa ao WhatsApp via whatsmeow.
 
 1. **whatsmeow** — emite os eventos de passkey e expõe `SendPasskeyResponse` /
    `SendPasskeyConfirmation`.
-2. **Backend Evolution GO** — guarda o estado da cerimônia (por token efêmero) e
+2. **Backend WhatyGo** — guarda o estado da cerimônia (por token efêmero) e
    expõe a API pública com CORS que o `web.whatsapp.com` chama.
 3. **Extensão** — a única peça no origin `web.whatsapp.com`; executa a cerimônia
    WebAuthn.
@@ -120,7 +120,7 @@ API do Evolution GO, que a repassa ao WhatsApp via whatsmeow.
 
 > **Nota sobre o código de confirmação (handoff).** Em alguns casos o telefone
 > pula a tela de conferência de código (quando um "handoff proof" válido é
-> enviado). O Evolution GO **sempre** exige a confirmação manual
+> enviado). O WhatyGo **sempre** exige a confirmação manual
 > (`skipHandoffUX=false`) — confirmar automaticamente pode dessincronizar o
 > pareamento e disparar o anti-abuso do WhatsApp ("Não foi possível conectar o
 > dispositivo").
@@ -131,7 +131,7 @@ API do Evolution GO, que a repassa ao WhatsApp via whatsmeow.
 
 ### `PASSKEY_PUBLIC_URL`
 
-A extensão roda no navegador e precisa chamar a **API do Evolution GO**. A URL
+A extensão roda no navegador e precisa chamar a **API do WhatyGo**. A URL
 base dessa API precisa ser **acessível pelo navegador** onde o WhatsApp Web
 abre. Defina no `.env`:
 
@@ -184,7 +184,7 @@ dispositivo". Nesses casos a conta provavelmente está travada por passkey.
 
 **Pré-requisitos:**
 
-1. Evolution GO **0.7.2+** rodando.
+1. WhatyGo **0.7.2+** rodando.
 2. `PASSKEY_PUBLIC_URL` no `.env` apontando para uma URL **pública** da API,
    alcançável pelo navegador (ver §4). Em teste local use um túnel (ngrok /
    cloudflared) — **não** `localhost` se o navegador estiver em outra máquina.
@@ -336,7 +336,7 @@ Regras que **não** podem ser violadas (extraídas do comportamento do whatsmeow
 - **Não use `GetQRChannel` durante o passkey.** No whatsmeow instalado, o handler
   do `qrChannel` (a) auto-confirma a `PairPasskeyConfirmation` quando
   `SkipHandoffUX` está setado — correndo com o fluxo manual — e (b) desconecta o
-  socket quando os códigos de QR acabam. Por isso o Evolution GO conecta com
+  socket quando os códigos de QR acabam. Por isso o WhatyGo conecta com
   `client.Connect()` direto e consome `events.QR` no event handler
   (`handleQRCodes`), que o `pair.go` despacha para todos os handlers de qualquer
   forma.
@@ -408,5 +408,5 @@ Arquivos principais:
   documentado de forma independente pelo projeto **zapo** em
   <https://zapo.to/pt-br/reverse-engineering/passkey-linking> — leitura
   recomendada para quem quiser entender o protocolo por baixo. O `zapo` é um
-  projeto independente, não afiliado ao WhatsApp/Meta; o Evolution GO apenas
+  projeto independente, não afiliado ao WhatsApp/Meta; o WhatyGo apenas
   consome o suporte a passkey já implementado no whatsmeow oficial.

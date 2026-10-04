@@ -1,6 +1,6 @@
 # Triagem do fork — 2026-09-29
 
-Fork: `lucasgiovannibr/evolution-go` · Upstream: `evolution-foundation/evolution-go`
+Fork: `lucasgiovannibr/whatygo` · Upstream: `evolution-foundation/evolution-go`
 
 Atualizado em 29/09/2026, depois do teste com instância real, das propostas aprovadas e de quatro rodadas de caça a bugs (PRs #14 a #22).
 

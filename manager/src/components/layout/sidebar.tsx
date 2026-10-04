@@ -8,6 +8,7 @@ import { useUi } from '@/stores/ui';
 import { HEALTH_META, useHealth } from '@/hooks/use-health';
 import { Logo } from '@/components/ui/logo';
 import { Button } from '@/components/ui/button';
+import { LegalNotice } from '@/components/ui/legal-notice';
 
 interface NavItem {
   to: string;
@@ -135,6 +136,7 @@ function SidebarBody({ collapsed, onNavigate, mobile }: SidebarBodyProps) {
             {collapsed ? null : 'Sair'}
           </Button>
         </div>
+        <LegalNotice compact={collapsed} className={cn(!collapsed && 'px-1')} />
       </div>
     </div>
   );

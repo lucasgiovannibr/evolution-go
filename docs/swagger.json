@@ -1,8 +1,8 @@
 {
     "swagger": "2.0",
     "info": {
-        "description": "Evolution GO - whatsmeow",
-        "title": "Evolution GO",
+        "description": "WhatyGo (fork do Evolution Go) - whatsmeow",
+        "title": "WhatyGo",
         "contact": {},
         "version": "1.0"
     },
@@ -6811,7 +6811,7 @@
                 "footer": {
                     "description": "Footer text (required).",
                     "type": "string",
-                    "example": "Evolution GO"
+                    "example": "WhatyGo"
                 },
                 "formatJid": {
                     "description": "If false, skips automatic formatting/validation of `number` into a JID.",
@@ -6991,7 +6991,7 @@
                 "footer": {
                     "description": "Optional message footer shown below the cards.",
                     "type": "string",
-                    "example": "Evolution GO"
+                    "example": "WhatyGo"
                 },
                 "formatJid": {
                     "description": "If false, skips automatic formatting/validation of `number` into a JID.",
@@ -7113,7 +7113,7 @@
                 "footerText": {
                     "description": "Footer text (required).",
                     "type": "string",
-                    "example": "Evolution GO"
+                    "example": "WhatyGo"
                 },
                 "formatJid": {
                     "description": "If false, skips automatic formatting/validation of `number` into a JID.",

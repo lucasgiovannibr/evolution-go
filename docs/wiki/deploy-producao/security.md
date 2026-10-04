@@ -1,6 +1,6 @@
 # Segurança e Hardening
 
-Guia de práticas de segurança para ambientes de produção do Evolution GO.
+Guia de práticas de segurança para ambientes de produção do WhatyGo.
 
 ## Índice
 
@@ -308,7 +308,7 @@ services:
 
 ### Não Executar como Root
 
-A imagem oficial já roda como usuário sem privilégios (`evolution`, uid 10001): o entrypoint (`docker/entrypoint.sh`) ajusta o dono dos volumes (`/app/dbdata`, `/app/logs`, inclusive um volume criado por uma versão antiga como root) e passa para esse usuário com `su-exec` antes de iniciar o servidor. O binário é compilado com `-trimpath -s -w` e a imagem tem `HEALTHCHECK` em `/server/ok`.
+A imagem do WhatyGo já roda como usuário sem privilégios (`evolution`, uid 10001): o entrypoint (`docker/entrypoint.sh`) ajusta o dono dos volumes (`/app/dbdata`, `/app/logs`, inclusive um volume criado por uma versão antiga como root) e passa para esse usuário com `su-exec` antes de iniciar o servidor. O binário é compilado com `-trimpath -s -w` e a imagem tem `HEALTHCHECK` em `/server/ok`.
 
 Se você monta o volume de um diretório do host, dê a ele o uid 10001 (ou deixe o entrypoint fazer o `chown`).
 
@@ -365,13 +365,13 @@ services:
 
 ```bash
 # Trivy
-trivy image evoapicloud/evolution-go:latest
+trivy image ghcr.io/lucasgiovannibr/whatygo:latest
 
 # Apenas críticas
-trivy image --severity CRITICAL evoapicloud/evolution-go:latest
+trivy image --severity CRITICAL ghcr.io/lucasgiovannibr/whatygo:latest
 
 # Docker Scout
-docker scout cves evoapicloud/evolution-go:latest
+docker scout cves ghcr.io/lucasgiovannibr/whatygo:latest
 ```
 
 ---
@@ -580,7 +580,7 @@ http {
 
 ### SQL Injection
 
-Evolution GO usa GORM (ORM) que previne SQL injection por padrão através de prepared statements.
+WhatyGo usa GORM (ORM) que previne SQL injection por padrão através de prepared statements.
 
 ### Brute-Force Protection (Fail2ban)
 
@@ -736,4 +736,4 @@ docker export container_suspeito > filesystem_suspeito.tar
 
 ---
 
-**Documentação Evolution GO v1.0**
+**Documentação WhatyGo v1.0**

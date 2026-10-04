@@ -1,6 +1,6 @@
 <div align="center">
 
-# 📚 Documentação Evolution GO
+# 📚 Documentação WhatyGo
 
 **Gateway de API WhatsApp de alta performance desenvolvido em Go**
 
@@ -12,13 +12,13 @@
 
 ---
 
-Bem-vindo à documentação oficial do Evolution GO! Aqui você encontrará guias completos, referências de API e melhores práticas para integrar o WhatsApp às suas aplicações de forma profissional e escalável.
+Bem-vindo à documentação técnica do WhatyGo! Aqui você encontrará guias completos, referências de API e melhores práticas para integrar o WhatsApp às suas aplicações de forma profissional e escalável.
 
 ## 🚀 Começo Rápido
 
 **Primeira vez aqui?** Siga este caminho:
 
-1. 📖 [**Introdução**](./fundamentos/introduction.md) - Entenda o que é o Evolution GO
+1. 📖 [**Introdução**](./fundamentos/introduction.md) - Entenda o que é o WhatyGo
 2. 🔧 [**Instalação**](./fundamentos/installation.md) - Configure em 5 minutos
 3. ⚡ [**Quickstart**](./fundamentos/quickstart.md) - Envie sua primeira mensagem
 4. 📡 [**Visão Geral da API**](./guias-api/api-overview.md) - Conheça os endpoints disponíveis
@@ -51,18 +51,18 @@ Bem-vindo à documentação oficial do Evolution GO! Aqui você encontrará guia
 
 ### 🎯 Fundamentos
 
-Documentação essencial para começar a usar o Evolution GO.
+Documentação essencial para começar a usar o WhatyGo.
 
 | Documento | Descrição |
 |-----------|-----------|
-| [**Introdução**](./fundamentos/introduction.md) | O que é o Evolution GO, recursos e casos de uso |
+| [**Introdução**](./fundamentos/introduction.md) | O que é o WhatyGo, recursos e casos de uso |
 | [**Instalação**](./fundamentos/installation.md) | Guia completo de instalação (Docker, Local, Swarm) |
 | [**Configuração**](./fundamentos/configuration.md) | Variáveis de ambiente e configurações |
 | [**Quickstart**](./fundamentos/quickstart.md) | Tutorial prático: primeira instância em minutos |
 
 ### 🏗️ Conceitos Core
 
-Entenda como o Evolution GO funciona por dentro.
+Entenda como o WhatyGo funciona por dentro.
 
 | Documento | Descrição |
 |-----------|-----------|
@@ -102,7 +102,7 @@ Funcionalidades avançadas para casos de uso complexos.
 
 ### 🐳 Deploy e Produção
 
-Guias para colocar o Evolution GO em produção.
+Guias para colocar o WhatyGo em produção.
 
 | Documento | Descrição |
 |-----------|-----------|
@@ -135,15 +135,15 @@ Consulta rápida para desenvolvedores.
 ## 💡 Precisa de Ajuda?
 
 ### 📖 Recursos de Aprendizado
-- **Novo no Evolution GO?** Comece pelo [Quickstart](./fundamentos/quickstart.md)
+- **Novo no WhatyGo?** Comece pelo [Quickstart](./fundamentos/quickstart.md)
 - **Dúvidas frequentes?** Confira o [FAQ](./referencia/faq.md)
 - **Problemas técnicos?** Veja o guia de [Debugging](./desenvolvimento/debugging.md)
 
 ### 🔗 Links Importantes
-- 🌐 [Repositório Oficial](https://git.evoai.app/Evolution/evolution-go)
+- 🌐 [Repositório](https://github.com/lucasgiovannibr/whatygo)
 - 📚 [Biblioteca Whatsmeow](https://github.com/tulir/whatsmeow)
 - 🔧 [API Swagger](http://localhost:4000/swagger/index.html) (quando servidor estiver rodando)
-- 🐛 [Reportar Issues](https://git.evoai.app/Evolution/evolution-go/issues)
+- 🐛 [Reportar Issues](https://github.com/lucasgiovannibr/whatygo/issues)
 
 ### 💬 Suporte
 - **Issues técnicos**: Abra uma issue no repositório
@@ -164,7 +164,7 @@ Consulta rápida para desenvolvedores.
 
 <div align="center">
 
-**Mantido por EvoAI Services** • **Versão da Documentação: 1.0.0**
+**Mantido pelos mantenedores do fork WhatyGo (baseado no Evolution Go)** • **Versão da Documentação: 1.0.0**
 
 [⬆️ Voltar ao topo](#-documentação-evolution-go)
 

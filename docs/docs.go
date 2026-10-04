@@ -6819,7 +6819,7 @@ const docTemplate = `{
                 "footer": {
                     "description": "Footer text (required).",
                     "type": "string",
-                    "example": "Evolution GO"
+                    "example": "WhatyGo"
                 },
                 "formatJid": {
                     "description": "If false, skips automatic formatting/validation of ` + "`" + `number` + "`" + ` into a JID.",
@@ -6999,7 +6999,7 @@ const docTemplate = `{
                 "footer": {
                     "description": "Optional message footer shown below the cards.",
                     "type": "string",
-                    "example": "Evolution GO"
+                    "example": "WhatyGo"
                 },
                 "formatJid": {
                     "description": "If false, skips automatic formatting/validation of ` + "`" + `number` + "`" + ` into a JID.",
@@ -7121,7 +7121,7 @@ const docTemplate = `{
                 "footerText": {
                     "description": "Footer text (required).",
                     "type": "string",
-                    "example": "Evolution GO"
+                    "example": "WhatyGo"
                 },
                 "formatJid": {
                     "description": "If false, skips automatic formatting/validation of ` + "`" + `number` + "`" + ` into a JID.",
@@ -17159,8 +17159,8 @@ var SwaggerInfo = &swag.Spec{
 	Host:             "",
 	BasePath:         "",
 	Schemes:          []string{},
-	Title:            "Evolution GO",
-	Description:      "Evolution GO - whatsmeow",
+	Title:            "WhatyGo",
+	Description:      "WhatyGo (fork do Evolution Go) - whatsmeow",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",

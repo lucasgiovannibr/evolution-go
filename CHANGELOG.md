@@ -1,11 +1,25 @@
-# Evolution GO - Changelog
+# WhatyGo - Changelog
 
-## Unreleased (fork lucasgiovannibr/evolution-go)
+## Unreleased (fork lucasgiovannibr/whatygo)
 
 Fixes and hardening on top of upstream v0.7.2. Full triage of the upstream issues
 and pull requests in `FORK-TRIAGE.md`.
 
 ### Upgrade notes
+- **The product is now called WhatyGo** (a fork of Evolution Go; the original's name, logo and
+  colours are no longer used as this project's identity, see `TRADEMARKS.md` and
+  `docs/guia/11-avisos-legais-e-creditos.md`). What changes for you:
+  - **Docker image**: `ghcr.io/<owner>/whatygo` (it was `ghcr.io/<owner>/evolution-go`, which gets
+    no more updates). The `docker/examples/*.yml` files point to the new image.
+  - **Manager**: new name, logo and colours; the credit line "Baseado no Evolution Go © 2026
+    Evolution Foundation" stays (menu and sign-in page). Browser storage keys are now
+    `whatygo-*`, so the theme and the menu state are reset once; the Swagger title and the
+    startup log say WhatyGo.
+  - **Passkey Helper** extension renamed to "WhatyGo Passkey Helper".
+  - Unchanged on purpose: the Go module path, the `cmd/evolution-go` folder, the `evolution_*`
+    metric names and the `evolution` container user.
+- **New files**: `CONTRIBUTING.md`, `SECURITY.md`, `docs/guia/` (a beginner's guide) and
+  `docker/instalacao-simples/` (a ready Docker Compose).
 - **The license gate is gone.** The server no longer answers `503 LICENSE_REQUIRED`, the
   manager no longer asks for a registration, and **nothing is sent** to the upstream's
   licensing service (no activation, no 30-minute heartbeat, no deactivation, no use of

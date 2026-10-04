@@ -317,4 +317,4 @@ Logs incluem:
 
 ---
 
-**Documentação Evolution GO v1.0**
+**Documentação WhatyGo v1.0**

@@ -1,6 +1,6 @@
 # Guia de Instalação
 
-Métodos de instalação do Evolution GO para diferentes ambientes.
+Métodos de instalação do WhatyGo para diferentes ambientes.
 
 ## Índice
 
@@ -49,8 +49,8 @@ Método mais simples e adequado para produção.
 **Opção A: Clonar repositório**
 
 ```bash
-git clone https://git.evoai.app/Evolution/evolution-go.git
-cd evolution-go
+git clone https://github.com/lucasgiovannibr/whatygo.git
+cd whatygo
 ```
 
 **Opção B: Download direto**
@@ -103,7 +103,7 @@ Aguarde ~30 segundos para inicialização completa.
 ### 4. Verificar Logs
 
 ```bash
-# Evolution GO
+# WhatyGo
 docker-compose logs -f evolution-go
 
 # PostgreSQL
@@ -163,8 +163,8 @@ go version
 ### 4. Clonar Repositório
 
 ```bash
-git clone https://git.evoai.app/Evolution/evolution-go.git
-cd evolution-go
+git clone https://github.com/lucasgiovannibr/whatygo.git
+cd whatygo
 ```
 
 ### 5. Instalar Dependências
@@ -284,7 +284,7 @@ docker-compose -f docker-compose-full.yml up -d
 
 | Serviço | Porta | Função |
 |---------|-------|--------|
-| Evolution GO | 4000 | API principal |
+| WhatyGo | 4000 | API principal |
 | PostgreSQL | 5432 | Banco de dados |
 | RabbitMQ | 5672, 15672 | Filas de mensagens |
 | MinIO | 9000, 9001 | Storage de objetos |
@@ -292,7 +292,7 @@ docker-compose -f docker-compose-full.yml up -d
 
 **Acessos:**
 
-- Evolution GO: http://localhost:4000
+- WhatyGo: http://localhost:4000
 - Swagger: http://localhost:4000/swagger/index.html
 - RabbitMQ: http://localhost:15672 (admin/admin)
 - MinIO: http://localhost:9001 (minioadmin/minioadmin)
@@ -459,7 +459,7 @@ docker service logs evolution_evolution_go -f
 docker service scale evolution_evolution_go=3
 
 # Atualizar
-docker service update --image evoapicloud/evolution-go:latest evolution_evolution_go
+docker service update --image ghcr.io/lucasgiovannibr/whatygo:latest evolution_evolution_go
 
 # Remover
 docker stack rm evolution
@@ -488,4 +488,4 @@ Disponíveis em `docker/examples/`:
 
 ---
 
-**Documentação Evolution GO v1.0**
+**Documentação WhatyGo v1.0**

@@ -116,9 +116,6 @@ export function LoginPage() {
         </Button>
       </form>
 
-      <p className="mt-6 text-center text-xs text-subtle">
-        Ao continuar você concorda com os Termos de Serviço e a Política de Privacidade da Evolution.
-      </p>
     </AuthLayout>
   );
 }

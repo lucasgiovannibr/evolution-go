@@ -7,7 +7,7 @@ import type { PeerVideoState } from './softphone';
  * the phone had already withdrawn it (its video state turned to "disabled") and no picture arrived.
  * A person reading a notice and clicking takes longer than that, so by default the panel accepts at once.
  */
-export const AUTO_ACCEPT_KEY = 'evolution-calls-auto-accept-video';
+export const AUTO_ACCEPT_KEY = 'whatygo-calls-auto-accept-video';
 
 /** Whether requests for video are accepted without waiting for a click (on unless the person turned it off). */
 export function readAutoAccept(): boolean {

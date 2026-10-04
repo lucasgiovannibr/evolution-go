@@ -20,7 +20,7 @@
 
 /* ------------------------------------------------------------------ */
 /* Design tokens                                                       */
-/* One neutral scale + one brand hue (Evolution green). Status colors  */
+/* One neutral scale + one brand hue (WhatyGo indigo). Status colors   */
 /* are semantic (ok / warn / danger / info) and always come as a solid */
 /* plus a soft tint, so badges and alerts stay consistent everywhere.  */
 /* ------------------------------------------------------------------ */
@@ -35,12 +35,12 @@
   --muted: #56616a;
   --subtle: #6f7a83;
 
-  --brand: #0c8a5e;
-  --brand-hover: #0a7650;
+  --brand: #4f46e5;
+  --brand-hover: #4338ca;
   --brand-fg: #ffffff;
-  --brand-text: #0a7650;
-  --brand-soft: rgb(12 138 94 / 0.1);
-  --brand-ring: rgb(12 138 94 / 0.35);
+  --brand-text: #4338ca;
+  --brand-soft: rgb(79 70 229 / 0.1);
+  --brand-ring: rgb(79 70 229 / 0.35);
 
   --ok: #0c8a5e;
   --ok-soft: rgb(12 138 94 / 0.1);
@@ -70,12 +70,12 @@
   --muted: #98a3ab;
   --subtle: #7f8a93;
 
-  --brand: #34d399;
-  --brand-hover: #5ee0b0;
-  --brand-fg: #04150e;
-  --brand-text: #4ade9f;
-  --brand-soft: rgb(52 211 153 / 0.12);
-  --brand-ring: rgb(52 211 153 / 0.4);
+  --brand: #818cf8;
+  --brand-hover: #a5b4fc;
+  --brand-fg: #0c0b26;
+  --brand-text: #a5b4fc;
+  --brand-soft: rgb(129 140 248 / 0.14);
+  --brand-ring: rgb(129 140 248 / 0.4);
 
   --ok: #34d399;
   --ok-soft: rgb(52 211 153 / 0.12);

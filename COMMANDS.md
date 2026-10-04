@@ -1,6 +1,6 @@
 # 🚀 Guia Rápido de Comandos
 
-Comandos mais usados no dia a dia de desenvolvimento do Evolution GO.
+Comandos mais usados no dia a dia de desenvolvimento do WhatyGo.
 
 ## 📋 Comandos Essenciais
 
@@ -130,8 +130,8 @@ make clean-all
 
 ```bash
 # 1. Clone o repositório
-git clone https://git.evoai.app/Evolution/evolution-go.git
-cd evolution-go
+git clone https://github.com/lucasgiovannibr/whatygo.git
+cd whatygo
 
 # 2. Setup completo do ambiente
 make setup
@@ -180,8 +180,8 @@ make docker-build
 make docker-run
 
 # 4. Se tudo ok, fazer tag e push
-docker tag evolution-go:latest seu-registry/evolution-go:v1.0.0
-docker push seu-registry/evolution-go:v1.0.0
+docker tag whatygo:latest seu-registry/whatygo:v1.0.0
+docker push seu-registry/whatygo:v1.0.0
 ```
 
 ### Debug e Profiling
